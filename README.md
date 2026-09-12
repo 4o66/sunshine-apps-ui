@@ -2,7 +2,7 @@
 
 Companion web UI for [bazzite-sunshine-manager](https://github.com/4o66/bazzite-sunshine-manager).
 
-**Status: pre-alpha scaffold. There is nothing to install yet.**
+**Status: phase 1 — a read-only dashboard. It never writes to `apps.json`.**
 
 ## What this is
 
@@ -36,10 +36,28 @@ The listener binds to `127.0.0.1` and **that is not configurable**. Loopback is
 not the same as private, so it is not the only defence. See
 [docs/security.md](docs/security.md).
 
+## Running it
+
+    pip install -e .
+    sunshine-apps-ui --open
+
+It finds `sunshine-import` on `PATH` (or take `--importer PATH`), runs it with
+`--dry-run --json`, and renders the plan. Arguments after `--` are passed
+through to the importer:
+
+    sunshine-apps-ui -- --no-heroic
+
+The URL it prints carries a token generated for that run. Without it, every
+request is refused.
+
 ## Layout
 
-    src/sunshine_apps_ui/   the package (namespaced, unlike the importer)
-    docs/security.md        threat model and the decisions behind it
+    src/sunshine_apps_ui/
+      importer.py   runs sunshine-import and validates the plan schema
+      security.py   token, Host and cross-site checks
+      render.py     the page
+      server.py     the listener
+    docs/security.md  threat model and the decisions behind it
 
 ## License
 
