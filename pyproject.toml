@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sunshine-apps-ui"
+version = "0.0.0"
+description = "Companion web UI for bazzite-sunshine-manager. Reviews and applies Sunshine apps.json import plans."
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.9"
+# Intentionally zero runtime dependencies: stdlib http.server only.
+# Target systems are immutable (Bazzite rpm-ostree, SteamOS), where
+# installing packages at runtime is a foot-gun. See docs/security.md.
+dependencies = []
+
+[project.urls]
+Homepage = "https://github.com/4o66/sunshine-apps-ui"
+Companion = "https://github.com/4o66/bazzite-sunshine-manager"
+
+[tool.setuptools.packages.find]
+where = ["src"]
