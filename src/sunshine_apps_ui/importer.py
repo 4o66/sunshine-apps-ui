@@ -10,6 +10,7 @@ import json
 import os
 import shutil
 import subprocess
+import time
 from typing import Any, Dict, List, Optional, Tuple
 
 from . import SUPPORTED_SCHEMA
@@ -56,6 +57,36 @@ def parse_plan(stdout: str) -> Dict[str, Any]:
             f"Plan schema {schema!r} is not supported (this build understands "
             f"{SUPPORTED_SCHEMA}). Update sunshine-apps-ui."
         )
+    return doc
+
+
+_STATE_CACHE: Dict[str, Any] = {"at": 0.0, "importer": "", "doc": None}
+STATE_TTL = 3.0
+
+
+def get_state(importer: str, timeout: int = 30,
+              use_cache: bool = False) -> Dict[str, Any]:
+    """What is in apps.json right now, as opposed to what would change.
+
+    A page of tiles asks for this once to render and once per image to check the
+    allowlist, and each call is a subprocess. Those image requests may share a
+    very short cache; the page render itself always reads fresh.
+    """
+    now = time.monotonic()
+    if (use_cache and _STATE_CACHE["doc"] is not None
+            and _STATE_CACHE["importer"] == importer
+            and now - _STATE_CACHE["at"] < STATE_TTL):
+        return _STATE_CACHE["doc"]
+    try:
+        proc = subprocess.run([importer, "--state", "--json"],
+                              capture_output=True, text=True, timeout=timeout)
+    except subprocess.TimeoutExpired as e:
+        raise ImporterError(f"Importer did not finish within {timeout}s") from e
+    if proc.returncode != 0:
+        tail = (proc.stderr or "").strip().splitlines()
+        raise ImporterError(tail[-1] if tail else "Could not read the app list")
+    doc = parse_plan(proc.stdout)
+    _STATE_CACHE.update({"at": now, "importer": importer, "doc": doc})
     return doc
 
 

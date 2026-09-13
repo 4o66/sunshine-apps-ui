@@ -11,9 +11,11 @@ from typing import Any, Dict, List, Optional
 from urllib.parse import parse_qs, urlencode, urlsplit
 
 from . import __version__, security
-from .importer import (ImporterError, apply_plan, check_auth, run_plan,
-                       save_auth)
-from .render import applied_page, confirm_page, error_page, page
+from . import artwork
+from .importer import (ImporterError, apply_plan, check_auth, get_state,
+                       run_plan, save_auth)
+from .render import (applied_page, confirm_page, connect_page, error_page,
+                     grid_page, page)
 
 log = logging.getLogger("sunshine-apps-ui")
 
@@ -41,9 +43,12 @@ class PlanHandler(BaseHTTPRequestHandler):
         self.send_header("Cache-Control", "no-store")
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("Referrer-Policy", "no-referrer")
+        # img-src is needed for the tile artwork, which /art serves from this
+        # same origin. Without it default-src 'none' blocks every tile and the
+        # browser never even issues the request.
         self.send_header("Content-Security-Policy",
-                         "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; "
-                         "frame-ancestors 'none'; base-uri 'none'")
+                         "default-src 'none'; style-src 'unsafe-inline'; img-src 'self'; "
+                         "form-action 'self'; frame-ancestors 'none'; base-uri 'none'")
         self.end_headers()
         if self.command != "HEAD":
             self.wfile.write(raw)
@@ -61,6 +66,57 @@ class PlanHandler(BaseHTTPRequestHandler):
             self._send(404, error_page("Not found."))
             return
 
+        if parts.path == "/art":
+            wanted = (query.get("p") or [""])[0]
+            try:
+                state = get_state(self.importer_path, use_cache=True)
+            except ImporterError:
+                self._send(404, error_page("Not found.", token=self.token))
+                return
+            found = artwork.read(wanted, artwork.allowed_paths(state))
+            if not found:
+                log.warning("artwork not served: %r", wanted)
+                self._send(404, error_page("Not found.", token=self.token))
+                return
+            body, content_type = found
+            self.send_response(200)
+            self.send_header("Content-Type", content_type)
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("X-Content-Type-Options", "nosniff")
+            self.send_header("Content-Security-Policy", "default-src 'none'")
+            self.end_headers()
+            if self.command != "HEAD":
+                self.wfile.write(body)
+            return
+
+        if parts.path in ("/", "/index.html"):
+            try:
+                state = get_state(self.importer_path)
+            except ImporterError as e:
+                self._send(500, error_page("Could not read the app list.",
+                                           str(e), token=self.token))
+                return
+            new_ids = set()
+            scanned = "scan" in query
+            if scanned:
+                try:
+                    doc, _ = run_plan(self.importer_path, self.importer_args)
+                    new_ids = {f'{e.get("source")}:{e.get("id")}'
+                               for e in (doc.get("plan", {}).get("added") or [])}
+                except ImporterError as e:
+                    log.warning("scan failed: %s", e)
+            auth_ok, _ = self._auth_state()
+            self._send(200, grid_page(state, self.token, new_ids=new_ids,
+                                      scanned=scanned, auth_ok=auth_ok))
+            return
+
+        if parts.path == "/connect":
+            auth_ok, auth_message = self._auth_state()
+            posted = (query.get("msg") or [""])[0]
+            self._send(200, connect_page(self.token, posted or ("" if auth_ok else auth_message)))
+            return
+
         if parts.path == "/applied":
             self._send(200, applied_page(self.token, self.via_sunshine))
             return
@@ -75,7 +131,7 @@ class PlanHandler(BaseHTTPRequestHandler):
             self._send(200, confirm_page(doc, self.token, self.via_sunshine))
             return
 
-        if parts.path not in ("/", "/index.html"):
+        if parts.path != "/plan":
             self._send(404, error_page("Not found.", token=self.token))
             return
 
@@ -168,10 +224,9 @@ class PlanHandler(BaseHTTPRequestHandler):
         # Redirect after posting so a refresh cannot resubmit the form.
         params = {"token": self.token}
         if not ok:
-            params["connect"] = "1"
             params["msg"] = message[:300]
         self.send_response(303)
-        self.send_header("Location", "/?" + urlencode(params))
+        self.send_header("Location", ("/?" if ok else "/connect?") + urlencode(params))
         self.send_header("Content-Length", "0")
         self.end_headers()
 

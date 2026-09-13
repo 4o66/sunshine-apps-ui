@@ -6,6 +6,7 @@ mapped to arrows and Enter.
 """
 
 import html
+from urllib.parse import quote
 from typing import Any, Dict, List, Optional
 
 from . import __version__
@@ -140,6 +141,11 @@ border-top:1px solid var(--border);padding-top:.9rem}
 
 def _e(value: Any) -> str:
     return html.escape("" if value is None else str(value), quote=True)
+
+
+def _eq(value: Any) -> str:
+    """Escape for use inside a URL query value, then for HTML."""
+    return _e(quote(str(value or ""), safe=""))
 
 
 def _entry_li(bucket: str, entry: Dict[str, Any]) -> str:
@@ -377,3 +383,124 @@ def error_page(message: str, detail: str = "", token: str = "") -> str:
 <p class="why">{_e(message)}</p>{extra}</section>
 <div class="actions"><a class="btn sec" href="/{q}">Try again</a></div>
 </div></body></html>"""
+
+
+# ---------------------------------------------------------------- the grid ---
+
+_GRID_CSS = """
+.grid{display:grid;gap:1rem;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));
+margin:0 0 1.5rem}
+.tile{position:relative;display:block;text-decoration:none;color:inherit;
+aspect-ratio:2/3;border-radius:var(--radius-lg);overflow:hidden;
+background:var(--bg-subtle);border:2px solid transparent;box-shadow:var(--shadow-sm)}
+.tile:hover,.tile:focus-visible{border-color:var(--primary);outline:none}
+.tile img{width:100%;height:100%;object-fit:cover;display:block}
+.tile .fallback{width:100%;height:100%;display:flex;align-items:center;
+justify-content:center;padding:.6rem;text-align:center;font-weight:600;
+font-size:.9rem;color:var(--text-muted);background:var(--bg-muted)}
+.tile .cap{position:absolute;left:0;right:0;bottom:0;padding:.45rem .55rem;
+font-size:.82rem;font-weight:600;color:#fff;
+background:linear-gradient(transparent,rgba(0,0,0,.85))}
+.tile.new{border-color:var(--success)}
+.tile.new .flag{position:absolute;top:.4rem;left:.4rem;background:var(--success);
+color:#fff;font-size:.68rem;font-weight:700;letter-spacing:.04em;
+padding:.15rem .45rem;border-radius:999px}
+.tile.hidden img,.tile.hidden .fallback{filter:grayscale(1);opacity:.32}
+.tile.hidden{border-style:dashed;border-color:var(--border-strong)}
+.tile.hidden .mark{position:absolute;inset:0;display:flex;align-items:center;
+justify-content:center;transform:rotate(-20deg);font-size:1.1rem;font-weight:800;
+letter-spacing:.1em;color:var(--text);opacity:.75;text-transform:uppercase}
+.tile.add{border:2px dashed var(--border-strong);background:transparent}
+.tile.add .fallback{background:transparent;color:var(--text-muted);font-size:.9rem}
+.tile.add:hover{border-color:var(--primary)}
+.legend{display:flex;gap:1rem;flex-wrap:wrap;color:var(--text-muted);
+font-size:.85rem;margin:0 0 1rem}
+.legend i{font-style:normal;border-radius:3px;padding:0 .35rem;border:2px solid}
+.legend i.new{border-color:var(--success)}
+.legend i.hid{border-color:var(--border-strong);border-style:dashed}
+"""
+
+
+def _tile(entry: Dict[str, Any], token: str, *, is_new: bool = False,
+          is_hidden: bool = False) -> str:
+    name = _e(entry.get("name") or "(unnamed)")
+    image = entry.get("image-path") or ""
+    inner = (f'<img src="/art?p={_eq(image)}&token={_e(token)}" alt="">'
+             if image else f'<div class="fallback">{name}</div>')
+    classes = "tile" + (" new" if is_new else "") + (" hidden" if is_hidden else "")
+    flag = '<span class="flag">NEW</span>' if is_new else ""
+    mark = '<span class="mark">hidden</span>' if is_hidden else ""
+    target = (f'/app?index={_e(entry.get("index"))}&token={_e(token)}'
+              if entry.get("index") is not None
+              else f'/app?hidden={_eq(str(entry.get("source")) + ":" + str(entry.get("id")))}'
+                   f'&token={_e(token)}')
+    return (f'<a class="{classes}" href="{target}">{inner}{flag}{mark}'
+            f'<span class="cap">{name}</span></a>')
+
+
+def connect_page(token: str, message: str = "", username: str = "") -> str:
+    """The credentials form on its own page, reachable from the grid."""
+    return f"""<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Connect to Sunshine</title><style>{_CSS}</style></head>
+<body>
+<div class="navbar"><span class="brand">Sunshine</span><span class="sep">/</span>
+<span class="where">apps</span></div>
+<div class="wrap">
+{credentials_form(token, message, username)}
+<div class="actions"><a class="btn sec" href="/?token={_e(token)}">Back</a></div>
+</div></body></html>"""
+
+
+def grid_page(state: Dict[str, Any], token: str, *, new_ids: Optional[set] = None,
+              scanned: bool = False, queued: int = 0, auth_ok: bool = True) -> str:
+    new_ids = new_ids or set()
+    apps = state.get("apps") or []
+    hidden = state.get("hidden") or []
+
+    tiles = []
+    for entry in apps:
+        key = f'{entry.get("source")}:{entry.get("id")}'
+        tiles.append(_tile(entry, token, is_new=key in new_ids))
+    for entry in hidden:
+        tiles.append(_tile(entry, token, is_hidden=True))
+    tiles.append(f'<a class="tile add" href="/app?new=1&token={_e(token)}">'
+                 f'<div class="fallback">+ Add an application</div></a>')
+
+    legend = ""
+    if scanned or hidden:
+        parts = []
+        if scanned:
+            parts.append('<span><i class="new">&nbsp;</i> found by the last scan</span>')
+        if hidden:
+            parts.append('<span><i class="hid">&nbsp;</i> hidden, will not come back</span>')
+        legend = f'<div class="legend">{"".join(parts)}</div>'
+
+    apply_button = (f'<a class="btn" href="/apply?token={_e(token)}">'
+                    f'Apply {queued} change{"" if queued == 1 else "s"}</a>'
+                    if queued else "")
+    auth_note = ("" if auth_ok else
+                 f'<div class="bar"><span class="chip">'
+                 f'<span class="dot error"></span><b>sunshine</b> needs sign-in</span>'
+                 f'<a class="chip" style="text-decoration:none;color:var(--primary)" '
+                 f'href="/connect?token={_e(token)}">Connect</a></div>')
+
+    return f"""<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Sunshine apps</title><style>{_CSS}{_GRID_CSS}</style></head>
+<body>
+<div class="navbar"><span class="brand">Sunshine</span><span class="sep">/</span>
+<span class="where">apps</span></div>
+<div class="wrap">
+<h1>{len(apps)} application{'' if len(apps) == 1 else 's'}</h1>
+<p class="sub"><code>{_e(state.get("apps_json", ""))}</code></p>
+{auth_note}
+<div class="actions">{apply_button}
+<a class="btn{'' if not queued else ' sec'}" href="/?scan=1&token={_e(token)}">Rescan</a>
+<a class="btn sec" href="/plan?token={_e(token)}">What would change</a></div>
+{legend}
+<div class="grid">{"".join(tiles)}</div>
+</div></body></html>"""
+

@@ -40,6 +40,23 @@ PLAN = {
 }
 
 
+STATE = {
+    "schema": 1,
+    "generator": {"name": "bazzite-sunshine-manager", "version": "2.0"},
+    "config_dir": "/home/u/.config/sunshine",
+    "apps_json": "/home/u/.config/sunshine/apps.json",
+    "apps": [
+        {"index": 0, "name": "Desktop", "image-path": "desktop.png", "cmd": "",
+         "source": None, "id": None, "managed": False},
+        {"index": 1, "name": "Portal 2", "image-path": "/img/620.png",
+         "cmd": "steam -applaunch 620", "source": "steam", "id": "620",
+         "managed": True},
+    ],
+    "hidden": [{"name": "TF2", "source": "steam", "id": "440",
+                "image-path": "/img/440.png", "at": "2026-09-13T00:00:00+0000"}],
+}
+
+
 def fake_importer(payload=None, exit_code=0, stderr="log line"):
     """A stand-in that speaks the contract: JSON on stdout, logs on stderr."""
     body = json.dumps(payload if payload is not None else PLAN)
@@ -48,6 +65,7 @@ def fake_importer(payload=None, exit_code=0, stderr="log line"):
         "#!/bin/sh\n"
         'case "$*" in\n'
         "  *--check-auth*) echo '{\"ok\": true, \"message\": \"ok\"}'; exit 0 ;;\n"
+        "  *--state*) cat <<'S'\n" + json.dumps(STATE) + "\nS\n exit 0 ;;\n"
         "  *--save-auth*)  cat >/dev/null; echo '{\"ok\": true, \"message\": \"saved\"}'; exit 0 ;;\n"
         "esac\n"
         f"cat <<'J'\n{body}\nJ\n"
@@ -102,7 +120,7 @@ class ServerTest(unittest.TestCase):
         self.assertEqual(self.httpd.server_address[0], "127.0.0.1")
 
     def test_valid_token_renders_the_plan(self):
-        status, body = self.get(token=self.token)
+        status, body = self.get("/plan", token=self.token)
         self.assertEqual(status, 200)
         self.assertIn("Portal 2", body)
         self.assertIn("Cyberpunk 2077", body)
@@ -135,15 +153,26 @@ class ServerTest(unittest.TestCase):
 
     def test_unmanaged_entries_are_described_without_guessing_their_origin(self):
         """The tool knows it did not create them; it does not know who did."""
-        _, body = self.get(token=self.token)
+        _, body = self.get("/plan", token=self.token)
         self.assertIn("Left alone", body)
         self.assertNotIn("Not ours", body)
         self.assertNotIn("entries you created", body)
 
     def test_user_content_is_escaped(self):
-        _, body = self.get(token=self.token)
+        _, body = self.get("/plan", token=self.token)
         self.assertNotIn("<script>", body)
         self.assertIn("&lt;script&gt;", body)
+
+    def test_the_policy_permits_what_the_page_actually_loads(self):
+        """A policy that blocks your own assets fails silently in the browser."""
+        url = f"http://127.0.0.1:{self.port}/?token={self.token}"
+        with urllib.request.urlopen(url, timeout=10) as r:
+            csp = r.headers["Content-Security-Policy"]
+            body = r.read().decode()
+        if "<img" in body:
+            self.assertIn("img-src 'self'", csp)
+        if "<form" in body:
+            self.assertIn("form-action 'self'", csp)
 
     def test_security_headers_are_present(self):
         url = f"http://127.0.0.1:{self.port}/?token={self.token}"
@@ -228,13 +257,13 @@ class CredentialsEndpointTest(ServerTest):
         self.assertEqual(status, 400)
 
     def test_the_form_is_offered_when_asked_for(self):
-        status, body = self.get(f"/?connect=1&token={self.token}")
+        status, body = self.get(f"/connect?token={self.token}")
         self.assertEqual(status, 200)
         self.assertIn("Connect to Sunshine", body)
         self.assertIn('type="password"', body)
 
     def test_the_form_posts_back_to_us_and_csp_permits_it(self):
-        url = f"http://127.0.0.1:{self.port}/?connect=1&token={self.token}"
+        url = f"http://127.0.0.1:{self.port}/connect?token={self.token}"
         with urllib.request.urlopen(url, timeout=10) as r:
             csp = r.headers["Content-Security-Policy"]
             body = r.read().decode()
@@ -243,7 +272,7 @@ class CredentialsEndpointTest(ServerTest):
 
     def test_a_rejected_save_shows_the_reason_not_a_generic_message(self):
         status, body = self.get(
-            f"/?connect=1&msg=Sunshine+rejected+the+credentials&token={self.token}")
+            f"/connect?msg=Sunshine+rejected+the+credentials&token={self.token}")
         self.assertIn("Sunshine rejected the credentials", body)
 
 
@@ -360,3 +389,60 @@ class AppliedPageTest(ServerTest):
         finally:
             self.httpd.RequestHandlerClass.importer_path = self.importer
             os.unlink(path)
+
+
+class GridTest(ServerTest):
+    def test_the_front_page_is_the_grid_of_what_is_loaded(self):
+        status, body = self.get(token=self.token)
+        self.assertEqual(status, 200)
+        self.assertIn("2 applications", body)
+        self.assertIn("Desktop", body)
+        self.assertIn("Portal 2", body)
+
+    def test_hidden_entries_appear_muted_and_marked(self):
+        _, body = self.get(token=self.token)
+        self.assertIn("tile hidden", body)
+        self.assertIn('class="mark">hidden', body)
+        self.assertIn("TF2", body)
+
+    def test_nothing_is_marked_new_until_a_scan(self):
+        _, body = self.get(token=self.token)
+        self.assertNotIn("tile new", body)
+
+    def test_a_scan_marks_newly_found_entries(self):
+        _, body = self.get(f"/?scan=1&token={self.token}")
+        self.assertIn("tile new", body)
+        self.assertIn(">NEW<", body)
+
+    def test_there_is_an_add_tile(self):
+        _, body = self.get(token=self.token)
+        self.assertIn("Add an application", body)
+
+    def test_apply_is_absent_with_nothing_queued(self):
+        _, body = self.get(token=self.token)
+        self.assertNotIn("Apply 0", body)
+        self.assertNotIn(">Apply ", body)
+
+
+class ArtworkTest(ServerTest):
+    def _art(self, path):
+        from urllib.parse import quote
+        return self.get(f"/art?p={quote(path, safe='')}&token={self.token}")
+
+    def test_an_unreferenced_path_is_not_served(self):
+        """Not refused by inspecting it -- simply not in the allowlist."""
+        status, _ = self._art("/etc/passwd")
+        self.assertEqual(status, 404)
+
+    def test_traversal_is_not_served(self):
+        status, _ = self._art("/img/../../etc/shadow")
+        self.assertEqual(status, 404)
+
+    def test_a_referenced_but_missing_file_is_a_clean_404(self):
+        status, _ = self._art("/img/620.png")
+        self.assertEqual(status, 404)
+
+    def test_art_needs_the_token(self):
+        from urllib.parse import quote
+        status, _ = self.get(f"/art?p={quote('/img/620.png', safe='')}")
+        self.assertEqual(status, 404)
