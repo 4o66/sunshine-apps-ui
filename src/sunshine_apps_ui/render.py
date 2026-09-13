@@ -22,7 +22,12 @@ BUCKETS = [
     ("pruned", "Would be removed", "No longer in a library that scanned cleanly."),
     ("missing", "No longer found", "Imported before, not discovered now. Left in place."),
     ("unchanged", "Unchanged", "Nothing to do."),
-    ("kept_foreign", "Not ours", "Sunshine's defaults and entries you created. Never touched."),
+    # Say only what is actually known: the importer did not create these, so it
+    # does not change them. Claiming they are Sunshine's defaults or the user's
+    # own is a guess -- an entry may equally have been added by another tool or
+    # by someone at the keyboard.
+    ("kept_foreign", "Left alone", "Entries the importer does not manage. "
+                                   "It never changes them."),
 ]
 
 STATUS_NOTE = {

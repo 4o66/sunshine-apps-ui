@@ -118,6 +118,13 @@ class ServerTest(unittest.TestCase):
     def test_unknown_path_is_not_served(self):
         self.assertEqual(self.get("/etc/passwd", token=self.token)[0], 404)
 
+    def test_unmanaged_entries_are_described_without_guessing_their_origin(self):
+        """The tool knows it did not create them; it does not know who did."""
+        _, body = self.get(token=self.token)
+        self.assertIn("Left alone", body)
+        self.assertNotIn("Not ours", body)
+        self.assertNotIn("entries you created", body)
+
     def test_user_content_is_escaped(self):
         _, body = self.get(token=self.token)
         self.assertNotIn("<script>", body)
