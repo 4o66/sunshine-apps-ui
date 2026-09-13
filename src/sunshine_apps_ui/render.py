@@ -103,13 +103,14 @@ li .fields{color:var(--text-muted);font-size:.85rem}
 .edit .d{width:100%;font-size:.85rem;font-family:var(--mono);color:var(--text-muted);margin-top:.2rem}
 .edit .d b{color:var(--text);font-weight:600}
 
-a.btn{display:inline-block;background:var(--primary);color:#fff;text-decoration:none;
+.btn{display:inline-block;background:var(--primary);color:#fff;text-decoration:none;
 border:1px solid var(--primary);border-radius:var(--radius-md);padding:.65rem 1.1rem;
-font-weight:500;font-size:.95rem;transition:background 150ms ease}
-a.btn:hover{background:var(--primary-hover);border-color:var(--primary-hover)}
-a.btn.sec{background:transparent;color:var(--primary)}
+font-family:inherit;font-size:.95rem;line-height:1.5;font-weight:500;cursor:pointer;
+transition:background 150ms ease}
+.btn:hover{background:var(--primary-hover);border-color:var(--primary-hover)}
+.btn.sec{background:transparent;color:var(--primary)}
 a:focus-visible,summary:focus-visible{outline:3px solid var(--accent);outline-offset:3px}
-.actions{display:flex;gap:.6rem;flex-wrap:wrap;margin:0 0 1.25rem}
+.actions{display:flex;gap:.6rem;flex-wrap:wrap;align-items:center;margin:0 0 1.25rem}
 
 details{margin-top:1.5rem}
 summary{cursor:pointer;color:var(--text-muted)}
@@ -123,15 +124,13 @@ h3.ch{font-size:.95rem;margin:.2rem 0 .5rem;display:flex;align-items:center;gap:
 h3.ch .n{background:var(--bg-muted);border-radius:999px;padding:.1rem .6rem;
 font-size:.8rem;font-weight:600}
 section h3.ch + ul{margin-bottom:1rem}
-form{display:grid;gap:.4rem;max-width:26rem;margin:.5rem 0 1rem}
-form label{font-size:.85rem;color:var(--text-muted);font-weight:500}
-form input{background:var(--bg-base);color:var(--text);border:1px solid var(--border);
+form.creds{display:grid;gap:.4rem;max-width:26rem;margin:.5rem 0 1rem}
+form.creds label{font-size:.85rem;color:var(--text-muted);font-weight:500}
+form.creds input{background:var(--bg-base);color:var(--text);border:1px solid var(--border);
 border-radius:var(--radius-md);padding:.6rem .7rem;font:inherit;font-size:.95rem}
-form input:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
-form button{margin-top:.5rem;background:var(--primary);color:#fff;border:1px solid var(--primary);
-border-radius:var(--radius-md);padding:.65rem 1.1rem;font:inherit;font-weight:500;cursor:pointer}
-form button:hover{background:var(--primary-hover)}
-form button:focus-visible{outline:3px solid var(--accent);outline-offset:3px}
+form.creds input:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+form.creds .btn{margin-top:.5rem;justify-self:start}
+button:focus-visible{outline:3px solid var(--accent);outline-offset:3px}
 .note{color:var(--text-muted);font-size:.85rem;margin-top:1.75rem;
 border-top:1px solid var(--border);padding-top:.9rem}
 @media(max-width:520px){.wrap{padding:1rem .75rem 3rem}li{flex-direction:column;gap:.15rem}
@@ -188,12 +187,12 @@ def credentials_form(token: str, message: str = "", username: str = "") -> str:
             '<p class="why">Applying changes asks Sunshine to reload, which needs '
             'the login you use for its web interface at port 47990.</p>')
     return f"""<section><h2>Connect to Sunshine</h2>{note}
-<form method="post" action="/credentials?token={_e(token)}">
+<form class="creds" method="post" action="/credentials?token={_e(token)}">
 <label for="u">Username</label>
 <input id="u" name="username" autocomplete="username" value="{_e(username)}" required autofocus>
 <label for="p">Password</label>
 <input id="p" name="password" type="password" autocomplete="current-password" required>
-<button type="submit">Verify and save</button>
+<button class="btn" type="submit">Verify and save</button>
 </form>
 <p class="why">Checked against Sunshine before it is stored, so a typo fails here
 rather than later. Saved to the config directory, readable only by you.</p>
@@ -236,6 +235,20 @@ def confirm_page(doc: Dict[str, Any], token: str, via_sunshine: bool = False) ->
                    "disconnect and return to Moonlight, where the new games should "
                    "appear in the next 30 seconds.</p>")
 
+    if changing:
+        warn_block = f'<section class="warn">{warning}</section>'
+        action_block = (f'<form method="post" action="/apply?token={_e(token)}">'
+                        f'<div class="actions">'
+                        f'<button class="btn" type="submit">Write and reload</button>'
+                        f'<a class="btn sec" href="/?token={_e(token)}">Cancel</a>'
+                        f'</div></form>')
+    else:
+        # Applying would reload Sunshine, and reloading disconnects. Not worth
+        # doing for no change, so do not offer it.
+        warn_block = ""
+        action_block = (f'<div class="actions">'
+                        f'<a class="btn" href="/?token={_e(token)}">Back</a></div>')
+
     return f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -246,13 +259,36 @@ def confirm_page(doc: Dict[str, Any], token: str, via_sunshine: bool = False) ->
 <div class="wrap">
 <h1>Apply {changing} change{'' if changing == 1 else 's'}?</h1>
 <section>{_change_list(plan) or '<p class="why">Nothing would change.</p>'}</section>
-<section class="warn">{warning}</section>
-<form method="post" action="/apply?token={_e(token)}">
-<div class="actions">
-<button type="submit">Write and reload</button>
-<a class="btn sec" href="/?token={_e(token)}">Cancel</a>
-</div>
-</form>
+{warn_block}
+{action_block}
+</div></body></html>"""
+
+
+def applied_page(token: str, via_sunshine: bool = False) -> str:
+    """Shown straight after a successful apply.
+
+    Deliberately static. Redirecting to the plan would re-run the importer, and
+    a reload ends the stream, so Sunshine terminates our process group while
+    that subprocess is running -- which surfaced as "could not read a plan"
+    exactly when the apply had in fact succeeded.
+    """
+    if via_sunshine:
+        detail = ("This stream is ending so Sunshine can reload. You will return to "
+                  "Moonlight, where the new games should appear in the next 30 seconds.")
+    else:
+        detail = ("Sunshine reloaded its app list. Any stream in progress has "
+                  "disconnected and will show the new games within 30 seconds.")
+    return f"""<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Applied</title><style>{_CSS}</style></head>
+<body>
+<div class="navbar"><span class="brand">Sunshine</span><span class="sep">/</span>
+<span class="where">apps import</span></div>
+<div class="wrap">
+<h1>Applied</h1>
+<section class="ok"><p class="why">apps.json was written. {_e(detail)}</p></section>
+<div class="actions"><a class="btn sec" href="/?token={_e(token)}">Back to the plan</a></div>
 </div></body></html>"""
 
 

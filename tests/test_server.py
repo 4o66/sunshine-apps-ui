@@ -299,10 +299,10 @@ class ApplyTest(ServerTest):
                                        "Sec-Fetch-Dest": "document"})
         self.assertEqual(status, 404)
 
-    def test_a_successful_apply_redirects_and_reports(self):
+    def test_a_successful_apply_redirects_to_the_applied_page(self):
         status, headers = self.post({}, token=self.token, path="/apply")
         self.assertEqual(status, 303)
-        self.assertIn("applied=1", headers["Location"])
+        self.assertIn("/applied", headers["Location"])
 
     def test_the_apply_invocation_is_not_a_dry_run_and_does_reload(self):
         """The two flags that make apply mean 'write and reload'."""
@@ -319,3 +319,44 @@ class ApplyTest(ServerTest):
             self.assertIn("--no-heroic", recorded)
         finally:
             os.unlink(path); os.path.exists(argdump) and os.unlink(argdump)
+
+
+class AppliedPageTest(ServerTest):
+    def test_success_lands_somewhere_static(self):
+        """Re-running the importer here would race the teardown the apply caused."""
+        status, headers = self.post({}, token=self.token, path="/apply")
+        self.assertEqual(status, 303)
+        self.assertTrue(headers["Location"].startswith("/applied?"), headers["Location"])
+
+    def test_the_applied_page_does_not_invoke_the_importer(self):
+        fd, path = tempfile.mkstemp(suffix=".sh")
+        marker = path + ".ran"
+        os.write(fd, f"#!/bin/sh\ntouch {marker}\nexit 1\n".encode())
+        os.close(fd); os.chmod(path, 0o755)
+        self.httpd.RequestHandlerClass.importer_path = path
+        try:
+            status, body = self.get(f"/applied?token={self.token}")
+            self.assertEqual(status, 200)
+            self.assertIn("Applied", body)
+            self.assertFalse(os.path.exists(marker), "the importer was invoked")
+        finally:
+            self.httpd.RequestHandlerClass.importer_path = self.importer
+            os.unlink(path)
+            os.path.exists(marker) and os.unlink(marker)
+
+    def test_applied_needs_the_token(self):
+        self.assertEqual(self.get("/applied")[0], 404)
+
+    def test_a_failed_apply_still_returns_to_the_plan(self):
+        """Nothing reloaded, so nothing is tearing down; the plan is safe to render."""
+        fd, path = tempfile.mkstemp(suffix=".sh")
+        os.write(fd, b"#!/bin/sh\necho boom >&2\nexit 3\n")
+        os.close(fd); os.chmod(path, 0o755)
+        self.httpd.RequestHandlerClass.importer_path = path
+        try:
+            status, headers = self.post({}, token=self.token, path="/apply")
+            self.assertEqual(status, 303)
+            self.assertIn("apply_error", headers["Location"])
+        finally:
+            self.httpd.RequestHandlerClass.importer_path = self.importer
+            os.unlink(path)

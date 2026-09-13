@@ -13,7 +13,7 @@ from urllib.parse import parse_qs, urlencode, urlsplit
 from . import __version__, security
 from .importer import (ImporterError, apply_plan, check_auth, run_plan,
                        save_auth)
-from .render import confirm_page, error_page, page
+from .render import applied_page, confirm_page, error_page, page
 
 log = logging.getLogger("sunshine-apps-ui")
 
@@ -59,6 +59,10 @@ class PlanHandler(BaseHTTPRequestHandler):
             # Deliberately uninformative to the caller; the reason goes to our log.
             log.warning("refused %s: %s", parts.path, reason)
             self._send(404, error_page("Not found."))
+            return
+
+        if parts.path == "/applied":
+            self._send(200, applied_page(self.token, self.via_sunshine))
             return
 
         if parts.path == "/apply":
@@ -127,12 +131,15 @@ class PlanHandler(BaseHTTPRequestHandler):
             log.info("apply: %s", "ok" if ok else "failed")
             params = {"token": self.token}
             if ok:
-                params["applied"] = "1"
+                # Somewhere static: re-running the importer here would race the
+                # session teardown that this very apply just triggered.
+                target = "/applied?"
             else:
+                target = "/?"
                 tail = importer_log.strip().splitlines()
                 params["apply_error"] = (tail[-1] if tail else "Apply failed")[:300]
             self.send_response(303)
-            self.send_header("Location", "/?" + urlencode(params))
+            self.send_header("Location", target + urlencode(params))
             self.send_header("Content-Length", "0")
             self.end_headers()
             return
