@@ -5,13 +5,15 @@ Nothing here writes to apps.json.
 """
 
 import logging
+import os
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any, Dict, List, Optional
 from urllib.parse import parse_qs, urlencode, urlsplit
 
 from . import __version__, security
-from .importer import ImporterError, check_auth, run_plan, save_auth
-from .render import error_page, page
+from .importer import (ImporterError, apply_plan, check_auth, run_plan,
+                       save_auth)
+from .render import confirm_page, error_page, page
 
 log = logging.getLogger("sunshine-apps-ui")
 
@@ -25,6 +27,7 @@ class PlanHandler(BaseHTTPRequestHandler):
     importer_path: str = ""
     importer_args: List[str] = []
     port: int = 0
+    via_sunshine: bool = False
 
     def log_message(self, fmt: str, *args: Any) -> None:
         log.info("%s %s", self.address_string(), fmt % args)
@@ -58,6 +61,16 @@ class PlanHandler(BaseHTTPRequestHandler):
             self._send(404, error_page("Not found."))
             return
 
+        if parts.path == "/apply":
+            try:
+                doc, _ = run_plan(self.importer_path, self.importer_args)
+            except ImporterError as e:
+                self._send(500, error_page("Could not work out what would change.",
+                                           str(e), token=self.token))
+                return
+            self._send(200, confirm_page(doc, self.token, self.via_sunshine))
+            return
+
         if parts.path not in ("/", "/index.html"):
             self._send(404, error_page("Not found.", token=self.token))
             return
@@ -79,7 +92,9 @@ class PlanHandler(BaseHTTPRequestHandler):
         show_form = (not auth_ok) or ("connect" in query)
         self._send(200, page(doc, importer_log, self.token,
                              auth_ok=auth_ok, auth_message=auth_message,
-                             show_form=show_form))
+                             show_form=show_form,
+                             applied="applied" in query,
+                             apply_error=(query.get("apply_error") or [""])[0]))
 
     do_HEAD = do_GET
 
@@ -102,6 +117,24 @@ class PlanHandler(BaseHTTPRequestHandler):
         if not allowed:
             log.warning("refused POST %s: %s", parts.path, reason)
             self._send(404, error_page("Not found."))
+            return
+
+        if parts.path == "/apply":
+            try:
+                ok, importer_log = apply_plan(self.importer_path, self.importer_args)
+            except ImporterError as e:
+                ok, importer_log = False, str(e)
+            log.info("apply: %s", "ok" if ok else "failed")
+            params = {"token": self.token}
+            if ok:
+                params["applied"] = "1"
+            else:
+                tail = importer_log.strip().splitlines()
+                params["apply_error"] = (tail[-1] if tail else "Apply failed")[:300]
+            self.send_response(303)
+            self.send_header("Location", "/?" + urlencode(params))
+            self.send_header("Content-Length", "0")
+            self.end_headers()
             return
 
         if parts.path != "/credentials":
@@ -143,6 +176,8 @@ def serve(token: str, importer_path: str, importer_args: Optional[List[str]] = N
         "token": token,
         "importer_path": importer_path,
         "importer_args": list(importer_args or []),
+        # Set by our launcher, which only ever runs inside a streamed session.
+        "via_sunshine": os.getenv("BSM_UI_VIA_SUNSHINE", "") == "1",
     })
     httpd = ThreadingHTTPServer((security.BIND_HOST, port), handler)
     handler.port = httpd.server_address[1]    # resolve port 0 to what we actually got

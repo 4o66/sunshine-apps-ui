@@ -116,6 +116,13 @@ summary{cursor:pointer;color:var(--text-muted)}
 pre{background:var(--bg-subtle);border:1px solid var(--border);border-radius:var(--radius-md);
 padding:.8rem;overflow:auto;font-family:var(--mono);font-size:.8rem;line-height:1.5;max-height:50vh}
 .err{border-left:3px solid var(--danger)}
+.warn{border-left:3px solid var(--warning)}
+.ok{border-left:3px solid var(--success)}
+.warn p{margin:0;font-size:.95rem}
+h3.ch{font-size:.95rem;margin:.2rem 0 .5rem;display:flex;align-items:center;gap:.5rem}
+h3.ch .n{background:var(--bg-muted);border-radius:999px;padding:.1rem .6rem;
+font-size:.8rem;font-weight:600}
+section h3.ch + ul{margin-bottom:1rem}
 form{display:grid;gap:.4rem;max-width:26rem;margin:.5rem 0 1rem}
 form label{font-size:.85rem;color:var(--text-muted);font-weight:500}
 form input{background:var(--bg-base);color:var(--text);border:1px solid var(--border);
@@ -193,8 +200,65 @@ rather than later. Saved to the config directory, readable only by you.</p>
 </section>"""
 
 
+def _change_list(plan: Dict[str, Any]) -> str:
+    """Spell out what will actually change, rather than asserting that something will."""
+    blocks = []
+    for key, title in (("added", "Will be added"), ("updated", "Will be updated"),
+                       ("pruned", "Will be removed")):
+        entries = plan.get(key) or []
+        if not entries:
+            continue
+        items = "".join(f'<li><span class="name">{_e(e.get("name"))}</span></li>'
+                        for e in entries if isinstance(e, dict))
+        blocks.append(f'<h3 class="ch">{_e(title)} <span class="n">{len(entries)}</span></h3>'
+                      f'<ul>{items}</ul>')
+    return "".join(blocks)
+
+
+def confirm_page(doc: Dict[str, Any], token: str, via_sunshine: bool = False) -> str:
+    """The step between wanting to apply and applying.
+
+    Applying reloads Sunshine, which ends any stream in progress. That is not a
+    malfunction -- it is how the new list reaches Moonlight -- but it should be
+    stated before it happens rather than discovered.
+    """
+    plan = doc.get("plan", {}) or {}
+    totals = doc.get("totals", {}) or {}
+    changing = sum(int(totals.get(k, 0)) for k in ("added", "updated", "pruned"))
+
+    if via_sunshine:
+        warning = ("<p><b>This will disconnect you.</b> Sunshine has to reload its app "
+                   "list, which ends the stream you are watching this through. You will "
+                   "return to Moonlight, where the new games should appear in the next "
+                   "30 seconds.</p>")
+    else:
+        warning = ("<p>Sunshine will reload its app list. Any stream in progress will "
+                   "disconnect and return to Moonlight, where the new games should "
+                   "appear in the next 30 seconds.</p>")
+
+    return f"""<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Apply changes</title><style>{_CSS}</style></head>
+<body>
+<div class="navbar"><span class="brand">Sunshine</span><span class="sep">/</span>
+<span class="where">apps import</span></div>
+<div class="wrap">
+<h1>Apply {changing} change{'' if changing == 1 else 's'}?</h1>
+<section>{_change_list(plan) or '<p class="why">Nothing would change.</p>'}</section>
+<section class="warn">{warning}</section>
+<form method="post" action="/apply?token={_e(token)}">
+<div class="actions">
+<button type="submit">Write and reload</button>
+<a class="btn sec" href="/?token={_e(token)}">Cancel</a>
+</div>
+</form>
+</div></body></html>"""
+
+
 def page(doc: Dict[str, Any], log: str = "", token: str = "",
-         auth_ok: bool = True, auth_message: str = "", show_form: bool = False) -> str:
+         auth_ok: bool = True, auth_message: str = "", show_form: bool = False,
+         applied: bool = False, apply_error: str = "") -> str:
     totals = doc.get("totals", {}) or {}
     plan = doc.get("plan", {}) or {}
     q = f"?token={_e(token)}" if token else ""
@@ -217,6 +281,16 @@ def page(doc: Dict[str, Any], log: str = "", token: str = "",
     summary = (f"{changing} change{'' if changing == 1 else 's'} pending"
                if changing else "Up to date — nothing would change")
 
+    banner = ""
+    if apply_error:
+        banner = (f'<section class="err"><h2>Apply failed</h2>'
+                  f'<p class="why">{_e(apply_error)}</p></section>')
+    elif applied:
+        banner = ('<section class="ok"><h2>Applied</h2><p class="why">'
+                  'apps.json was written and Sunshine reloaded it. If you were '
+                  'streaming, Moonlight should show the new games in the next '
+                  '30 seconds.</p></section>')
+
     auth_chip = (f'<span class="chip"><span class="dot {"ok" if auth_ok else "error"}"></span>'
                  f'<b>sunshine</b> {"connected" if auth_ok else "needs sign-in"}</span>')
 
@@ -238,8 +312,10 @@ def page(doc: Dict[str, Any], log: str = "", token: str = "",
 <h1>{_e(summary)}</h1>
 <p class="sub"><code>{_e(doc.get("apps_json", ""))}</code></p>
 {_sources_bar(doc.get("sources") or [], auth_chip)}
+{banner}
 {form_block}
-<div class="actions"><a class="btn" href="/{q}">Re-scan</a></div>
+<div class="actions"><a class="btn" href="/apply{q}">Apply changes</a>
+<a class="btn sec" href="/{q}">Re-scan</a></div>
 {"".join(sections)}
 {log_block}
 <p class="note">Read-only preview. Nothing has been written to apps.json.

@@ -83,6 +83,21 @@ class ServerTest(unittest.TestCase):
         except urllib.error.HTTPError as e:
             return e.code, e.read().decode()
 
+    def post(self, body, token=None, headers=None, path="/credentials"):
+        url = f"http://127.0.0.1:{self.port}{path}"
+        if token:
+            url += f"?token={token}"
+        data = urllib.parse.urlencode(body).encode()
+        h = {"Content-Type": "application/x-www-form-urlencoded"}
+        h.update(headers or {})
+        req = urllib.request.Request(url, data=data, headers=h, method="POST")
+        opener = urllib.request.build_opener(NoRedirect)
+        try:
+            with opener.open(req, timeout=10) as r:
+                return r.status, dict(r.headers)
+        except urllib.error.HTTPError as e:
+            return e.code, dict(e.headers)
+
     def test_it_binds_loopback_only(self):
         self.assertEqual(self.httpd.server_address[0], "127.0.0.1")
 
@@ -181,21 +196,6 @@ if __name__ == "__main__":
 class CredentialsEndpointTest(ServerTest):
     """The first POST endpoint, and the reason the cross-site rules exist."""
 
-    def post(self, body, token=None, headers=None, path="/credentials"):
-        url = f"http://127.0.0.1:{self.port}{path}"
-        if token:
-            url += f"?token={token}"
-        data = urllib.parse.urlencode(body).encode()
-        h = {"Content-Type": "application/x-www-form-urlencoded"}
-        h.update(headers or {})
-        req = urllib.request.Request(url, data=data, headers=h, method="POST")
-        opener = urllib.request.build_opener(NoRedirect)
-        try:
-            with opener.open(req, timeout=10) as r:
-                return r.status, dict(r.headers)
-        except urllib.error.HTTPError as e:
-            return e.code, dict(e.headers)
-
     def test_a_post_without_a_token_is_refused(self):
         status, _ = self.post({"username": "a", "password": "b"})
         self.assertEqual(status, 404)
@@ -250,3 +250,72 @@ class CredentialsEndpointTest(ServerTest):
 class NoRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, *args, **kwargs):
         return None
+
+
+class ApplyTest(ServerTest):
+    """Apply writes and reloads, behind a confirmation that says what happens."""
+
+    def test_get_apply_shows_a_confirmation_and_changes_nothing(self):
+        status, body = self.get("/apply", token=self.token)
+        self.assertEqual(status, 200)
+        self.assertIn("Write and reload", body)
+        self.assertIn("Cancel", body)
+
+    def test_the_confirmation_lists_the_actual_changes(self):
+        """Naming them beats asserting that some exist."""
+        _, body = self.get("/apply", token=self.token)
+        self.assertIn("Will be added", body)
+        self.assertIn("Portal 2", body)
+
+    def test_the_confirmation_states_the_disconnect(self):
+        _, body = self.get("/apply", token=self.token)
+        self.assertIn("30 seconds", body)
+        self.assertIn("Moonlight", body)
+
+    def test_wording_is_direct_when_viewed_through_a_stream(self):
+        self.httpd.RequestHandlerClass.via_sunshine = True
+        try:
+            _, body = self.get("/apply", token=self.token)
+            self.assertIn("This will disconnect you", body)
+        finally:
+            self.httpd.RequestHandlerClass.via_sunshine = False
+
+    def test_wording_is_conditional_when_not_in_a_stream(self):
+        _, body = self.get("/apply", token=self.token)
+        self.assertNotIn("This will disconnect you", body)
+        self.assertIn("Any stream in progress", body)
+
+    def test_getting_apply_without_a_token_is_refused(self):
+        self.assertEqual(self.get("/apply")[0], 404)
+
+    def test_posting_apply_without_a_token_is_refused(self):
+        status, _ = self.post({}, path="/apply")
+        self.assertEqual(status, 404)
+
+    def test_a_cross_site_post_to_apply_is_refused(self):
+        status, _ = self.post({}, token=self.token, path="/apply",
+                              headers={"Sec-Fetch-Site": "cross-site",
+                                       "Sec-Fetch-Mode": "navigate",
+                                       "Sec-Fetch-Dest": "document"})
+        self.assertEqual(status, 404)
+
+    def test_a_successful_apply_redirects_and_reports(self):
+        status, headers = self.post({}, token=self.token, path="/apply")
+        self.assertEqual(status, 303)
+        self.assertIn("applied=1", headers["Location"])
+
+    def test_the_apply_invocation_is_not_a_dry_run_and_does_reload(self):
+        """The two flags that make apply mean 'write and reload'."""
+        fd, path = tempfile.mkstemp(suffix=".sh")
+        argdump = path + ".args"
+        os.write(fd, f"#!/bin/sh\necho \"$@\" > {argdump}\nexit 0\n".encode())
+        os.close(fd); os.chmod(path, 0o755)
+        try:
+            from sunshine_apps_ui.importer import apply_plan
+            apply_plan(path, ["--no-heroic"])
+            recorded = open(argdump).read().split()
+            self.assertIn("--reload", recorded)
+            self.assertNotIn("--dry-run", recorded)
+            self.assertIn("--no-heroic", recorded)
+        finally:
+            os.unlink(path); os.path.exists(argdump) and os.unlink(argdump)

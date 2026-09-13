@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+# Launch the apps-import UI and a kiosk browser for it, then clean up.
+#
+# Install to ~/.local/bin/sunshine-apps-ui. The importer's launchers module
+# detects it there and generates the Sunshine app entry that runs it.
+#
+# Launch-on-demand by design: the server starts when you open this and exits
+# when you close the browser, so it is not listening the rest of the time.
+set -uo pipefail
+
+UI_DIR="${BSM_UI_DIR:-$HOME/.local/share/sunshine-apps-ui}"
+LOG="${XDG_RUNTIME_DIR:-/tmp}/sunshine-apps-ui.log"
+
+for candidate in "$HOME/.local/bin/sunshine-import" "$HOME/.local/bin/bsm-test-import"; do
+  [[ -x "$candidate" ]] && IMPORTER="$candidate" && break
+done
+if [[ -z "${IMPORTER:-}" ]]; then
+  echo "No sunshine-import found" >&2; exit 1
+fi
+
+# Sunshine only launches an app during a stream, so reaching this script means
+# the viewer is watching through Moonlight. The UI uses this to say plainly that
+# applying will disconnect them, rather than hedging.
+export BSM_UI_VIA_SUNSHINE=1
+
+# Port 0: the kernel picks a free one, so two launches cannot collide.
+PYTHONPATH="$UI_DIR/src" python3 -m sunshine_apps_ui \
+  --port 0 --importer "$IMPORTER" > "$LOG" 2>&1 &
+SERVER=$!
+cleanup() { kill "$SERVER" 2>/dev/null; }
+trap cleanup EXIT
+
+URL=""
+for _ in $(seq 1 60); do
+  URL=$(grep -oE 'http://127\.0\.0\.1:[0-9]+/\?token=[A-Za-z0-9_-]+' "$LOG" | head -1)
+  [[ -n "$URL" ]] && break
+  sleep 0.25
+done
+if [[ -z "$URL" ]]; then
+  echo "UI did not start; see $LOG" >&2; exit 1
+fi
+
+# Kiosk window. Chrome's flatpak shares the host network, so loopback resolves
+# to this machine's, not the sandbox's.
+for browser in com.google.Chrome com.vivaldi.Vivaldi; do
+  if flatpak info "$browser" >/dev/null 2>&1; then
+    flatpak run "$browser" --app="$URL" --start-fullscreen --new-window
+    exit 0
+  fi
+done
+xdg-open "$URL"; wait "$SERVER"

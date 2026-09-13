@@ -89,6 +89,22 @@ def save_auth(importer: str, username: str, password: str,
         return False, tail[-1] if tail else "Could not save credentials"
 
 
+def apply_plan(importer: str, extra_args: Optional[List[str]] = None,
+               timeout: int = 300) -> Tuple[bool, str]:
+    """Write apps.json and ask Sunshine to reload it. The opposite of run_plan.
+
+    --dry-run is deliberately absent and --reload deliberately present: applying
+    without reloading leaves a written file Sunshine has not read, which is a
+    confusing halfway state that looks like nothing happened.
+    """
+    cmd = [importer, "--reload", *(extra_args or [])]
+    try:
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+    except subprocess.TimeoutExpired as e:
+        raise ImporterError(f"Importer did not finish within {timeout}s") from e
+    return proc.returncode == 0, proc.stderr or ""
+
+
 def run_plan(importer: str, extra_args: Optional[List[str]] = None,
              timeout: int = 180) -> Tuple[Dict[str, Any], str]:
     """Run the importer read-only and return (plan document, its log output)."""
