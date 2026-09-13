@@ -7,6 +7,7 @@ import tempfile
 import threading
 import unittest
 import urllib.error
+import urllib.parse
 import urllib.request
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -43,7 +44,16 @@ def fake_importer(payload=None, exit_code=0, stderr="log line"):
     """A stand-in that speaks the contract: JSON on stdout, logs on stderr."""
     body = json.dumps(payload if payload is not None else PLAN)
     fd, path = tempfile.mkstemp(suffix=".sh")
-    os.write(fd, f"#!/bin/sh\ncat <<'J'\n{body}\nJ\necho '{stderr}' >&2\nexit {exit_code}\n".encode())
+    script = (
+        "#!/bin/sh\n"
+        'case "$*" in\n'
+        "  *--check-auth*) echo '{\"ok\": true, \"message\": \"ok\"}'; exit 0 ;;\n"
+        "  *--save-auth*)  cat >/dev/null; echo '{\"ok\": true, \"message\": \"saved\"}'; exit 0 ;;\n"
+        "esac\n"
+        f"cat <<'J'\n{body}\nJ\n"
+        f"echo '{stderr}' >&2\nexit {exit_code}\n"
+    )
+    os.write(fd, script.encode())
     os.close(fd)
     os.chmod(path, 0o755)
     return path
@@ -159,3 +169,77 @@ class ImporterContractTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CredentialsEndpointTest(ServerTest):
+    """The first POST endpoint, and the reason the cross-site rules exist."""
+
+    def post(self, body, token=None, headers=None, path="/credentials"):
+        url = f"http://127.0.0.1:{self.port}{path}"
+        if token:
+            url += f"?token={token}"
+        data = urllib.parse.urlencode(body).encode()
+        h = {"Content-Type": "application/x-www-form-urlencoded"}
+        h.update(headers or {})
+        req = urllib.request.Request(url, data=data, headers=h, method="POST")
+        opener = urllib.request.build_opener(NoRedirect)
+        try:
+            with opener.open(req, timeout=10) as r:
+                return r.status, dict(r.headers)
+        except urllib.error.HTTPError as e:
+            return e.code, dict(e.headers)
+
+    def test_a_post_without_a_token_is_refused(self):
+        status, _ = self.post({"username": "a", "password": "b"})
+        self.assertEqual(status, 404)
+
+    def test_a_cross_site_post_is_refused_even_with_the_token(self):
+        """A navigation exemption must never apply to an unsafe method."""
+        status, _ = self.post({"username": "a", "password": "b"}, token=self.token,
+                              headers={"Sec-Fetch-Site": "cross-site",
+                                       "Sec-Fetch-Mode": "navigate",
+                                       "Sec-Fetch-Dest": "document"})
+        self.assertEqual(status, 404)
+
+    def test_an_unknown_post_path_is_refused(self):
+        status, _ = self.post({"a": "b"}, token=self.token, path="/anything")
+        self.assertEqual(status, 404)
+
+    def test_a_valid_post_redirects_rather_than_rendering(self):
+        """Post/redirect/get, so refreshing cannot resubmit the password."""
+        status, headers = self.post({"username": "a", "password": "b"}, token=self.token)
+        self.assertEqual(status, 303)
+        self.assertIn("/?", headers["Location"])
+
+    def test_the_password_never_appears_in_the_redirect(self):
+        _, headers = self.post({"username": "admin", "password": "sup3rsecret"},
+                               token=self.token)
+        self.assertNotIn("sup3rsecret", headers["Location"])
+
+    def test_an_oversized_body_is_rejected(self):
+        status, _ = self.post({"username": "a" * 9000, "password": "b"}, token=self.token)
+        self.assertEqual(status, 400)
+
+    def test_the_form_is_offered_when_asked_for(self):
+        status, body = self.get(f"/?connect=1&token={self.token}")
+        self.assertEqual(status, 200)
+        self.assertIn("Connect to Sunshine", body)
+        self.assertIn('type="password"', body)
+
+    def test_the_form_posts_back_to_us_and_csp_permits_it(self):
+        url = f"http://127.0.0.1:{self.port}/?connect=1&token={self.token}"
+        with urllib.request.urlopen(url, timeout=10) as r:
+            csp = r.headers["Content-Security-Policy"]
+            body = r.read().decode()
+        self.assertIn("form-action 'self'", csp)
+        self.assertIn('action="/credentials', body)
+
+    def test_a_rejected_save_shows_the_reason_not_a_generic_message(self):
+        status, body = self.get(
+            f"/?connect=1&msg=Sunshine+rejected+the+credentials&token={self.token}")
+        self.assertIn("Sunshine rejected the credentials", body)
+
+
+class NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, *args, **kwargs):
+        return None

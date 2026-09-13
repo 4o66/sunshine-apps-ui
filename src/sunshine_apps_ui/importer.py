@@ -59,6 +59,36 @@ def parse_plan(stdout: str) -> Dict[str, Any]:
     return doc
 
 
+def check_auth(importer: str, timeout: int = 30) -> Tuple[bool, str]:
+    """Are stored Sunshine credentials present and accepted?"""
+    proc = subprocess.run([importer, "--check-auth", "--json"],
+                          capture_output=True, text=True, timeout=timeout)
+    try:
+        doc = json.loads(proc.stdout)
+        return bool(doc.get("ok")), str(doc.get("message", ""))
+    except json.JSONDecodeError:
+        tail = (proc.stderr or "").strip().splitlines()
+        return False, tail[-1] if tail else "Could not check credentials"
+
+
+def save_auth(importer: str, username: str, password: str,
+              timeout: int = 30) -> Tuple[bool, str]:
+    """Hand credentials to the importer on stdin, which verifies then stores them.
+
+    stdin, never argv: arguments are visible in ps and land in shell history.
+    The value is not logged here and is not retained after this call.
+    """
+    proc = subprocess.run([importer, "--save-auth", "--json"],
+                          input=f"{username}\n{password}\n",
+                          capture_output=True, text=True, timeout=timeout)
+    try:
+        doc = json.loads(proc.stdout)
+        return bool(doc.get("ok")), str(doc.get("message", ""))
+    except json.JSONDecodeError:
+        tail = (proc.stderr or "").strip().splitlines()
+        return False, tail[-1] if tail else "Could not save credentials"
+
+
 def run_plan(importer: str, extra_args: Optional[List[str]] = None,
              timeout: int = 180) -> Tuple[Dict[str, Any], str]:
     """Run the importer read-only and return (plan document, its log output)."""

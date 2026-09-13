@@ -7,10 +7,10 @@ Nothing here writes to apps.json.
 import logging
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any, Dict, List, Optional
-from urllib.parse import parse_qs, urlsplit
+from urllib.parse import parse_qs, urlencode, urlsplit
 
 from . import __version__, security
-from .importer import ImporterError, run_plan
+from .importer import ImporterError, check_auth, run_plan, save_auth
 from .render import error_page, page
 
 log = logging.getLogger("sunshine-apps-ui")
@@ -39,7 +39,7 @@ class PlanHandler(BaseHTTPRequestHandler):
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("Referrer-Policy", "no-referrer")
         self.send_header("Content-Security-Policy",
-                         "default-src 'none'; style-src 'unsafe-inline'; form-action 'none'; "
+                         "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; "
                          "frame-ancestors 'none'; base-uri 'none'")
         self.end_headers()
         if self.command != "HEAD":
@@ -70,9 +70,70 @@ class PlanHandler(BaseHTTPRequestHandler):
                                        str(e), token=self.token))
             return
 
-        self._send(200, page(doc, importer_log, self.token))
+        auth_ok, auth_message = self._auth_state()
+        # A message carried back from a rejected save is the more useful one.
+        posted_message = (query.get("msg") or [""])[0]
+        if posted_message:
+            auth_ok, auth_message = False, posted_message
+        # Offer the form when Sunshine will not let us in, or when asked for.
+        show_form = (not auth_ok) or ("connect" in query)
+        self._send(200, page(doc, importer_log, self.token,
+                             auth_ok=auth_ok, auth_message=auth_message,
+                             show_form=show_form))
 
     do_HEAD = do_GET
+
+    def _auth_state(self):
+        try:
+            return check_auth(self.importer_path)
+        except Exception as e:                       # noqa: BLE001 - shown, not raised
+            log.warning("credential check failed: %s", e)
+            return False, "Could not check the stored credentials."
+
+    def do_POST(self) -> None:  # noqa: N802 - http.server's interface
+        parts = urlsplit(self.path)
+        query = parse_qs(parts.query)
+        supplied = (query.get("token") or [None])[0]
+
+        # An unsafe method never gets the cross-site navigation exemption, so a
+        # form posted from anywhere but this page is refused here.
+        allowed, reason = security.check(self.headers, supplied, self.token,
+                                         self.port, self.command)
+        if not allowed:
+            log.warning("refused POST %s: %s", parts.path, reason)
+            self._send(404, error_page("Not found."))
+            return
+
+        if parts.path != "/credentials":
+            self._send(404, error_page("Not found.", token=self.token))
+            return
+
+        length = int(self.headers.get("Content-Length") or 0)
+        if length <= 0 or length > 8192:
+            self._send(400, error_page("Nothing to save.", token=self.token))
+            return
+        body = self.rfile.read(length).decode("utf-8", "replace")
+        fields = parse_qs(body, keep_blank_values=True)
+        username = (fields.get("username") or [""])[0]
+        password = (fields.get("password") or [""])[0]
+
+        try:
+            ok, message = save_auth(self.importer_path, username, password)
+        except Exception as e:                       # noqa: BLE001 - shown, not raised
+            ok, message = False, str(e)
+        # The password is not logged, not echoed back, and not kept.
+        del password
+        log.info("credential save: %s", "accepted" if ok else "rejected")
+
+        # Redirect after posting so a refresh cannot resubmit the form.
+        params = {"token": self.token}
+        if not ok:
+            params["connect"] = "1"
+            params["msg"] = message[:300]
+        self.send_response(303)
+        self.send_header("Location", "/?" + urlencode(params))
+        self.send_header("Content-Length", "0")
+        self.end_headers()
 
 
 def serve(token: str, importer_path: str, importer_args: Optional[List[str]] = None,

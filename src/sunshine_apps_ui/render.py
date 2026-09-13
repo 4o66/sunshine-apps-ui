@@ -111,6 +111,15 @@ summary{cursor:pointer;color:var(--text-muted)}
 pre{background:var(--bg-subtle);border:1px solid var(--border);border-radius:var(--radius-md);
 padding:.8rem;overflow:auto;font-family:var(--mono);font-size:.8rem;line-height:1.5;max-height:50vh}
 .err{border-left:3px solid var(--danger)}
+form{display:grid;gap:.4rem;max-width:26rem;margin:.5rem 0 1rem}
+form label{font-size:.85rem;color:var(--text-muted);font-weight:500}
+form input{background:var(--bg-base);color:var(--text);border:1px solid var(--border);
+border-radius:var(--radius-md);padding:.6rem .7rem;font:inherit;font-size:.95rem}
+form input:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+form button{margin-top:.5rem;background:var(--primary);color:#fff;border:1px solid var(--primary);
+border-radius:var(--radius-md);padding:.65rem 1.1rem;font:inherit;font-weight:500;cursor:pointer}
+form button:hover{background:var(--primary-hover)}
+form button:focus-visible{outline:3px solid var(--accent);outline-offset:3px}
 .note{color:var(--text-muted);font-size:.85rem;margin-top:1.75rem;
 border-top:1px solid var(--border);padding-top:.9rem}
 @media(max-width:520px){.wrap{padding:1rem .75rem 3rem}li{flex-direction:column;gap:.15rem}
@@ -142,7 +151,7 @@ def _entry_li(bucket: str, entry: Dict[str, Any]) -> str:
     return f'<li><span class="name">{name}</span>{sel}{extra}</li>'
 
 
-def _sources_bar(sources: List[Dict[str, Any]]) -> str:
+def _sources_bar(sources: List[Dict[str, Any]], extra: str = "") -> str:
     chips = []
     for src in sources:
         status = str(src.get("status", "?"))
@@ -153,10 +162,34 @@ def _sources_bar(sources: List[Dict[str, Any]]) -> str:
             f'<span class="chip"><span class="dot {_e(status)}"></span>'
             f'<b>{_e(src.get("name"))}</b> {_e(detail)}</span>'
         )
-    return f'<div class="bar">{"".join(chips)}</div>'
+    return f'<div class="bar">{"".join(chips)}{extra}</div>'
 
 
-def page(doc: Dict[str, Any], log: str = "", token: str = "") -> str:
+def credentials_form(token: str, message: str = "", username: str = "") -> str:
+    """Shown on first use and whenever Sunshine rejects what we have.
+
+    Applying changes needs Sunshine's own API, which needs its web UI login.
+    Asking here beats making someone run a shell script.
+    """
+    note = (f'<p class="why" style="color:var(--danger)">{_e(message)}</p>'
+            if message else
+            '<p class="why">Applying changes asks Sunshine to reload, which needs '
+            'the login you use for its web interface at port 47990.</p>')
+    return f"""<section><h2>Connect to Sunshine</h2>{note}
+<form method="post" action="/credentials?token={_e(token)}">
+<label for="u">Username</label>
+<input id="u" name="username" autocomplete="username" value="{_e(username)}" required autofocus>
+<label for="p">Password</label>
+<input id="p" name="password" type="password" autocomplete="current-password" required>
+<button type="submit">Verify and save</button>
+</form>
+<p class="why">Checked against Sunshine before it is stored, so a typo fails here
+rather than later. Saved to the config directory, readable only by you.</p>
+</section>"""
+
+
+def page(doc: Dict[str, Any], log: str = "", token: str = "",
+         auth_ok: bool = True, auth_message: str = "", show_form: bool = False) -> str:
     totals = doc.get("totals", {}) or {}
     plan = doc.get("plan", {}) or {}
     q = f"?token={_e(token)}" if token else ""
@@ -179,6 +212,11 @@ def page(doc: Dict[str, Any], log: str = "", token: str = "") -> str:
     summary = (f"{changing} change{'' if changing == 1 else 's'} pending"
                if changing else "Up to date — nothing would change")
 
+    auth_chip = (f'<span class="chip"><span class="dot {"ok" if auth_ok else "error"}"></span>'
+                 f'<b>sunshine</b> {"connected" if auth_ok else "needs sign-in"}</span>')
+
+    form_block = credentials_form(token, auth_message if not auth_ok else "") if show_form else ""
+
     log_block = ""
     if log.strip():
         log_block = (f'<details><summary>Importer log</summary>'
@@ -194,7 +232,8 @@ def page(doc: Dict[str, Any], log: str = "", token: str = "") -> str:
 <div class="wrap">
 <h1>{_e(summary)}</h1>
 <p class="sub"><code>{_e(doc.get("apps_json", ""))}</code></p>
-{_sources_bar(doc.get("sources") or [])}
+{_sources_bar(doc.get("sources") or [], auth_chip)}
+{form_block}
 <div class="actions"><a class="btn" href="/{q}">Re-scan</a></div>
 {"".join(sections)}
 {log_block}
