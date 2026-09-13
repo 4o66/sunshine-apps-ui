@@ -33,48 +33,88 @@ STATUS_NOTE = {
 }
 
 _CSS = """
-:root{color-scheme:light dark;--bg:#f6f7f9;--fg:#16181d;--muted:#5b6170;--card:#fff;
---line:#dfe2e8;--accent:#2f6bd8;--warnbg:#fff5e0;--danger:#a12d2d;--ok:#1f7a48}
-@media (prefers-color-scheme:dark){:root{--bg:#14161a;--fg:#e8eaef;--muted:#9aa1b1;
---card:#1c1f25;--line:#2c313a;--accent:#7aa6f5;--warnbg:#33270f;
---danger:#f0908c;--ok:#6ed39b}}
+/* Design tokens lifted from Sunshine's own sunshine.css so this reads as part
+   of the same tool: Bootstrap 5 palette, amber navbar, matching radii. */
+:root{
+--primary:#0d6efd;--primary-hover:#0b5ed7;--accent:#fd7e14;
+--success:#198754;--danger:#dc3545;--warning:#ffc107;--info:#0dcaf0;
+--bg-base:#fff;--bg-subtle:#f8f9fa;--bg-muted:#e9ecef;--surface:#fff;
+--border:#dee2e6;--border-strong:#adb5bd;
+--text:#212529;--text-muted:#6c757d;--text-subtle:#adb5bd;
+--navbar-bg:linear-gradient(135deg,#ffc400 0%,#ff9d00 100%);
+--navbar-text:#594400;--navbar-text-muted:#7f6100;
+--radius-sm:.375rem;--radius-md:.5rem;--radius-lg:.75rem;
+--shadow-sm:0 1px 2px 0 rgba(0,0,0,.05);
+--shadow-md:0 4px 6px -1px rgba(0,0,0,.1),0 2px 4px -1px rgba(0,0,0,.06);
+--mono:'SF Mono','Monaco','Inconsolata','Fira Code','Courier New',monospace;
+}
+@media(prefers-color-scheme:dark){:root{
+--primary-hover:#3d8bfd;--accent-hover:#fd9843;
+--bg-base:#212529;--bg-subtle:#2c3034;--bg-muted:#383d41;--surface:#2c3034;
+--border:#495057;--border-strong:#6c757d;
+--text:#f8f9fa;--text-muted:#adb5bd;--text-subtle:#6c757d;
+--shadow-sm:0 1px 2px 0 rgba(0,0,0,.3);
+--shadow-md:0 4px 6px -1px rgba(0,0,0,.4),0 2px 4px -1px rgba(0,0,0,.3);
+}}
 *{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.55 system-ui,-apple-system,sans-serif}
-.wrap{max-width:1100px;margin:0 auto;padding:24px 16px 64px}
-h1{font-size:1.5rem;margin:0 0 4px}
-.sub{color:var(--muted);margin:0 0 20px;font-size:.95rem}
-.sub code{font-size:.9em}
-.bar{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 24px}
-.chip{background:var(--card);border:1px solid var(--line);border-radius:999px;
-padding:7px 14px;font-size:.9rem;display:flex;gap:8px;align-items:center}
-.dot{width:9px;height:9px;border-radius:50%;flex:0 0 auto}
-.dot.ok{background:var(--ok)}.dot.not_found,.dot.disabled{background:var(--muted)}
+body{margin:0;min-height:100vh;background:var(--bg-base);color:var(--text);
+font:1rem/1.5 system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif}
+
+.navbar{background:var(--navbar-bg);box-shadow:var(--shadow-md);padding:.6rem 1rem;
+display:flex;align-items:baseline;gap:.6rem;flex-wrap:wrap}
+.navbar .brand{color:var(--navbar-text);font-weight:700;font-size:1.3rem;letter-spacing:-.01em}
+.navbar .sep{color:var(--navbar-text-muted)}
+.navbar .where{color:var(--navbar-text-muted);font-weight:500}
+.navbar .ro{margin-left:auto;color:var(--navbar-text-muted);font-size:.82rem;
+border:1px solid var(--navbar-text-muted);border-radius:999px;padding:2px 10px}
+
+.wrap{max-width:1100px;margin:0 auto;padding:1.5rem 1rem 4rem}
+h1{font-size:1.35rem;margin:0 0 .25rem}
+.sub{color:var(--text-muted);margin:0 0 1.25rem;font-size:.95rem}
+.sub code{font-family:var(--mono);font-size:.85em}
+
+.bar{display:flex;flex-wrap:wrap;gap:.5rem;margin:0 0 1.25rem}
+.chip{background:var(--bg-subtle);border:1px solid var(--border);border-radius:999px;
+padding:.4rem .85rem;font-size:.875rem;display:flex;gap:.5rem;align-items:center}
+.dot{width:.55rem;height:.55rem;border-radius:50%;flex:0 0 auto}
+.dot.ok{background:var(--success)}
+.dot.not_found,.dot.disabled{background:var(--text-subtle)}
 .dot.error{background:var(--danger)}
-section{background:var(--card);border:1px solid var(--line);border-radius:12px;
-padding:16px 18px;margin:0 0 16px}
-section h2{font-size:1.05rem;margin:0;display:flex;align-items:baseline;gap:10px}
-section h2 .n{color:var(--muted);font-weight:400;font-size:.9rem}
-section p.why{color:var(--muted);margin:4px 0 12px;font-size:.9rem}
-ul{list-style:none;margin:0;padding:0;display:grid;gap:6px}
-li{border:1px solid var(--line);border-radius:8px;padding:10px 12px;
-display:flex;flex-wrap:wrap;gap:4px 12px;align-items:baseline}
+
+section{background:var(--surface);border:1px solid var(--border);
+border-radius:var(--radius-lg);box-shadow:var(--shadow-sm);padding:1.25rem 1.4rem;margin:0 0 1rem}
+section h2{font-size:1.05rem;margin:0;display:flex;align-items:center;gap:.6rem}
+section h2 .n{background:var(--bg-muted);color:var(--text);border-radius:999px;
+padding:.1rem .6rem;font-size:.8rem;font-weight:600}
+section p.why{color:var(--text-muted);margin:.35rem 0 .9rem;font-size:.9rem}
+
+ul{list-style:none;margin:0;padding:0;display:grid;gap:.4rem}
+li{background:var(--bg-subtle);border:1px solid var(--border);border-radius:var(--radius-md);
+padding:.6rem .8rem;display:flex;flex-wrap:wrap;gap:.2rem .75rem;align-items:baseline}
 li .name{font-weight:600}
-li .sel{color:var(--muted);font-size:.85rem;font-family:ui-monospace,monospace}
-li .fields{color:var(--muted);font-size:.85rem}
-.edit{background:var(--warnbg);border-color:transparent}
-.edit .d{width:100%;font-size:.88rem;font-family:ui-monospace,monospace;color:var(--muted)}
-.edit .d b{color:var(--fg);font-weight:600}
-a.btn{display:inline-block;background:var(--accent);color:#fff;text-decoration:none;
-border-radius:8px;padding:12px 20px;font-weight:600;font-size:1rem}
-a.btn.sec{background:transparent;color:var(--accent);border:1px solid var(--accent)}
+li .sel{color:var(--text-muted);font-size:.82rem;font-family:var(--mono)}
+li .fields{color:var(--text-muted);font-size:.85rem}
+.edit{border-left:3px solid var(--warning)}
+.edit .d{width:100%;font-size:.85rem;font-family:var(--mono);color:var(--text-muted);margin-top:.2rem}
+.edit .d b{color:var(--text);font-weight:600}
+
+a.btn{display:inline-block;background:var(--primary);color:#fff;text-decoration:none;
+border:1px solid var(--primary);border-radius:var(--radius-md);padding:.65rem 1.1rem;
+font-weight:500;font-size:.95rem;transition:background 150ms ease}
+a.btn:hover{background:var(--primary-hover);border-color:var(--primary-hover)}
+a.btn.sec{background:transparent;color:var(--primary)}
 a:focus-visible,summary:focus-visible{outline:3px solid var(--accent);outline-offset:3px}
-.actions{display:flex;gap:10px;flex-wrap:wrap;margin:20px 0}
-details{margin-top:22px}summary{cursor:pointer;color:var(--muted)}
-pre{background:var(--card);border:1px solid var(--line);border-radius:8px;
-padding:12px;overflow:auto;font-size:.82rem;line-height:1.5;max-height:50vh}
-.err{border-left:4px solid var(--danger);padding-left:14px}
-.note{color:var(--muted);font-size:.85rem;margin-top:26px;border-top:1px solid var(--line);padding-top:14px}
-@media(max-width:520px){.wrap{padding:16px 12px 48px}li{flex-direction:column;gap:2px}}
+.actions{display:flex;gap:.6rem;flex-wrap:wrap;margin:0 0 1.25rem}
+
+details{margin-top:1.5rem}
+summary{cursor:pointer;color:var(--text-muted)}
+pre{background:var(--bg-subtle);border:1px solid var(--border);border-radius:var(--radius-md);
+padding:.8rem;overflow:auto;font-family:var(--mono);font-size:.8rem;line-height:1.5;max-height:50vh}
+.err{border-left:3px solid var(--danger)}
+.note{color:var(--text-muted);font-size:.85rem;margin-top:1.75rem;
+border-top:1px solid var(--border);padding-top:.9rem}
+@media(max-width:520px){.wrap{padding:1rem .75rem 3rem}li{flex-direction:column;gap:.15rem}
+.navbar .ro{margin-left:0;width:100%}}
 """
 
 
@@ -148,9 +188,12 @@ def page(doc: Dict[str, Any], log: str = "", token: str = "") -> str:
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Sunshine apps</title><style>{_CSS}</style></head>
-<body><div class="wrap">
-<h1>Sunshine apps</h1>
-<p class="sub">{_e(summary)} &middot; <code>{_e(doc.get("apps_json", ""))}</code></p>
+<body>
+<div class="navbar"><span class="brand">Sunshine</span><span class="sep">/</span>
+<span class="where">apps import</span><span class="ro">read-only preview</span></div>
+<div class="wrap">
+<h1>{_e(summary)}</h1>
+<p class="sub"><code>{_e(doc.get("apps_json", ""))}</code></p>
 {_sources_bar(doc.get("sources") or [])}
 <div class="actions"><a class="btn" href="/{q}">Re-scan</a></div>
 {"".join(sections)}
@@ -170,8 +213,10 @@ def error_page(message: str, detail: str = "", token: str = "") -> str:
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Sunshine apps</title><style>{_CSS}</style></head>
-<body><div class="wrap">
-<h1>Sunshine apps</h1>
+<body>
+<div class="navbar"><span class="brand">Sunshine</span><span class="sep">/</span>
+<span class="where">apps import</span></div>
+<div class="wrap">
 <section class="err"><h2>Could not read a plan</h2>
 <p class="why">{_e(message)}</p>{extra}</section>
 <div class="actions"><a class="btn sec" href="/{q}">Try again</a></div>
