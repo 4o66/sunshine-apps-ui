@@ -422,10 +422,20 @@ class AppPageTest(ServerTest):
         self.assertEqual(status, 200)
         self.assertIn("data-apply", body)
 
-    def test_the_page_asks_for_that_script(self):
+    def test_the_page_asks_for_that_script_with_a_token(self):
+        """Every request needs one, including the page's own assets."""
         _, body = self.get(f"/app?index=1&token={self.token}")
-        self.assertIn('src="/app.js"', body)
+        self.assertIn(f'src="/app.js?token={self.token}"', body)
         self.assertIn("data-dirty-guard", body)
+
+    def test_a_browser_form_post_is_accepted(self):
+        """The exact header shape Chrome sends for a same-origin form post."""
+        status, headers = self.post(
+            {"op": "hide", "index": "1", "name": "Portal 2"},
+            token=self.token, path="/queue",
+            headers={"Origin": "null", "Sec-Fetch-Site": "same-origin",
+                     "Sec-Fetch-Mode": "navigate", "Sec-Fetch-Dest": "document"})
+        self.assertEqual(status, 303)
 
 
 class ExplainTest(ServerTest):

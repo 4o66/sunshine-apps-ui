@@ -49,9 +49,19 @@ def host_is_loopback(host_header: Optional[str], port: int) -> bool:
 
 
 def origin_is_same(origin: Optional[str], fetch_site: Optional[str], port: int) -> bool:
-    """Refuse anything a different site initiated."""
-    if fetch_site is not None and fetch_site not in ("same-origin", "none"):
-        return False
+    """Refuse anything a different site initiated.
+
+    Sec-Fetch-Site is the authority when present. It is set by the browser and a
+    page cannot forge it, whereas Origin is legitimately "null" for a
+    navigational form post from a page served with Referrer-Policy: no-referrer
+    -- which is a policy we set ourselves. Reading that "null" as a foreign
+    origin refuses the form the page just rendered.
+
+    Origin is only consulted when Sec-Fetch-Site is absent, which means an
+    older browser or a non-browser client.
+    """
+    if fetch_site is not None:
+        return fetch_site in ("same-origin", "none")
     if origin:
         parts = urlsplit(origin)
         hostname = f"[{parts.hostname}]" if parts.hostname and ":" in parts.hostname else parts.hostname

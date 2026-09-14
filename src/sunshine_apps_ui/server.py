@@ -43,7 +43,7 @@ class PlanHandler(BaseHTTPRequestHandler):
         # Nothing here should ever be embedded, cached, or sniffed.
         self.send_header("Cache-Control", "no-store")
         self.send_header("X-Content-Type-Options", "nosniff")
-        self.send_header("Referrer-Policy", "no-referrer")
+        self.send_header("Referrer-Policy", "same-origin")
         # img-src is needed for the tile artwork, which /art serves from this
         # same origin. Without it default-src 'none' blocks every tile and the
         # browser never even issues the request.
@@ -262,7 +262,10 @@ class PlanHandler(BaseHTTPRequestHandler):
         allowed, reason = security.check(self.headers, supplied, self.token,
                                          self.port, self.command)
         if not allowed:
-            log.warning("refused POST %s: %s", parts.path, reason)
+            log.warning("refused POST %s: %s (Host=%r Origin=%r Sec-Fetch-Site=%r)",
+                        parts.path, reason, self.headers.get("Host"),
+                        self.headers.get("Origin"),
+                        self.headers.get("Sec-Fetch-Site"))
             self._send(404, error_page("Not found."))
             return
 

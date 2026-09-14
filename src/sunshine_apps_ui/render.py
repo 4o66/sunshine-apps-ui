@@ -628,7 +628,7 @@ def app_page(entry: Dict[str, Any], token: str, *, is_new: bool = False,
 </form>
 {extra}
 </div>
-<script src="/app.js"></script>
+<script src="/app.js?token={_e(token)}"></script>
 </body></html>"""
 
 
