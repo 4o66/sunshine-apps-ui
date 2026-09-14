@@ -1,6 +1,7 @@
 """End-to-end tests against a real server on a loopback port."""
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -85,15 +86,35 @@ def fake_importer(payload=None, exit_code=0, stderr="log line"):
 
 class ServerTest(unittest.TestCase):
     def setUp(self):
+        # Every test gets its own state, and every test's state is gone when it
+        # ends. Shared state between tests here is not a tidiness question: the
+        # queue is a file, and two tests using one file race.
+        self.state_dir = tempfile.mkdtemp()
+        self._previous_state_home = os.environ.get("XDG_STATE_HOME")
+        os.environ["XDG_STATE_HOME"] = self.state_dir
+
         self.importer = fake_importer()
         self.token = security.new_token()
         self.httpd = serve(self.token, self.importer, [], port=0)
+        # ThreadingHTTPServer runs handlers as daemon threads and does not wait
+        # for them, so a request still being served when a test ends carries on
+        # into the next one -- writing that test's queue file out from under it.
+        # This made StopAfterApplyTest fail about one run in five, and only on
+        # the machine fast enough to start the next test before the last one
+        # had finished.
+        self.httpd.daemon_threads = False
+        self.httpd.block_on_close = True
         self.port = self.httpd.server_address[1]
         threading.Thread(target=self.httpd.serve_forever, daemon=True).start()
 
     def tearDown(self):
         self.httpd.shutdown()
-        self.httpd.server_close()
+        self.httpd.server_close()          # joins any handler still running
+        if self._previous_state_home is None:
+            os.environ.pop("XDG_STATE_HOME", None)
+        else:
+            os.environ["XDG_STATE_HOME"] = self._previous_state_home
+        shutil.rmtree(self.state_dir, ignore_errors=True)
         os.unlink(self.importer)
 
     def get(self, path="/", token=None, headers=None):
@@ -371,8 +392,19 @@ class ApplyTest(ServerTest):
 
 
 class AppliedPageTest(ServerTest):
+    def queue_a_change(self):
+        """Apply with an empty queue goes home, which is not what is being tested.
+
+        These two used to pass without this, on whatever happened to be left in
+        the real state directory by an earlier test.
+        """
+        from sunshine_apps_ui import state as st
+        st.enqueue({"op": "edit", "index": 1, "name": "Portal 2",
+                    "fields": {"name": "Portal 2"}})
+
     def test_success_lands_somewhere_static(self):
         """Re-running the importer here would race the teardown the apply caused."""
+        self.queue_a_change()
         status, headers = self.post({}, token=self.token, path="/apply")
         self.assertEqual(status, 303)
         self.assertTrue(headers["Location"].startswith("/applied?"), headers["Location"])
@@ -393,6 +425,13 @@ class AppliedPageTest(ServerTest):
             os.unlink(path)
             os.path.exists(marker) and os.unlink(marker)
 
+    def test_an_empty_queue_has_nothing_to_apply(self):
+        """Applying reloads Sunshine and reloading disconnects, so doing it for
+        no change is worse than doing nothing."""
+        status, headers = self.post({}, token=self.token, path="/apply")
+        self.assertEqual(status, 303)
+        self.assertTrue(headers["Location"].startswith("/?"), headers["Location"])
+
     def test_applied_needs_the_token(self):
         self.assertEqual(self.get("/applied")[0], 404)
 
@@ -403,6 +442,7 @@ class AppliedPageTest(ServerTest):
         os.close(fd); os.chmod(path, 0o755)
         self.httpd.RequestHandlerClass.importer_path = path
         try:
+            self.queue_a_change()
             status, headers = self.post({}, token=self.token, path="/apply")
             self.assertEqual(status, 303)
             self.assertIn("apply_error", headers["Location"])
