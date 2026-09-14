@@ -392,7 +392,8 @@ shown by sunshine-apps-ui {_e(__version__)}.</p>
 </div></body></html>"""
 
 
-def error_page(message: str, detail: str = "", token: str = "") -> str:
+def error_page(message: str, detail: str = "", token: str = "",
+               title: str = "Something went wrong") -> str:
     q = f"?token={_e(token)}" if token else ""
     extra = f"<pre>{_e(detail)}</pre>" if detail else ""
     return f"""<!doctype html>
@@ -403,7 +404,7 @@ def error_page(message: str, detail: str = "", token: str = "") -> str:
 <div class="navbar"><span class="brand">Sunshine</span><span class="sep">/</span>
 <span class="where">apps import</span></div>
 <div class="wrap">
-<section class="err"><h2>Could not read a plan</h2>
+<section class="err"><h2>{_e(title)}</h2>
 <p class="why">{_e(message)}</p>{extra}</section>
 <div class="actions"><a class="btn sec" href="/{q}">Try again</a></div>
 </div></body></html>"""
@@ -462,6 +463,7 @@ _PENDING = {
     "clone": ("COPY QUEUED", False),
     "adopt": ("UPDATED", False),
     "suppress": ("WILL HIDE", True),
+    "restore": ("WILL UN-HIDE", False),
 }
 
 
@@ -519,9 +521,14 @@ def grid_page(state: Dict[str, Any], token: str, *, new_ids: Optional[set] = Non
                 for i, a in enumerate(apps) if a.get("source")}
     marks: Dict[int, tuple] = {}
     ghosts: List[Dict[str, Any]] = []
+    restores: set = set()
     for op in pending:
         kind = str(op.get("op", ""))
         scanned_op = bool(op.get("from_scan"))
+
+        if kind == "restore":
+            restores.add(str(op.get("selector", "")))
+            continue
 
         if kind in ("add", "clone"):
             fields = op.get("fields") or {}
@@ -557,7 +564,10 @@ def grid_page(state: Dict[str, Any], token: str, *, new_ids: Optional[set] = Non
         kind, scanned_op = marks.get(position, ("", False))
         tiles.append(_tile(entry, token, pending=kind, from_scan=scanned_op))
     for entry in hidden:
-        tiles.append(_tile(entry, token, is_hidden=True))
+        key = f'{entry.get("source")}:{entry.get("id")}'
+        coming_back = key in restores
+        tiles.append(_tile(entry, token, is_hidden=not coming_back,
+                           pending="restore" if coming_back else ""))
     for ghost in ghosts:
         if ghost["op"] == "clone":
             label, tone = "COPY QUEUED", "ghost"
@@ -665,6 +675,48 @@ def render_fields():
 def render_flags():
     """The editable boolean fields."""
     return list(_FLAGS)
+
+
+def hidden_page(entry: Dict[str, Any], token: str, queued: bool = False) -> str:
+    """A hidden entry, and the way back.
+
+    Hidden entries are not in apps.json at all -- they are tombstones -- so they
+    have none of the fields the edit screen shows. What they have is a way to
+    stop being hidden.
+    """
+    name = entry.get("name") or "(unnamed)"
+    image = entry.get("image-path") or ""
+    art = (f'<img src="/art?p={_eq(image)}&token={_e(token)}" alt="">'
+           if image else "")
+    selector_text = f'{entry.get("source")}:{entry.get("id")}'
+
+    if queued:
+        action = ('<p class="why">Already queued to come back. '
+                  'Apply on the grid to make it so.</p>')
+    else:
+        action = (f'<form method="post" action="/queue?token={_e(token)}">'
+                  f'<input type="hidden" name="op" value="restore">'
+                  f'<input type="hidden" name="selector" value="{_e(selector_text)}">'
+                  f'<input type="hidden" name="name" value="{_e(name)}">'
+                  f'<div class="actions">'
+                  f'<button class="btn" type="submit">Un-hide it</button>'
+                  f'<a class="btn sec" href="/?token={_e(token)}">Back</a></div></form>')
+
+    return f"""<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{_e(name)}</title><style>{_CSS}{_APP_CSS}{_GRID_CSS}</style></head>
+<body>
+<div class="navbar"><span class="brand">Sunshine</span><span class="sep">/</span>
+<span class="where">apps</span></div>
+<div class="wrap">
+<h1>{_e(name)}</h1>
+<div class="preview">{art}<div class="meta">
+<b>Hidden.</b> It is not in your app list, and scanning will not bring it back.
+Un-hiding lets the next scan find it again.<br>
+<span class="sel">{_e(selector_text)}</span></div></div>
+{action}
+</div></body></html>"""
 
 
 def app_page(entry: Dict[str, Any], token: str, *, is_new: bool = False,

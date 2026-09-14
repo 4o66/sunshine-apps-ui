@@ -761,3 +761,64 @@ class ApplyCountsTheQueueTest(ServerTest):
             self.httpd.RequestHandlerClass.importer_path = self.importer
             os.unlink(path)
             os.path.exists(argdump) and os.unlink(argdump)
+
+
+class HiddenEntryTest(ServerTest):
+    """A hidden entry needs a way back, or hiding is one-way in the UI."""
+
+    def setUp(self):
+        super().setUp()
+        import tempfile as tf
+        self.sd = tf.mkdtemp()
+        self._old = os.environ.get("XDG_STATE_HOME")
+        os.environ["XDG_STATE_HOME"] = self.sd
+
+    def tearDown(self):
+        import shutil as sh
+        if self._old is None:
+            os.environ.pop("XDG_STATE_HOME", None)
+        else:
+            os.environ["XDG_STATE_HOME"] = self._old
+        sh.rmtree(self.sd, ignore_errors=True)
+        super().tearDown()
+
+    def test_a_hidden_tile_has_a_detail_page(self):
+        status, body = self.get(f"/app?hidden=steam%3A440&token={self.token}")
+        self.assertEqual(status, 200)
+        self.assertIn("TF2", body)
+        self.assertIn("Un-hide it", body)
+
+    def test_it_explains_what_hidden_means(self):
+        _, body = self.get(f"/app?hidden=steam%3A440&token={self.token}")
+        self.assertIn("scanning will not bring it back", body)
+
+    def test_un_hiding_queues_a_restore(self):
+        from sunshine_apps_ui import state as st
+        self.post({"op": "restore", "selector": "steam:440", "name": "TF2"},
+                  token=self.token, path="/queue")
+        self.assertEqual(st.queue()[0]["op"], "restore")
+        self.assertEqual(st.queue()[0]["selector"], "steam:440")
+
+    def test_the_grid_shows_it_coming_back(self):
+        from sunshine_apps_ui import state as st
+        st.enqueue({"op": "restore", "selector": "steam:440", "name": "TF2"})
+        _, body = self.get(token=self.token)
+        self.assertIn("WILL UN-HIDE", body)
+        self.assertNotIn('class="mark">hidden', body)
+
+    def test_asking_twice_says_it_is_already_queued(self):
+        from sunshine_apps_ui import state as st
+        st.enqueue({"op": "restore", "selector": "steam:440", "name": "TF2"})
+        _, body = self.get(f"/app?hidden=steam%3A440&token={self.token}")
+        self.assertIn("Already queued", body)
+        self.assertNotIn("Un-hide it", body)
+
+    def test_an_entry_that_is_not_hidden_says_so(self):
+        status, body = self.get(f"/app?hidden=steam%3A999&token={self.token}")
+        self.assertEqual(status, 404)
+        self.assertIn("not hidden", body)
+        self.assertNotIn("Could not read a plan", body)
+
+    def test_a_restore_without_a_selector_is_refused(self):
+        status, _ = self.post({"op": "restore"}, token=self.token, path="/queue")
+        self.assertEqual(status, 400)

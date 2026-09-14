@@ -15,8 +15,8 @@ from . import artwork, state
 from .importer import (ImporterError, check_auth, get_state, mutate,
                        run_plan, save_auth)
 from .render import (app_page, applied_page, confirm_page, connect_page,
-                     error_page, explain_page, grid_page, page,
-                     render_fields, render_flags)
+                     error_page, explain_page, grid_page, hidden_page,
+                     page, render_fields, render_flags)
 
 log = logging.getLogger("sunshine-apps-ui")
 
@@ -123,10 +123,32 @@ class PlanHandler(BaseHTTPRequestHandler):
             if "new" in query:
                 self._send(200, app_page({}, self.token, is_new=True))
                 return
+            if "hidden" in query:
+                wanted = (query.get("hidden") or [""])[0]
+                try:
+                    current = get_state(self.importer_path, use_cache=True)
+                except ImporterError as e:
+                    self._send(500, error_page("Could not read the app list.",
+                                               str(e), token=self.token))
+                    return
+                entry = next(
+                    (h for h in (current.get("hidden") or [])
+                     if f'{h.get("source")}:{h.get("id")}' == wanted), None)
+                if entry is None:
+                    self._send(404, error_page("That entry is not hidden.",
+                                               token=self.token,
+                                               title="Nothing to show"))
+                    return
+                already = any(op.get("op") == "restore"
+                              and op.get("selector") == wanted
+                              for op in state.queue())
+                self._send(200, hidden_page(entry, self.token, queued=already))
+                return
             entry = self._entry(query)
             if entry is None:
                 self._send(404, error_page("That application is no longer there.",
-                                           token=self.token))
+                                           token=self.token,
+                                           title="Nothing to show"))
                 return
             self._send(200, app_page(entry, self.token))
             return
@@ -295,6 +317,15 @@ class PlanHandler(BaseHTTPRequestHandler):
         if parts.path == "/queue":
             fields = self._form()
             op = (fields.get("op") or [""])[0]
+            if op == "restore":
+                selector = (fields.get("selector") or [""])[0]
+                if not selector:
+                    self._send(400, error_page("Nothing to un-hide.", token=self.token))
+                    return
+                state.enqueue({"op": "restore", "selector": selector,
+                               "name": (fields.get("name") or [""])[0]})
+                self._redirect("/")
+                return
             if op not in state.EXPLAINED:
                 self._send(400, error_page("Unknown action.", token=self.token))
                 return
