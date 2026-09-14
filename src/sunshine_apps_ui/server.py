@@ -111,7 +111,7 @@ class PlanHandler(BaseHTTPRequestHandler):
             auth_ok, _ = self._auth_state()
             self._send(200, grid_page(current, self.token, new_ids=new_ids,
                                       scanned=scanned, auth_ok=auth_ok,
-                                      queued=len(state.queue())))
+                                      pending=state.queue()))
             return
 
         if parts.path == "/app.js":

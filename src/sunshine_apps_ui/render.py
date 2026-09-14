@@ -402,7 +402,13 @@ font-size:.9rem;color:var(--text-muted);background:var(--bg-muted)}
 font-size:.82rem;font-weight:600;color:#fff;
 background:linear-gradient(transparent,rgba(0,0,0,.85))}
 .tile.new{border-color:var(--success)}
-.tile.new .flag{position:absolute;top:.4rem;left:.4rem;background:var(--success);
+.tile.pending{border-color:var(--warning)}
+.tile.pending .flag{background:var(--warning);color:#1a1a1a}
+.tile.willgo img,.tile.willgo .fallback{filter:grayscale(1);opacity:.4}
+.tile.ghost{border:2px dashed var(--warning);background:transparent}
+.tile.ghost .fallback{background:transparent;color:var(--text-muted)}
+.tile.ghost .flag{background:var(--warning);color:#1a1a1a}
+.tile .flag{position:absolute;top:.4rem;left:.4rem;z-index:1;background:var(--success);
 color:#fff;font-size:.68rem;font-weight:700;letter-spacing:.04em;
 padding:.15rem .45rem;border-radius:999px}
 .tile.hidden img,.tile.hidden .fallback{filter:grayscale(1);opacity:.32}
@@ -418,17 +424,31 @@ font-size:.85rem;margin:0 0 1rem}
 .legend i{font-style:normal;border-radius:3px;padding:0 .35rem;border:2px solid}
 .legend i.new{border-color:var(--success)}
 .legend i.hid{border-color:var(--border-strong);border-style:dashed}
+.legend i.pend{border-color:var(--warning)}
 """
 
 
+# What a queued operation does to the tile it refers to.
+_PENDING = {
+    "hide": ("WILL HIDE", True),
+    "delete": ("WILL DELETE", True),
+    "edit": ("EDITED", False),
+    "clone": ("COPY QUEUED", False),
+}
+
+
 def _tile(entry: Dict[str, Any], token: str, *, is_new: bool = False,
-          is_hidden: bool = False) -> str:
+          is_hidden: bool = False, pending: str = "") -> str:
     name = _e(entry.get("name") or "(unnamed)")
     image = entry.get("image-path") or ""
     inner = (f'<img src="/art?p={_eq(image)}&token={_e(token)}" alt="">'
              if image else f'<div class="fallback">{name}</div>')
-    classes = "tile" + (" new" if is_new else "") + (" hidden" if is_hidden else "")
-    flag = '<span class="flag">NEW</span>' if is_new else ""
+
+    label, greyed = _PENDING.get(pending, ("", False))
+    classes = ("tile" + (" new" if is_new else "") + (" hidden" if is_hidden else "")
+               + (" pending" if label else "") + (" willgo" if greyed else ""))
+    flag = (f'<span class="flag">{_e(label)}</span>' if label
+            else ('<span class="flag">NEW</span>' if is_new else ""))
     mark = '<span class="mark">hidden</span>' if is_hidden else ""
     target = (f'/app?index={_e(entry.get("index"))}&token={_e(token)}'
               if entry.get("index") is not None
@@ -454,32 +474,66 @@ def connect_page(token: str, message: str = "", username: str = "") -> str:
 
 
 def grid_page(state: Dict[str, Any], token: str, *, new_ids: Optional[set] = None,
-              scanned: bool = False, queued: int = 0, auth_ok: bool = True) -> str:
+              scanned: bool = False, auth_ok: bool = True,
+              pending: Optional[List[Dict[str, Any]]] = None) -> str:
     new_ids = new_ids or set()
+    pending = pending or []
     apps = state.get("apps") or []
     hidden = state.get("hidden") or []
 
+    # Which tile each queued operation refers to, matched the way the importer
+    # matches them: by position, falling back to an unambiguous name.
+    marks: Dict[int, str] = {}
+    ghosts: List[Dict[str, Any]] = []
+    for op in pending:
+        kind = str(op.get("op", ""))
+        if kind in ("add", "clone"):
+            fields = op.get("fields") or {}
+            ghosts.append({"name": fields.get("name") or "(unnamed)", "op": kind})
+            if kind == "clone":
+                continue
+            continue
+        index = op.get("index")
+        if not isinstance(index, int) or not (0 <= index < len(apps)):
+            names = [i for i, a in enumerate(apps) if a.get("name") == op.get("name")]
+            index = names[0] if len(names) == 1 else None
+        if index is not None:
+            marks[index] = kind
+
     tiles = []
-    for entry in apps:
+    for position, entry in enumerate(apps):
         key = f'{entry.get("source")}:{entry.get("id")}'
-        tiles.append(_tile(entry, token, is_new=key in new_ids))
+        tiles.append(_tile(entry, token, is_new=key in new_ids,
+                           pending=marks.get(position, "")))
     for entry in hidden:
         tiles.append(_tile(entry, token, is_hidden=True))
+    for ghost in ghosts:
+        label = "NEW" if ghost["op"] == "add" else "COPY"
+        tiles.append(f'<span class="tile ghost"><div class="fallback">&nbsp;</div>'
+                     f'<span class="flag">{label} QUEUED</span>'
+                     f'<span class="cap">{_e(ghost["name"])}</span></span>')
     tiles.append(f'<a class="tile add" href="/app?new=1&token={_e(token)}">'
                  f'<div class="fallback">+ Add an application</div></a>')
+    queued = len(pending)
 
     legend = ""
-    if scanned or hidden:
-        parts = []
-        if scanned:
-            parts.append('<span><i class="new">&nbsp;</i> found by the last scan</span>')
-        if hidden:
-            parts.append('<span><i class="hid">&nbsp;</i> hidden, will not come back</span>')
+    parts = []
+    if queued:
+        parts.append('<span><i class="pend">&nbsp;</i> queued, not applied yet</span>')
+    if scanned:
+        parts.append('<span><i class="new">&nbsp;</i> found by the last scan</span>')
+    if hidden:
+        parts.append('<span><i class="hid">&nbsp;</i> hidden, will not come back</span>')
+    if parts:
         legend = f'<div class="legend">{"".join(parts)}</div>'
 
     apply_button = (f'<a class="btn" href="/apply?token={_e(token)}">'
                     f'Apply {queued} change{"" if queued == 1 else "s"}</a>'
                     if queued else "")
+    discard_button = (f'<form method="post" action="/discard?token={_e(token)}" '
+                      f'style="display:inline">'
+                      f'<button class="btn sec" type="submit">Discard</button></form>'
+                      if queued else "")
     auth_note = ("" if auth_ok else
                  f'<div class="bar"><span class="chip">'
                  f'<span class="dot error"></span><b>sunshine</b> needs sign-in</span>'
@@ -497,9 +551,8 @@ def grid_page(state: Dict[str, Any], token: str, *, new_ids: Optional[set] = Non
 <h1>{len(apps)} application{'' if len(apps) == 1 else 's'}</h1>
 <p class="sub"><code>{_e(state.get("apps_json", ""))}</code></p>
 {auth_note}
-<div class="actions">{apply_button}
-<a class="btn{'' if not queued else ' sec'}" href="/?scan=1&token={_e(token)}">Rescan</a>
-<a class="btn sec" href="/plan?token={_e(token)}">What would change</a></div>
+<div class="actions">{apply_button}{discard_button}
+<a class="btn{'' if not queued else ' sec'}" href="/?scan=1&token={_e(token)}">Rescan</a></div>
 {legend}
 <div class="grid">{"".join(tiles)}</div>
 </div></body></html>"""

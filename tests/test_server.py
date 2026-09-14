@@ -549,6 +549,72 @@ class GridTest(ServerTest):
         _, body = self.get(token=self.token)
         self.assertIn("Add an application", body)
 
+    def test_a_queued_hide_is_visible_on_the_tile(self):
+        """The grid is where changes are shown, so a queued change belongs on it."""
+        import tempfile as tf, shutil as sh
+        d = tf.mkdtemp()
+        old = os.environ.get("XDG_STATE_HOME")
+        os.environ["XDG_STATE_HOME"] = d
+        try:
+            from sunshine_apps_ui import state as st
+            st.enqueue({"op": "hide", "index": 1, "name": "Portal 2"})
+            _, body = self.get(token=self.token)
+            self.assertIn("WILL HIDE", body)
+            self.assertIn("tile pending", body)
+            self.assertIn("queued, not applied yet", body)
+        finally:
+            if old is None:
+                os.environ.pop("XDG_STATE_HOME", None)
+            else:
+                os.environ["XDG_STATE_HOME"] = old
+            sh.rmtree(d, ignore_errors=True)
+
+    def test_a_queued_delete_reads_differently_from_a_hide(self):
+        import tempfile as tf, shutil as sh
+        d = tf.mkdtemp()
+        old = os.environ.get("XDG_STATE_HOME")
+        os.environ["XDG_STATE_HOME"] = d
+        try:
+            from sunshine_apps_ui import state as st
+            st.enqueue({"op": "delete", "index": 1, "name": "Portal 2"})
+            _, body = self.get(token=self.token)
+            self.assertIn("WILL DELETE", body)
+            self.assertNotIn("WILL HIDE", body)
+        finally:
+            if old is None:
+                os.environ.pop("XDG_STATE_HOME", None)
+            else:
+                os.environ["XDG_STATE_HOME"] = old
+            sh.rmtree(d, ignore_errors=True)
+
+    def test_a_queued_addition_appears_as_a_ghost_tile(self):
+        import tempfile as tf, shutil as sh
+        d = tf.mkdtemp()
+        old = os.environ.get("XDG_STATE_HOME")
+        os.environ["XDG_STATE_HOME"] = d
+        try:
+            from sunshine_apps_ui import state as st
+            st.enqueue({"op": "add", "fields": {"name": "My Script"}})
+            _, body = self.get(token=self.token)
+            self.assertIn("tile ghost", body)
+            self.assertIn("My Script", body)
+            self.assertIn("NEW QUEUED", body)
+        finally:
+            if old is None:
+                os.environ.pop("XDG_STATE_HOME", None)
+            else:
+                os.environ["XDG_STATE_HOME"] = old
+            sh.rmtree(d, ignore_errors=True)
+
+    def test_the_plan_view_is_no_longer_linked_from_the_grid(self):
+        """The grid shows changes now; a separate diff view only confuses."""
+        _, body = self.get(token=self.token)
+        self.assertNotIn("What would change", body)
+
+    def test_discard_is_offered_only_when_something_is_queued(self):
+        _, body = self.get(token=self.token)
+        self.assertNotIn(">Discard<", body)
+
     def test_apply_is_absent_with_nothing_queued(self):
         _, body = self.get(token=self.token)
         self.assertNotIn("Apply 0", body)
