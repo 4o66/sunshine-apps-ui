@@ -877,3 +877,42 @@ class AuthFailureWordingTest(ServerTest):
         finally:
             self.httpd.RequestHandlerClass.importer_path = self.importer
             os.unlink(path)
+
+
+class StagedArtworkTest(ServerTest):
+    def setUp(self):
+        super().setUp()
+        import tempfile as tf
+        self.sd = tf.mkdtemp()
+        self._old = os.environ.get("XDG_STATE_HOME")
+        os.environ["XDG_STATE_HOME"] = self.sd
+        fd, self.png = tf.mkstemp(suffix=".png")
+        os.write(fd, b"\x89PNG\r\n\x1a\n" + b"0" * 64)
+        os.close(fd)
+
+    def tearDown(self):
+        import shutil as sh
+        if self._old is None:
+            os.environ.pop("XDG_STATE_HOME", None)
+        else:
+            os.environ["XDG_STATE_HOME"] = self._old
+        sh.rmtree(self.sd, ignore_errors=True)
+        os.path.exists(self.png) and os.unlink(self.png)
+        super().tearDown()
+
+    def test_a_staged_tile_can_load_its_artwork(self):
+        """Staged entries are in neither apps.json nor the tombstones."""
+        from urllib.parse import quote
+        from sunshine_apps_ui import state as st
+        st.enqueue({"op": "adopt", "name": "TF2",
+                    "entry": {"name": "TF2", "image-path": self.png}})
+        status, _ = self.get(f"/art?p={quote(self.png, safe='')}&token={self.token}")
+        self.assertEqual(status, 200)
+
+    def test_an_unreferenced_path_is_still_refused_with_a_queue_present(self):
+        from urllib.parse import quote
+        from sunshine_apps_ui import state as st
+        st.enqueue({"op": "adopt", "name": "TF2",
+                    "entry": {"name": "TF2", "image-path": self.png}})
+        status, _ = self.get(f"/art?p={quote('/etc/passwd', safe='')}&token={self.token}")
+        self.assertEqual(status, 404)

@@ -75,7 +75,8 @@ class PlanHandler(BaseHTTPRequestHandler):
             except ImporterError:
                 self._send(404, error_page("Not found.", token=self.token))
                 return
-            found = artwork.read(wanted, artwork.allowed_paths(current))
+            found = artwork.read(wanted,
+                                 artwork.allowed_paths(current, state.queue()))
             if not found:
                 log.warning("artwork not served: %r", wanted)
                 self._send(404, error_page("Not found.", token=self.token))

@@ -8,7 +8,7 @@ this cannot be walked: an arbitrary path is not refused by inspecting it for
 
 import mimetypes
 import os
-from typing import Any, Dict, Optional, Set
+from typing import Any, Dict, List, Optional, Set
 
 # Relative image-paths (Sunshine's own defaults use them) resolve against the
 # directory it ships its assets in.
@@ -31,13 +31,26 @@ def resolve(image_path: str) -> str:
     return ""
 
 
-def allowed_paths(state: Dict[str, Any]) -> Set[str]:
-    """Every image-path the current configuration refers to."""
+def allowed_paths(state: Dict[str, Any],
+                  pending: Optional[List[Dict[str, Any]]] = None) -> Set[str]:
+    """Every image-path the interface may legitimately show.
+
+    That is the current configuration *and* anything queued but not yet applied:
+    a game a scan has just staged is in neither apps.json nor its tombstones, so
+    leaving the queue out means every newly found tile shows a broken image.
+    """
     paths = set()
     for group in ("apps", "hidden"):
         for entry in state.get(group) or []:
             if isinstance(entry, dict) and entry.get("image-path"):
                 paths.add(str(entry["image-path"]))
+
+    for op in pending or []:
+        if not isinstance(op, dict):
+            continue
+        for source in (op.get("entry"), op.get("fields"), op):
+            if isinstance(source, dict) and source.get("image-path"):
+                paths.add(str(source["image-path"]))
     return paths
 
 

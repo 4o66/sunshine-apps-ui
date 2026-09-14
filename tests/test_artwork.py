@@ -72,3 +72,29 @@ class TestResolve(unittest.TestCase):
 
     def test_empty_resolves_to_nothing(self):
         self.assertEqual(artwork.resolve(""), "")
+
+
+class TestQueuedArtwork(unittest.TestCase):
+    """A staged entry is in neither apps.json nor its tombstones."""
+
+    def test_a_staged_entry_may_show_its_art(self):
+        pending = [{"op": "adopt", "name": "TF2",
+                    "entry": {"name": "TF2", "image-path": "/img/440.png"}}]
+        self.assertIn("/img/440.png", artwork.allowed_paths(STATE, pending))
+
+    def test_a_queued_edit_may_show_its_new_art(self):
+        pending = [{"op": "edit", "name": "A", "fields": {"image-path": "/img/new.png"}}]
+        self.assertIn("/img/new.png", artwork.allowed_paths(STATE, pending))
+
+    def test_a_tombstone_style_op_may_show_its_art(self):
+        pending = [{"op": "suppress", "name": "X", "image-path": "/img/x.png"}]
+        self.assertIn("/img/x.png", artwork.allowed_paths(STATE, pending))
+
+    def test_the_queue_does_not_widen_it_to_anything_else(self):
+        pending = [{"op": "adopt", "entry": {"name": "TF2", "image-path": "/img/440.png"}}]
+        allowed = artwork.allowed_paths(STATE, pending)
+        self.assertNotIn("/etc/passwd", allowed)
+        self.assertEqual(allowed, {"/tmp/a.png", "/tmp/c.png", "/img/440.png"})
+
+    def test_no_queue_behaves_as_before(self):
+        self.assertEqual(artwork.allowed_paths(STATE), {"/tmp/a.png", "/tmp/c.png"})
