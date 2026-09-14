@@ -23,3 +23,7 @@ Companion = "https://github.com/4o66/bazzite-sunshine-manager"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+# The dirty-guard script is served at runtime, so it must be installed.
+"sunshine_apps_ui" = ["assets/*"]

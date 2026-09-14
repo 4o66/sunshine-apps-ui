@@ -120,6 +120,26 @@ def save_auth(importer: str, username: str, password: str,
         return False, tail[-1] if tail else "Could not save credentials"
 
 
+def mutate(importer: str, ops: List[Dict[str, Any]], *, reload: bool = True,
+           timeout: int = 120) -> Tuple[bool, str]:
+    """Send queued operations to the importer, which owns apps.json."""
+    cmd = [importer, "--mutate", "--json"] + (["--reload"] if reload else [])
+    try:
+        proc = subprocess.run(cmd, input=json.dumps({"ops": ops}),
+                              capture_output=True, text=True, timeout=timeout)
+    except subprocess.TimeoutExpired as e:
+        raise ImporterError(f"Importer did not finish within {timeout}s") from e
+    try:
+        doc = json.loads(proc.stdout)
+    except json.JSONDecodeError:
+        tail = (proc.stderr or "").strip().splitlines()
+        return False, tail[-1] if tail else "Could not apply the changes"
+    failures = [r for r in doc.get("results", []) if not r.get("ok")]
+    if failures:
+        return False, "; ".join(str(f.get("error")) for f in failures)[:300]
+    return True, f"Applied {doc.get('applied', 0)} change(s)"
+
+
 def apply_plan(importer: str, extra_args: Optional[List[str]] = None,
                timeout: int = 300) -> Tuple[bool, str]:
     """Write apps.json and ask Sunshine to reload it. The opposite of run_plan.

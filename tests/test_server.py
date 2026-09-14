@@ -173,6 +173,8 @@ class ServerTest(unittest.TestCase):
             self.assertIn("img-src 'self'", csp)
         if "<form" in body:
             self.assertIn("form-action 'self'", csp)
+        if "<script" in body:
+            self.assertIn("script-src 'self'", csp)
 
     def test_security_headers_are_present(self):
         url = f"http://127.0.0.1:{self.port}/?token={self.token}"
@@ -253,7 +255,8 @@ class CredentialsEndpointTest(ServerTest):
         self.assertNotIn("sup3rsecret", headers["Location"])
 
     def test_an_oversized_body_is_rejected(self):
-        status, _ = self.post({"username": "a" * 9000, "password": "b"}, token=self.token)
+        """Edit forms are bigger than a login, so the cap is 64K, not 8K."""
+        status, _ = self.post({"username": "a" * 70000, "password": "b"}, token=self.token)
         self.assertEqual(status, 400)
 
     def test_the_form_is_offered_when_asked_for(self):
@@ -389,6 +392,124 @@ class AppliedPageTest(ServerTest):
         finally:
             self.httpd.RequestHandlerClass.importer_path = self.importer
             os.unlink(path)
+
+
+class AppPageTest(ServerTest):
+    def test_it_shows_every_editable_field(self):
+        status, body = self.get(f"/app?index=1&token={self.token}")
+        self.assertEqual(status, 200)
+        for field in ("name", "cmd", "working-dir", "image-path"):
+            self.assertIn(f'name="{field}"', body)
+
+    def test_it_says_whether_the_importer_owns_the_entry(self):
+        _, managed = self.get(f"/app?index=1&token={self.token}")
+        self.assertIn("Created by the importer", managed)
+        _, mine = self.get(f"/app?index=0&token={self.token}")
+        self.assertIn("Yours.", mine)
+
+    def test_the_new_form_has_no_delete_or_hide(self):
+        _, body = self.get(f"/app?new=1&token={self.token}")
+        self.assertNotIn("op=hide", body)
+        self.assertNotIn("op=delete", body)
+
+    def test_a_missing_index_is_a_clean_message(self):
+        status, body = self.get(f"/app?index=99&token={self.token}")
+        self.assertEqual(status, 404)
+        self.assertIn("no longer there", body)
+
+    def test_the_script_that_guards_apply_is_served(self):
+        status, body = self.get(f"/app.js?token={self.token}")
+        self.assertEqual(status, 200)
+        self.assertIn("data-apply", body)
+
+    def test_the_page_asks_for_that_script(self):
+        _, body = self.get(f"/app?index=1&token={self.token}")
+        self.assertIn('src="/app.js"', body)
+        self.assertIn("data-dirty-guard", body)
+
+
+class ExplainTest(ServerTest):
+    def setUp(self):
+        super().setUp()
+        self.state_dir = tempfile.mkdtemp()
+        self._old = os.environ.get("XDG_STATE_HOME")
+        os.environ["XDG_STATE_HOME"] = self.state_dir
+
+    def tearDown(self):
+        if self._old is None:
+            os.environ.pop("XDG_STATE_HOME", None)
+        else:
+            os.environ["XDG_STATE_HOME"] = self._old
+        import shutil
+        shutil.rmtree(self.state_dir, ignore_errors=True)
+        super().tearDown()
+
+    def test_hide_and_delete_are_explained_differently(self):
+        _, hide = self.get(f"/explain?op=hide&index=1&token={self.token}")
+        _, delete = self.get(f"/explain?op=delete&index=1&token={self.token}")
+        self.assertIn("will not bring it back", hide)
+        self.assertIn("will find it again", delete)
+
+    def test_the_checkbox_defaults_to_showing_it_every_time(self):
+        _, body = self.get(f"/explain?op=hide&index=1&token={self.token}")
+        self.assertIn('name="keep_explaining" checked', body)
+
+    def test_unchecking_it_silences_that_operation_only(self):
+        from sunshine_apps_ui import state as st
+        self.post({"op": "hide", "index": "1", "name": "Portal 2"},
+                  token=self.token, path="/queue")
+        self.assertFalse(st.should_explain("hide"))
+        self.assertTrue(st.should_explain("delete"))
+
+    def test_keeping_it_checked_leaves_the_preference_alone(self):
+        from sunshine_apps_ui import state as st
+        self.post({"op": "hide", "index": "1", "name": "Portal 2",
+                   "keep_explaining": "on"}, token=self.token, path="/queue")
+        self.assertTrue(st.should_explain("hide"))
+
+    def test_a_silenced_operation_queues_without_the_interstitial(self):
+        from sunshine_apps_ui import state as st
+        st.set_explain("delete", False)
+        # get() follows the redirect, so we land back on the grid rather than
+        # on an explanation page.
+        status, body = self.get(f"/explain?op=delete&index=1&token={self.token}")
+        self.assertEqual(status, 200)
+        self.assertNotIn("Delete this application?", body)
+        self.assertEqual(len(st.queue()), 1)
+        self.assertEqual(st.queue()[0]["op"], "delete")
+
+    def test_an_unknown_operation_is_not_explained(self):
+        status, _ = self.get(f"/explain?op=nuke&index=1&token={self.token}")
+        self.assertEqual(status, 404)
+
+
+class QueueTest(ExplainTest):
+    def test_editing_queues_rather_than_writing(self):
+        from sunshine_apps_ui import state as st
+        self.post({"op": "edit", "index": "1", "orig_name": "Portal 2",
+                   "name": "Portal Two", "cmd": "x"}, token=self.token, path="/app")
+        self.assertEqual(st.queue()[0]["op"], "edit")
+        self.assertEqual(st.queue()[0]["fields"]["name"], "Portal Two")
+
+    def test_apply_appears_on_the_grid_only_once_something_is_queued(self):
+        _, before = self.get(token=self.token)
+        self.assertNotIn(">Apply ", before)
+        self.post({"op": "edit", "index": "1", "orig_name": "Portal 2",
+                   "name": "X"}, token=self.token, path="/app")
+        _, after = self.get(token=self.token)
+        self.assertIn("Apply 1 change", after)
+
+    def test_discarding_empties_the_queue(self):
+        from sunshine_apps_ui import state as st
+        self.post({"op": "edit", "index": "1", "orig_name": "Portal 2",
+                   "name": "X"}, token=self.token, path="/app")
+        self.post({}, token=self.token, path="/discard")
+        self.assertEqual(st.queue(), [])
+
+    def test_an_unknown_action_is_refused(self):
+        status, _ = self.post({"op": "destroy", "index": "1"},
+                              token=self.token, path="/app")
+        self.assertEqual(status, 400)
 
 
 class GridTest(ServerTest):

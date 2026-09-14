@@ -100,9 +100,9 @@ padding:.6rem .8rem;display:flex;flex-wrap:wrap;gap:.2rem .75rem;align-items:bas
 li .name{font-weight:600}
 li .sel{color:var(--text-muted);font-size:.82rem;font-family:var(--mono)}
 li .fields{color:var(--text-muted);font-size:.85rem}
-.edit{border-left:3px solid var(--warning)}
-.edit .d{width:100%;font-size:.85rem;font-family:var(--mono);color:var(--text-muted);margin-top:.2rem}
-.edit .d b{color:var(--text);font-weight:600}
+.diverged{border-left:3px solid var(--warning)}
+.diverged .d{width:100%;font-size:.85rem;font-family:var(--mono);color:var(--text-muted);margin-top:.2rem}
+.diverged .d b{color:var(--text);font-weight:600}
 
 .btn{display:inline-block;background:var(--primary);color:#fff;text-decoration:none;
 border:1px solid var(--primary);border-radius:var(--radius-md);padding:.65rem 1.1rem;
@@ -160,7 +160,7 @@ def _entry_li(bucket: str, entry: Dict[str, Any]) -> str:
             f' &nbsp;|&nbsp; importer: {_e(f.get("would_be"))}</span>'
             for f in entry.get("fields", []) if isinstance(f, dict)
         )
-        return f'<li class="edit"><span class="name">{name}</span>{sel}{rows}</li>'
+        return f'<li class="diverged"><span class="name">{name}</span>{sel}{rows}</li>'
 
     extra = ""
     if bucket == "updated" and entry.get("fields"):
@@ -502,5 +502,173 @@ def grid_page(state: Dict[str, Any], token: str, *, new_ids: Optional[set] = Non
 <a class="btn sec" href="/plan?token={_e(token)}">What would change</a></div>
 {legend}
 <div class="grid">{"".join(tiles)}</div>
+</div></body></html>"""
+
+
+# ------------------------------------------------------- app detail / edit ---
+
+_APP_CSS = """
+.edit{display:grid;gap:.9rem;max-width:44rem}
+.field{display:grid;gap:.3rem}
+.field label{font-size:.85rem;color:var(--text-muted);font-weight:500}
+.field .hint{font-size:.8rem;color:var(--text-subtle)}
+.field input[type=text]{background:var(--bg-base);color:var(--text);
+border:1px solid var(--border);border-radius:var(--radius-md);
+padding:.55rem .7rem;font:inherit;font-size:.95rem;width:100%}
+.field input:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+.row{display:flex;gap:1.2rem;flex-wrap:wrap}
+.check{display:flex;gap:.5rem;align-items:center;font-size:.9rem}
+.btn[disabled]{opacity:.45;cursor:not-allowed}
+.preview{display:flex;gap:1rem;align-items:flex-start;margin:0 0 1.25rem}
+.preview img{width:120px;aspect-ratio:2/3;object-fit:cover;
+border-radius:var(--radius-md);border:1px solid var(--border)}
+.preview .meta{font-size:.9rem;color:var(--text-muted)}
+.preview .meta b{color:var(--text)}
+.danger .btn{border-color:var(--danger);color:var(--danger);background:transparent}
+.danger .btn:hover{background:var(--danger);color:#fff}
+"""
+
+# Every field Sunshine reads that is worth editing by hand, with what it means.
+_FIELDS = [
+    ("name", "Name", "text", "Shown in Moonlight."),
+    ("cmd", "Command", "text", "Run when the app is launched. Leave empty for a desktop session."),
+    ("working-dir", "Working directory", "text", "Where the command runs."),
+    ("image-path", "Artwork", "text", "Path to a PNG. 600x900 matches the other tiles."),
+    ("output", "Output log", "text", "File to capture the command's output. Usually empty."),
+    ("exit-timeout", "Exit timeout", "text", "Seconds to wait for a clean exit before forcing it."),
+]
+_FLAGS = [
+    ("elevated", "Run elevated"),
+    ("auto-detach", "Auto-detach"),
+    ("wait-all", "Wait for all processes"),
+    ("exclude-global-prep-cmd", "Skip global prep commands"),
+]
+
+
+def render_fields():
+    """The editable text fields, so the server can read the same set back."""
+    return list(_FIELDS)
+
+
+def render_flags():
+    """The editable boolean fields."""
+    return list(_FLAGS)
+
+
+def app_page(entry: Dict[str, Any], token: str, *, is_new: bool = False,
+             queued: int = 0, warning: str = "") -> str:
+    """One application, with everything about it editable."""
+    name = entry.get("name") or ""
+    index = entry.get("index")
+    managed = bool(entry.get("managed"))
+    image = entry.get("image-path") or ""
+
+    fields = []
+    for key, label, _kind, hint in _FIELDS:
+        value = entry.get(key)
+        value = "" if value is None else str(value)
+        fields.append(
+            f'<div class="field"><label for="f_{key}">{_e(label)}</label>'
+            f'<input id="f_{key}" name="{key}" type="text" value="{_e(value)}">'
+            f'<span class="hint">{_e(hint)}</span></div>')
+    flags = "".join(
+        f'<label class="check"><input type="checkbox" name="{key}"'
+        f'{" checked" if entry.get(key) else ""}> {_e(label)}</label>'
+        for key, label in _FLAGS)
+
+    preview = ""
+    if not is_new:
+        art = (f'<img src="/art?p={_eq(image)}&token={_e(token)}" alt="">'
+               if image else "")
+        origin = (f'Created by the importer (<code>{_e(entry.get("source"))}:'
+                  f'{_e(entry.get("id"))}</code>). Fields you change here are kept '
+                  f'and it stops updating them.'
+                  if managed else "Yours. The importer never changes it.")
+        preview = (f'<div class="preview">{art}<div class="meta">{origin}</div></div>')
+
+    warn = (f'<section class="warn"><p>{_e(warning)}</p></section>' if warning else "")
+
+    hidden_id = (f'<input type="hidden" name="index" value="{_e(index)}">'
+                 f'<input type="hidden" name="orig_name" value="{_e(name)}">'
+                 if not is_new else "")
+
+    if is_new:
+        actions = (f'<button class="btn" data-apply type="submit" name="op" value="add">'
+                   f'Add to the queue</button>'
+                   f'<a class="btn sec" href="/?token={_e(token)}">Cancel</a>')
+        extra = ""
+    else:
+        actions = (f'<button class="btn" data-apply type="submit" name="op" value="edit">'
+                   f'Apply</button>'
+                   f'<button class="btn sec" type="submit" name="op" value="clone">'
+                   f'Save as a copy</button>'
+                   f'<a class="btn sec" href="/?token={_e(token)}">Back</a>')
+        extra = (f'<div class="actions danger">'
+                 f'<a class="btn" href="/explain?op=hide&index={_e(index)}'
+                 f'&name={_eq(name)}&token={_e(token)}">Hide</a>'
+                 f'<a class="btn" href="/explain?op=delete&index={_e(index)}'
+                 f'&name={_eq(name)}&token={_e(token)}">Delete</a></div>')
+
+    return f"""<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{_e(name or "New application")}</title>
+<style>{_CSS}{_APP_CSS}</style></head>
+<body>
+<div class="navbar"><span class="brand">Sunshine</span><span class="sep">/</span>
+<span class="where">apps</span></div>
+<div class="wrap">
+<h1>{_e(name or "New application")}</h1>
+{preview}{warn}
+<form class="edit" method="post" action="/app?token={_e(token)}" data-dirty-guard>
+{hidden_id}
+{"".join(fields)}
+<div class="row">{flags}</div>
+<div class="actions">{actions}</div>
+</form>
+{extra}
+</div>
+<script src="/app.js"></script>
+</body></html>"""
+
+
+_EXPLAIN = {
+    "hide": ("Hide this application?",
+             "It is removed from the list and recorded as hidden, so scanning "
+             "again will not bring it back. Use this for a game you own but "
+             "never want to see here.",
+             "Hide it"),
+    "delete": ("Delete this application?",
+               "It is removed from the list, and nothing is recorded. The next "
+               "scan will find it again and add it back. Use this to start over "
+               "with an entry, not to get rid of one for good.",
+               "Delete it"),
+}
+
+
+def explain_page(op: str, entry: Dict[str, Any], token: str) -> str:
+    title, body, button = _EXPLAIN[op]
+    name = entry.get("name") or ""
+    return f"""<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{_e(title)}</title><style>{_CSS}{_APP_CSS}</style></head>
+<body>
+<div class="navbar"><span class="brand">Sunshine</span><span class="sep">/</span>
+<span class="where">apps</span></div>
+<div class="wrap">
+<h1>{_e(title)}</h1>
+<section><p class="why"><b>{_e(name)}</b> &mdash; {_e(body)}</p></section>
+<form method="post" action="/queue?token={_e(token)}">
+<input type="hidden" name="op" value="{_e(op)}">
+<input type="hidden" name="index" value="{_e(entry.get('index'))}">
+<input type="hidden" name="name" value="{_e(name)}">
+<label class="check" style="margin:.5rem 0 1rem">
+<input type="checkbox" name="keep_explaining" checked> Show this explanation every time</label>
+<div class="actions danger">
+<button class="btn" type="submit">{_e(button)}</button>
+<a class="btn sec" style="border-color:var(--primary);color:var(--primary)"
+   href="/app?index={_e(entry.get('index'))}&token={_e(token)}">Cancel</a></div>
+</form>
 </div></body></html>"""
 

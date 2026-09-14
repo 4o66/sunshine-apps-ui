@@ -11,11 +11,12 @@ from typing import Any, Dict, List, Optional
 from urllib.parse import parse_qs, urlencode, urlsplit
 
 from . import __version__, security
-from . import artwork
+from . import artwork, state
 from .importer import (ImporterError, apply_plan, check_auth, get_state,
-                       run_plan, save_auth)
-from .render import (applied_page, confirm_page, connect_page, error_page,
-                     grid_page, page)
+                       mutate, run_plan, save_auth)
+from .render import (app_page, applied_page, confirm_page, connect_page,
+                     error_page, explain_page, grid_page, page,
+                     render_fields, render_flags)
 
 log = logging.getLogger("sunshine-apps-ui")
 
@@ -48,7 +49,8 @@ class PlanHandler(BaseHTTPRequestHandler):
         # browser never even issues the request.
         self.send_header("Content-Security-Policy",
                          "default-src 'none'; style-src 'unsafe-inline'; img-src 'self'; "
-                         "form-action 'self'; frame-ancestors 'none'; base-uri 'none'")
+                         "script-src 'self'; form-action 'self'; frame-ancestors 'none'; "
+                         "base-uri 'none'")
         self.end_headers()
         if self.command != "HEAD":
             self.wfile.write(raw)
@@ -69,11 +71,11 @@ class PlanHandler(BaseHTTPRequestHandler):
         if parts.path == "/art":
             wanted = (query.get("p") or [""])[0]
             try:
-                state = get_state(self.importer_path, use_cache=True)
+                current = get_state(self.importer_path, use_cache=True)
             except ImporterError:
                 self._send(404, error_page("Not found.", token=self.token))
                 return
-            found = artwork.read(wanted, artwork.allowed_paths(state))
+            found = artwork.read(wanted, artwork.allowed_paths(current))
             if not found:
                 log.warning("artwork not served: %r", wanted)
                 self._send(404, error_page("Not found.", token=self.token))
@@ -92,7 +94,7 @@ class PlanHandler(BaseHTTPRequestHandler):
 
         if parts.path in ("/", "/index.html"):
             try:
-                state = get_state(self.importer_path)
+                current = get_state(self.importer_path)
             except ImporterError as e:
                 self._send(500, error_page("Could not read the app list.",
                                            str(e), token=self.token))
@@ -107,8 +109,42 @@ class PlanHandler(BaseHTTPRequestHandler):
                 except ImporterError as e:
                     log.warning("scan failed: %s", e)
             auth_ok, _ = self._auth_state()
-            self._send(200, grid_page(state, self.token, new_ids=new_ids,
-                                      scanned=scanned, auth_ok=auth_ok))
+            self._send(200, grid_page(current, self.token, new_ids=new_ids,
+                                      scanned=scanned, auth_ok=auth_ok,
+                                      queued=len(state.queue())))
+            return
+
+        if parts.path == "/app.js":
+            self._send_asset("app.js", "text/javascript; charset=utf-8")
+            return
+
+        if parts.path == "/app":
+            if "new" in query:
+                self._send(200, app_page({}, self.token, is_new=True))
+                return
+            entry = self._entry(query)
+            if entry is None:
+                self._send(404, error_page("That application is no longer there.",
+                                           token=self.token))
+                return
+            self._send(200, app_page(entry, self.token))
+            return
+
+        if parts.path == "/explain":
+            op = (query.get("op") or [""])[0]
+            if op not in state.EXPLAINED:
+                self._send(404, error_page("Not found.", token=self.token))
+                return
+            entry = self._entry(query)
+            if entry is None:
+                self._send(404, error_page("That application is no longer there.",
+                                           token=self.token))
+                return
+            if not state.should_explain(op):
+                # Silenced previously: queue it without the interstitial.
+                self._queue_and_return(op, entry)
+                return
+            self._send(200, explain_page(op, entry, self.token))
             return
 
         if parts.path == "/connect":
@@ -158,6 +194,57 @@ class PlanHandler(BaseHTTPRequestHandler):
 
     do_HEAD = do_GET
 
+    def _send_asset(self, name: str, content_type: str) -> None:
+        path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", name)
+        try:
+            with open(path, "rb") as handle:
+                body = handle.read()
+        except OSError:
+            self._send(404, error_page("Not found.", token=self.token))
+            return
+        self.send_response(200)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.end_headers()
+        if self.command != "HEAD":
+            self.wfile.write(body)
+
+    def _entry(self, query):
+        """The app a request refers to, read fresh from the importer."""
+        try:
+            index = int((query.get("index") or ["-1"])[0])
+        except ValueError:
+            return None
+        try:
+            current = get_state(self.importer_path, use_cache=True)
+        except ImporterError:
+            return None
+        for app in current.get("apps") or []:
+            if app.get("index") == index:
+                return app
+        return None
+
+    def _redirect(self, path: str, **params) -> None:
+        params.setdefault("token", self.token)
+        self.send_response(303)
+        self.send_header("Location", path + "?" + urlencode(params))
+        self.send_header("Content-Length", "0")
+        self.end_headers()
+
+    def _queue_and_return(self, op: str, entry) -> None:
+        state.enqueue({"op": op, "index": entry.get("index"),
+                       "name": entry.get("name")})
+        self._redirect("/")
+
+    def _form(self):
+        length = int(self.headers.get("Content-Length") or 0)
+        if length < 0 or length > 64 * 1024:
+            return None
+        body = self.rfile.read(length).decode("utf-8", "replace") if length else ""
+        return parse_qs(body, keep_blank_values=True)
+
     def _auth_state(self):
         try:
             return check_auth(self.importer_path)
@@ -179,7 +266,62 @@ class PlanHandler(BaseHTTPRequestHandler):
             self._send(404, error_page("Not found."))
             return
 
+        if parts.path == "/app":
+            fields = self._form()
+            op = (fields.get("op") or [""])[0]
+            if op not in ("add", "edit", "clone"):
+                self._send(400, error_page("Unknown action.", token=self.token))
+                return
+            values = {key: (fields.get(key) or [""])[0]
+                      for key, _l, _k, _h in render_fields()}
+            for key, _label in render_flags():
+                values[key] = key in fields
+            entry = {"op": op, "fields": values}
+            if op != "add":
+                try:
+                    entry["index"] = int((fields.get("index") or ["-1"])[0])
+                except ValueError:
+                    entry["index"] = -1
+                entry["name"] = (fields.get("orig_name") or [""])[0]
+            state.enqueue(entry)
+            self._redirect("/")
+            return
+
+        if parts.path == "/queue":
+            fields = self._form()
+            op = (fields.get("op") or [""])[0]
+            if op not in state.EXPLAINED:
+                self._send(400, error_page("Unknown action.", token=self.token))
+                return
+            if "keep_explaining" not in fields:
+                state.set_explain(op, False)
+            try:
+                index = int((fields.get("index") or ["-1"])[0])
+            except ValueError:
+                index = -1
+            state.enqueue({"op": op, "index": index,
+                           "name": (fields.get("name") or [""])[0]})
+            self._redirect("/")
+            return
+
+        if parts.path == "/discard":
+            state.clear_queue()
+            self._redirect("/")
+            return
+
         if parts.path == "/apply":
+            pending = state.queue()
+            if pending:
+                try:
+                    ok, message = mutate(self.importer_path, pending)
+                except ImporterError as e:
+                    ok, message = False, str(e)
+                if ok:
+                    state.clear_queue()
+                    self._redirect("/applied")
+                else:
+                    self._redirect("/", apply_error=message[:300])
+                return
             try:
                 ok, importer_log = apply_plan(self.importer_path, self.importer_args)
             except ImporterError as e:
@@ -204,12 +346,10 @@ class PlanHandler(BaseHTTPRequestHandler):
             self._send(404, error_page("Not found.", token=self.token))
             return
 
-        length = int(self.headers.get("Content-Length") or 0)
-        if length <= 0 or length > 8192:
+        fields = self._form()
+        if fields is None:
             self._send(400, error_page("Nothing to save.", token=self.token))
             return
-        body = self.rfile.read(length).decode("utf-8", "replace")
-        fields = parse_qs(body, keep_blank_values=True)
         username = (fields.get("username") or [""])[0]
         password = (fields.get("password") or [""])[0]
 
