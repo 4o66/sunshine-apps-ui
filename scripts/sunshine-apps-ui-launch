@@ -97,12 +97,22 @@ for browser in com.google.Chrome com.vivaldi.Vivaldi; do
     flatpak run "$browser" --user-data-dir="$PROFILE" --no-first-run \
       --app="$URL" --start-fullscreen &
     BROWSER_PID=$!
-    wait "$BROWSER_PID"
-    # `flatpak run` returning does not mean the browser has gone: it can hand
-    # off and exit while the window stays up. Leaving now would shut the server
-    # down underneath a live window, which is how one ends up looking at a page
-    # that no longer loads anything.
-    while browsers >/dev/null; do sleep 1; done
+    # Give the browser a moment to appear before watching for it to disappear.
+    for _ in $(seq 1 60); do
+      browsers >/dev/null && break
+      kill -0 "$BROWSER_PID" 2>/dev/null || break
+      sleep 0.5
+    done
+    # Stay until one of the two goes, then let the trap take the other with it.
+    #
+    # Waiting on BROWSER_PID alone was wrong twice over. `flatpak run` can hand
+    # off and return while the window stays up, which would shut the server down
+    # under a live page. And the server can stop on its own -- it does exactly
+    # that after applying -- which would leave the window up showing a page that
+    # no longer loads.
+    while browsers >/dev/null && kill -0 "$SERVER" 2>/dev/null; do
+      sleep 1
+    done
     exit 0
   fi
 done

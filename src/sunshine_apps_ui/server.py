@@ -6,6 +6,7 @@ Nothing here writes to apps.json.
 
 import logging
 import os
+import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any, Dict, List, Optional
 from urllib.parse import parse_qs, urlencode, urlsplit
@@ -25,6 +26,11 @@ log = logging.getLogger("sunshine-apps-ui")
 class PlanHandler(BaseHTTPRequestHandler):
     server_version = f"sunshine-apps-ui/{__version__}"
     sys_version = ""                      # do not advertise the Python version
+
+    # Set when an apply succeeds, so the page after it knows there is nothing
+    # left to stay open for.
+    applied: bool = False
+    stopping: bool = False
 
     # Set by serve().
     token: str = ""
@@ -275,6 +281,15 @@ class PlanHandler(BaseHTTPRequestHandler):
 
         if parts.path == "/applied":
             self._send(200, applied_page(self.token, self.via_sunshine))
+            # Applying reloads Sunshine, and that reload has already ended the
+            # stream this page was being watched through -- Sunshine replaces
+            # its whole process manager on refresh, so it no longer knows this
+            # app is running and cannot close it either. Nobody can reach this
+            # page any more, and the browser showing it would sit on the host's
+            # desktop until something else swept it up. So stop, and let the
+            # launcher take the window down with us.
+            if self.applied and self.via_sunshine:
+                self._stop_soon()
             return
 
         if parts.path == "/apply":
@@ -403,6 +418,17 @@ class PlanHandler(BaseHTTPRequestHandler):
         if key.startswith("index:"):
             return f"/app?index={key[6:]}&token={self.token}"
         return f"/?token={self.token}"
+
+    def _stop_soon(self, delay: float = 0.5) -> None:
+        """Stop serving, once this response has had time to reach the browser.
+
+        From a timer thread, because shutdown() waits for the serving loop to
+        finish and this is running inside it.
+        """
+        if self.stopping:
+            return
+        type(self).stopping = True
+        threading.Timer(delay, self.server.shutdown).start()
 
     def _redirect_raw(self, location: str) -> None:
         self.send_response(303)
@@ -592,6 +618,7 @@ class PlanHandler(BaseHTTPRequestHandler):
                 ok, message = False, str(e)
             if ok:
                 state.clear_queue()
+                type(self).applied = True
                 self._redirect("/applied")
             else:
                 self._redirect("/", apply_error=message[:300])

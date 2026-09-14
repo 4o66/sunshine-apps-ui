@@ -5,6 +5,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
 import unittest
 import urllib.error
 import urllib.parse
@@ -1436,3 +1437,72 @@ class EditFormShowsTheFileTest(ServerTest):
     def test_showing_the_real_values_does_not_make_the_form_look_edited(self):
         _, body = self.get(f"/app?index=0&token={self.token}")
         self.assertNotIn('data-dirty="1"', body)
+
+
+class StopAfterApplyTest(ServerTest):
+    """Applying is the end of the session, whether or not we want it to be.
+
+    Sunshine replaces its whole process manager when it reloads, so from the
+    moment changes are applied it no longer knows this app is running -- it
+    reports the host as free and cannot close the window either. Staying open
+    leaves a browser on the host's desktop that nothing will reach again.
+    """
+
+    def setUp(self):
+        super().setUp()
+        import tempfile as tf
+        self.sd = tf.mkdtemp()
+        self._old = os.environ.get("XDG_STATE_HOME")
+        os.environ["XDG_STATE_HOME"] = self.sd
+        handler = self.httpd.RequestHandlerClass
+        handler.applied = False
+        handler.stopping = False
+
+    def tearDown(self):
+        import shutil as sh
+        handler = self.httpd.RequestHandlerClass
+        handler.applied = handler.stopping = handler.via_sunshine = False
+        if self._old is None:
+            os.environ.pop("XDG_STATE_HOME", None)
+        else:
+            os.environ["XDG_STATE_HOME"] = self._old
+        sh.rmtree(self.sd, ignore_errors=True)
+        super().tearDown()
+
+    def _apply(self):
+        from sunshine_apps_ui import state as st
+        st.enqueue({"op": "edit", "index": 1, "name": "Portal 2",
+                    "fields": {"name": "Portal 2"}})
+        self.post({}, token=self.token, path="/apply")
+
+    def test_applying_from_a_stream_stops_the_server(self):
+        self.httpd.RequestHandlerClass.via_sunshine = True
+        self._apply()
+        self.get(f"/applied?token={self.token}")
+        self.assertTrue(self.httpd.RequestHandlerClass.stopping)
+
+    def test_stopping_means_the_serving_loop_is_actually_ended(self):
+        """Setting a flag would be no use on its own."""
+        from unittest import mock
+        handler = self.httpd.RequestHandlerClass
+        with mock.patch.object(threading, "Timer") as timer:
+            handler.via_sunshine = True
+            self._apply()
+            self.get(f"/applied?token={self.token}")
+        self.assertTrue(timer.called)
+        delay, function = timer.call_args[0]
+        self.assertGreater(delay, 0, "the response needs time to reach the browser")
+        self.assertEqual(function, self.httpd.shutdown)
+
+    def test_a_browser_on_the_network_is_left_alone(self):
+        """Opened from a laptop, this window is the user's to close."""
+        self.httpd.RequestHandlerClass.via_sunshine = False
+        self._apply()
+        self.get(f"/applied?token={self.token}")
+        self.assertFalse(self.httpd.RequestHandlerClass.stopping)
+
+    def test_it_does_not_stop_for_the_page_alone(self):
+        """Reaching /applied without having applied anything is not the end."""
+        self.httpd.RequestHandlerClass.via_sunshine = True
+        self.get(f"/applied?token={self.token}")
+        self.assertFalse(self.httpd.RequestHandlerClass.stopping)
