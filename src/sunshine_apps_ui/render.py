@@ -966,7 +966,8 @@ Browse for a file</a></div>
 
 def app_page(entry: Dict[str, Any], token: str, *, is_new: bool = False,
              queued: int = 0, warning: str = "", qid: str = "",
-             queued_op: str = "", draft_key: str = "") -> str:
+             queued_op: str = "", draft_key: str = "",
+             dirty: bool = False) -> str:
     """One application, with everything about it editable."""
     name = entry.get("name") or ""
     index = entry.get("index")
@@ -1064,7 +1065,7 @@ def app_page(entry: Dict[str, Any], token: str, *, is_new: bool = False,
 <div class="wrap">
 <h1>{_e(name or "New application")}</h1>
 {preview}{warn}
-<form class="edit" method="post" action="/app?token={_e(token)}" data-dirty-guard>
+<form class="edit" method="post" action="/app?token={_e(token)}" data-dirty-guard{' data-dirty="1"' if dirty else ''}>
 {hidden_id}
 {"".join(fields)}
 <div class="row">{flags}</div>

@@ -128,8 +128,9 @@ class PlanHandler(BaseHTTPRequestHandler):
 
         if parts.path == "/app":
             if "new" in query:
-                self._send(200, app_page(dict(state.draft("new")), self.token,
-                                         is_new=True, draft_key="new"))
+                entry, dirty = self._with_draft({}, "new")
+                self._send(200, app_page(entry, self.token, is_new=True,
+                                         draft_key="new", dirty=dirty))
                 return
             if "queued" in query:
                 qid = (query.get("queued") or [""])[0]
@@ -145,10 +146,10 @@ class PlanHandler(BaseHTTPRequestHandler):
                 marker = (op.get("entry") or {}).get("bsm") or {}
                 entry["managed"] = bool(marker)
                 entry["source"], entry["id"] = marker.get("source"), marker.get("id")
-                entry.update(state.draft(f"qid:{qid}"))
+                entry, dirty = self._with_draft(entry, f"qid:{qid}")
                 self._send(200, app_page(entry, self.token, qid=qid,
                                          queued_op=str(op.get("op", "")),
-                                         draft_key=f"qid:{qid}"))
+                                         draft_key=f"qid:{qid}", dirty=dirty))
                 return
 
             if "hidden" in query:
@@ -179,8 +180,8 @@ class PlanHandler(BaseHTTPRequestHandler):
                                            title="Nothing to show"))
                 return
             entry = dict(entry)
-            entry.update(state.draft(f"index:{entry.get('index')}"))
-            self._send(200, app_page(entry, self.token,
+            entry, dirty = self._with_draft(entry, f"index:{entry.get('index')}")
+            self._send(200, app_page(entry, self.token, dirty=dirty,
                                      draft_key=f"index:{entry.get('index')}"))
             return
 
@@ -345,6 +346,26 @@ class PlanHandler(BaseHTTPRequestHandler):
             if app.get("index") == index:
                 return app
         return None
+
+    @staticmethod
+    def _with_draft(entry: Dict[str, Any], key: str):
+        """Overlay a saved form onto an entry, and say whether it changed it.
+
+        Apply is disabled until something changes, and the page cannot tell:
+        a value chosen in a picker is already in the form by the time the
+        browser sees it, so comparing the form against itself finds nothing.
+        The server knows, because it is the one merging the two.
+        """
+        values = state.draft(key)
+        differs = False
+        for field, value in values.items():
+            before = entry.get(field)
+            if isinstance(value, bool):
+                differs = differs or bool(before) != value
+            else:
+                differs = differs or str("" if before is None else before) != str(value)
+        entry.update(values)
+        return entry, differs
 
     def _art_subject(self, key: str):
         """(name, source, ident) for whichever form the artwork picker opened from.

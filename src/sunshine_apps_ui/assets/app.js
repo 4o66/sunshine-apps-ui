@@ -14,7 +14,13 @@
     return f.type === "checkbox" ? String(f.checked) : f.value;
   });
 
+  // A form can arrive already changed: a path or a cover chosen in a picker is
+  // in the field before this runs, so there is nothing here to compare against.
+  // The server says so, because it is the one that merged the two.
+  var alreadyChanged = form.getAttribute("data-dirty") === "1";
+
   function changed() {
+    if (alreadyChanged) return true;
     return fields.some(function (f, i) {
       var now = f.type === "checkbox" ? String(f.checked) : f.value;
       return now !== initial[i];

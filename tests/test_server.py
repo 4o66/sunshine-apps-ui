@@ -1159,6 +1159,44 @@ class FilePickerTest(ServerTest):
         finally:
             os.unlink(bad)
 
+    def test_a_chosen_path_leaves_apply_available(self):
+        """Apply is disabled until something changes, and a value chosen in the
+        picker is already in the field when the page loads: comparing the form
+        against itself finds nothing, so Apply stayed dead."""
+        from urllib.parse import quote
+        self.get_no_redirect(
+            f"/browse?key=index:1&field=cmd&pick={quote('/home/u/run.sh', safe='')}"
+            f"&token={self.token}")
+        _, body = self.get(f"/app?index=1&token={self.token}")
+        self.assertIn('data-dirty="1"', body)
+
+    def test_an_untouched_form_does_not_offer_apply(self):
+        _, body = self.get(f"/app?index=1&token={self.token}")
+        self.assertNotIn('data-dirty="1"', body)
+
+    def test_a_draft_that_changes_nothing_does_not_offer_apply(self):
+        """Opening a picker and cancelling saves the form as it already was."""
+        from sunshine_apps_ui import state as st
+        st.set_draft("index:1", {"name": "Portal 2",
+                                 "cmd": "steam -applaunch 620",
+                                 "image-path": "/img/620.png"})
+        _, body = self.get(f"/app?index=1&token={self.token}")
+        self.assertNotIn('data-dirty="1"', body)
+
+    def test_a_new_entry_with_a_chosen_path_can_be_added(self):
+        from urllib.parse import quote
+        self.get_no_redirect(
+            f"/browse?key=new&field=cmd&pick={quote('/home/u/run.sh', safe='')}"
+            f"&token={self.token}")
+        _, body = self.get(f"/app?new=1&token={self.token}")
+        self.assertIn('data-dirty="1"', body)
+
+    def test_a_flag_toggled_before_the_picker_counts_as_a_change(self):
+        from sunshine_apps_ui import state as st
+        st.set_draft("index:1", {"elevated": True})
+        _, body = self.get(f"/app?index=1&token={self.token}")
+        self.assertIn('data-dirty="1"', body)
+
     def test_queueing_the_entry_clears_its_draft(self):
         from sunshine_apps_ui import state as st
         st.set_draft("new", {"name": "leftover"})
@@ -1330,7 +1368,71 @@ class ArtworkPickerTest(ServerTest):
         finally:
             os.unlink(bad)
 
+    def test_choosing_a_cover_leaves_apply_available(self):
+        """The whole point of choosing one is to then apply it."""
+        self.get_no_redirect(
+            f"/artwork?key=index:1&choose={'a' * 16}&token={self.token}")
+        _, body = self.get(f"/app?index=1&token={self.token}")
+        self.assertIn('data-dirty="1"', body)
+
     def test_there_is_always_a_way_back(self):
         _, body = self.get(f"/artwork?key=index:1&token={self.token}")
         self.assertIn("/app?index=1", body)
         self.assertIn("Browse for a file", body)
+
+
+class EditFormShowsTheFileTest(ServerTest):
+    """The form has to show what is in apps.json, because saving it writes
+    every field back. A flag it renders unchecked is a flag it turns off."""
+
+    REBOOT = {
+        "index": 0, "name": "Zz Reboot", "cmd": "", "image-path": "/img/r.png",
+        "source": "launcher", "id": "reboot", "managed": True,
+        "auto-detach": True, "wait-all": True, "exclude-global-prep-cmd": False,
+        "exit-timeout": 5, "output": "/tmp/reboot.log",
+        "detached": ["systemctl reboot"],
+    }
+
+    def setUp(self):
+        super().setUp()
+        state_doc = dict(STATE, apps=[self.REBOOT])
+        self.imp = fake_importer()
+        import tempfile as tf
+        fd, self.imp = tf.mkstemp(suffix=".sh")
+        os.write(fd, (
+            "#!/bin/sh\ncase \"$*\" in\n"
+            "  *--check-auth*) echo '{\"ok\": true, \"message\": \"ok\"}'; exit 0 ;;\n"
+            f"  *--state*) cat <<'S'\n{json.dumps(state_doc)}\nS\n exit 0 ;;\n"
+            "esac\n"
+            f"cat <<'P'\n{json.dumps(PLAN)}\nP\nexit 0\n").encode())
+        os.close(fd); os.chmod(self.imp, 0o755)
+        self.httpd.RequestHandlerClass.importer_path = self.imp
+        importer._STATE_CACHE["doc"] = None
+
+    def tearDown(self):
+        self.httpd.RequestHandlerClass.importer_path = self.importer
+        os.path.exists(self.imp) and os.unlink(self.imp)
+        importer._STATE_CACHE["doc"] = None
+        super().tearDown()
+
+    def test_a_flag_that_is_set_is_shown_as_set(self):
+        _, body = self.get(f"/app?index=0&token={self.token}")
+        self.assertIn('name="auto-detach" checked', body)
+        self.assertIn('name="wait-all" checked', body)
+
+    def test_a_flag_that_is_not_set_is_not_shown_as_set(self):
+        _, body = self.get(f"/app?index=0&token={self.token}")
+        self.assertIn('name="exclude-global-prep-cmd">', body)
+
+    def test_the_exit_timeout_is_shown(self):
+        _, body = self.get(f"/app?index=0&token={self.token}")
+        self.assertIn('id="f_exit-timeout" name="exit-timeout" type="text" value="5"',
+                      body)
+
+    def test_the_output_log_is_shown(self):
+        _, body = self.get(f"/app?index=0&token={self.token}")
+        self.assertIn('value="/tmp/reboot.log"', body)
+
+    def test_showing_the_real_values_does_not_make_the_form_look_edited(self):
+        _, body = self.get(f"/app?index=0&token={self.token}")
+        self.assertNotIn('data-dirty="1"', body)
