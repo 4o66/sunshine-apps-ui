@@ -714,15 +714,33 @@ border-radius:var(--radius-md);padding:.5rem .7rem;font-size:.92rem}
 .listing a:hover,.listing a:focus-visible{border-color:var(--primary);outline:none}
 .listing .k{color:var(--text-subtle);font-size:.78rem;min-width:4.5rem}
 .listing a.dir .k{color:var(--accent)}
+.filter{display:flex;gap:.4rem;margin:0 0 .6rem}
+.filter input[type=text]{flex:1;background:var(--bg-base);color:var(--text);
+border:1px solid var(--border);border-radius:var(--radius-md);
+padding:.5rem .7rem;font:inherit;font-size:.92rem}
+.filter input:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
 """
 
 
+# A directory like /usr/bin holds thousands of executables. Rendering them all
+# produced a half-megabyte page, which is slow everywhere and hopeless on a
+# television, so the list is capped and a filter offered instead.
+PICKER_LIMIT = 250
+
+
 def picker_page(listing: Dict[str, Any], token: str, *, key: str, field: str,
-                label: str, error: str = "") -> str:
+                label: str, error: str = "", filter_text: str = "") -> str:
     """Choose a path, through Sunshine's own directory listing."""
     here = str(listing.get("path") or "")
     parent = str(listing.get("parent") or "")
-    entries = listing.get("entries") or []
+    entries = [e for e in (listing.get("entries") or []) if isinstance(e, dict)]
+
+    total = len(entries)
+    needle = filter_text.strip().lower()
+    if needle:
+        entries = [e for e in entries if needle in str(e.get("name", "")).lower()]
+    matched = len(entries)
+    entries = entries[:PICKER_LIMIT]
 
     def link(path: str, name: str, is_dir: bool) -> str:
         what = "go" if is_dir else "pick"
@@ -745,6 +763,24 @@ def picker_page(listing: Dict[str, Any], token: str, *, key: str, field: str,
             else '<p class="why">Nothing here to choose.</p>')
     problem = f'<section class="err"><p class="why">{_e(error)}</p></section>' if error else ""
 
+    shown = len(entries)
+    if needle:
+        counted = f"{matched} of {total} match &ldquo;{_e(filter_text)}&rdquo;"
+    else:
+        counted = f"{total} item{'' if total == 1 else 's'}"
+    if matched > shown:
+        counted += f", showing the first {shown}"
+
+    search = (f'<form class="filter" method="get" action="/browse">'
+              f'<input type="hidden" name="key" value="{_e(key)}">'
+              f'<input type="hidden" name="field" value="{_e(field)}">'
+              f'<input type="hidden" name="path" value="{_e(here)}">'
+              f'<input type="hidden" name="token" value="{_e(token)}">'
+              f'<input type="text" name="q" value="{_e(filter_text)}" '
+              f'placeholder="Filter by name" aria-label="Filter by name">'
+              f'<button class="btn sec" type="submit">Filter</button></form>'
+              f'<p class="crumb">{counted}</p>')
+
     return f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -757,6 +793,7 @@ def picker_page(listing: Dict[str, Any], token: str, *, key: str, field: str,
 <h1>Choose {_e(label)}</h1>
 {problem}
 <p class="crumb">{_e(here or "/")}</p>
+{search}
 <div class="listing">{body}</div>
 <div class="actions">
 <a class="btn sec" href="{_e(_form_url(key, token))}">Cancel</a></div>

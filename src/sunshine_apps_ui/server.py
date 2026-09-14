@@ -226,7 +226,8 @@ class PlanHandler(BaseHTTPRequestHandler):
             except ImporterError as e:
                 error, listing = str(e), {"path": where, "parent": "", "entries": []}
             self._send(200, picker_page(listing, self.token, key=key, field=field,
-                                        label=label, error=error))
+                                        label=label, error=error,
+                                        filter_text=(query.get("q") or [""])[0]))
             return
 
         if parts.path == "/connect":

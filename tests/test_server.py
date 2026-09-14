@@ -1107,6 +1107,38 @@ class FilePickerTest(ServerTest):
         self.assertEqual(st.draft("new")["cmd"], "/home/u/run.sh")
         self.assertEqual(st.draft("new")["name"], "My Game")
 
+    def test_a_huge_directory_is_capped_rather_than_rendered_whole(self):
+        """/usr/bin has thousands of executables; all of them was half a megabyte."""
+        import tempfile as tf
+        from sunshine_apps_ui.render import PICKER_LIMIT
+        big = {"ok": True, "path": "/usr/bin", "parent": "/usr",
+               "entries": [{"name": f"prog{i}", "path": f"/usr/bin/prog{i}",
+                            "type": "file"} for i in range(PICKER_LIMIT * 4)]}
+        fd, path = tf.mkstemp(suffix=".sh")
+        os.write(fd, f"#!/bin/sh\ncat <<'B'\n{json.dumps(big)}\nB\n".encode())
+        os.close(fd); os.chmod(path, 0o755)
+        self.httpd.RequestHandlerClass.importer_path = path
+        try:
+            _, body = self.get(f"/browse?key=new&field=cmd&token={self.token}")
+            self.assertEqual(body.count(">choose<"), PICKER_LIMIT)
+            self.assertIn(f"showing the first {PICKER_LIMIT}", body)
+            self.assertLess(len(body), 200000)
+        finally:
+            self.httpd.RequestHandlerClass.importer_path = self.imp
+            os.unlink(path)
+
+    def test_the_filter_narrows_the_listing(self):
+        _, body = self.get(f"/browse?key=new&field=cmd&q=run&token={self.token}")
+        self.assertIn("run.sh", body)
+        self.assertNotIn(">games<", body)
+        self.assertIn("match", body)
+
+    def test_the_filter_survives_into_the_form(self):
+        """Filtering must not lose which form opened the picker."""
+        _, body = self.get(f"/browse?key=new&field=cmd&q=run&token={self.token}")
+        self.assertIn('name="key" value="new"', body)
+        self.assertIn('name="field" value="cmd"', body)
+
     def test_a_field_that_cannot_be_browsed_is_refused(self):
         status, _ = self.get(f"/browse?key=new&field=name&token={self.token}")
         self.assertEqual(status, 404)
