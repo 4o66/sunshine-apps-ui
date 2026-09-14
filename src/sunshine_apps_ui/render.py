@@ -220,16 +220,39 @@ def _change_list(plan: Dict[str, Any]) -> str:
     return "".join(blocks)
 
 
-def confirm_page(doc: Dict[str, Any], token: str, via_sunshine: bool = False) -> str:
+_QUEUED_WORDING = {
+    "hide": "Hide", "delete": "Delete", "edit": "Edit",
+    "clone": "Copy", "add": "Add", "restore": "Un-hide",
+}
+
+
+def _queued_list(pending: List[Dict[str, Any]]) -> str:
+    if not pending:
+        return ""
+    items = []
+    for op in pending:
+        verb = _QUEUED_WORDING.get(str(op.get("op")), str(op.get("op")))
+        name = op.get("name") or (op.get("fields") or {}).get("name") or "(unnamed)"
+        items.append(f'<li><span class="name">{_e(verb)} {_e(name)}</span></li>')
+    return (f'<h3 class="ch">Your changes <span class="n">{len(pending)}</span></h3>'
+            f'<ul>{"".join(items)}</ul>')
+
+
+def confirm_page(doc: Dict[str, Any], token: str, via_sunshine: bool = False,
+                 pending: Optional[List[Dict[str, Any]]] = None) -> str:
     """The step between wanting to apply and applying.
 
     Applying reloads Sunshine, which ends any stream in progress. That is not a
     malfunction -- it is how the new list reaches Moonlight -- but it should be
     stated before it happens rather than discovered.
     """
+    pending = pending or []
     plan = doc.get("plan", {}) or {}
     totals = doc.get("totals", {}) or {}
-    changing = sum(int(totals.get(k, 0)) for k in ("added", "updated", "pruned"))
+    # Both kinds of pending change count: the ones you queued by hand, and the
+    # ones a scan found. Counting only the second is what made this read zero.
+    changing = len(pending) + sum(int(totals.get(k, 0))
+                                  for k in ("added", "updated", "pruned"))
 
     if via_sunshine:
         warning = ("<p><b>This will disconnect you.</b> Sunshine has to reload its app "
@@ -264,7 +287,8 @@ def confirm_page(doc: Dict[str, Any], token: str, via_sunshine: bool = False) ->
 <span class="where">apps import</span></div>
 <div class="wrap">
 <h1>Apply {changing} change{'' if changing == 1 else 's'}?</h1>
-<section>{_change_list(plan) or '<p class="why">Nothing would change.</p>'}</section>
+<section>{_queued_list(pending)}{_change_list(plan)
+  or ('' if pending else '<p class="why">Nothing would change.</p>')}</section>
 {warn_block}
 {action_block}
 </div></body></html>"""
@@ -475,7 +499,8 @@ def connect_page(token: str, message: str = "", username: str = "") -> str:
 
 def grid_page(state: Dict[str, Any], token: str, *, new_ids: Optional[set] = None,
               scanned: bool = False, auth_ok: bool = True,
-              pending: Optional[List[Dict[str, Any]]] = None) -> str:
+              pending: Optional[List[Dict[str, Any]]] = None,
+              found: int = 0) -> str:
     new_ids = new_ids or set()
     pending = pending or []
     apps = state.get("apps") or []
@@ -527,9 +552,11 @@ def grid_page(state: Dict[str, Any], token: str, *, new_ids: Optional[set] = Non
     if parts:
         legend = f'<div class="legend">{"".join(parts)}</div>'
 
+    # Something to apply means queued edits, or games a scan just turned up.
+    outstanding = queued + found
     apply_button = (f'<a class="btn" href="/apply?token={_e(token)}">'
-                    f'Apply {queued} change{"" if queued == 1 else "s"}</a>'
-                    if queued else "")
+                    f'Apply {outstanding} change{"" if outstanding == 1 else "s"}</a>'
+                    if outstanding else "")
     discard_button = (f'<form method="post" action="/discard?token={_e(token)}" '
                       f'style="display:inline">'
                       f'<button class="btn sec" type="submit">Discard</button></form>'

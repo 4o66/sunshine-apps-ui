@@ -643,3 +643,83 @@ class ArtworkTest(ServerTest):
         from urllib.parse import quote
         status, _ = self.get(f"/art?p={quote('/img/620.png', safe='')}")
         self.assertEqual(status, 404)
+
+
+class ApplyCountsTheQueueTest(ServerTest):
+    """Apply asked about the importer's plan and ignored the queue entirely."""
+
+    def setUp(self):
+        super().setUp()
+        import tempfile as tf
+        self.sd = tf.mkdtemp()
+        self._old = os.environ.get("XDG_STATE_HOME")
+        os.environ["XDG_STATE_HOME"] = self.sd
+
+    def tearDown(self):
+        import shutil as sh
+        if self._old is None:
+            os.environ.pop("XDG_STATE_HOME", None)
+        else:
+            os.environ["XDG_STATE_HOME"] = self._old
+        sh.rmtree(self.sd, ignore_errors=True)
+        super().tearDown()
+
+    def test_the_confirmation_counts_queued_changes(self):
+        """The fixture importer also reports one addition, so this totals two."""
+        from sunshine_apps_ui import state as st
+        _, before = self.get("/apply", token=self.token)
+        self.assertIn("Apply 1 change?", before)
+        st.enqueue({"op": "hide", "index": 1, "name": "Portal 2"})
+        _, after = self.get("/apply", token=self.token)
+        self.assertIn("Apply 2 changes?", after)
+        self.assertNotIn("Apply 0 changes?", after)
+
+    def test_the_confirmation_names_them_in_plain_words(self):
+        from sunshine_apps_ui import state as st
+        st.enqueue({"op": "hide", "index": 1, "name": "Portal 2"})
+        st.enqueue({"op": "add", "fields": {"name": "My Script"}})
+        _, body = self.get("/apply", token=self.token)
+        self.assertIn("Your changes", body)
+        self.assertIn("Hide Portal 2", body)
+        self.assertIn("Add My Script", body)
+
+    def test_nothing_queued_and_nothing_found_still_reads_as_nothing(self):
+        import tempfile as tf
+        empty = {"schema": 1, "generator": {"name": "x", "version": "1"},
+                 "totals": {}, "sources": [], "plan": {"added": []}}
+        fd, path = tf.mkstemp(suffix=".sh")
+        os.write(fd, f"#!/bin/sh\ncat <<'J'\n{json.dumps(empty)}\nJ\n".encode())
+        os.close(fd); os.chmod(path, 0o755)
+        self.httpd.RequestHandlerClass.importer_path = path
+        try:
+            _, body = self.get("/apply", token=self.token)
+            self.assertIn("Nothing would change.", body)
+            self.assertIn("Apply 0 changes?", body)
+        finally:
+            self.httpd.RequestHandlerClass.importer_path = self.importer
+            os.unlink(path)
+
+    def test_applying_a_queue_does_not_reload_twice(self):
+        """One session of changes should cost one disconnect, not one per step."""
+        import tempfile as tf
+        fd, path = tf.mkstemp(suffix=".sh")
+        argdump = path + ".args"
+        # Must answer --mutate with JSON, or apply stops at the first step.
+        os.write(fd, (f"#!/bin/sh\necho \"$@\" >> {argdump}\n"
+                      "case \"$*\" in *--mutate*) cat >/dev/null; "
+                      "echo '{\"ok\":true,\"applied\":1,\"results\":[]}';; esac\n"
+                      "exit 0\n").encode())
+        os.close(fd); os.chmod(path, 0o755)
+        self.httpd.RequestHandlerClass.importer_path = path
+        from sunshine_apps_ui import state as st
+        st.enqueue({"op": "hide", "index": 1, "name": "Portal 2"})
+        try:
+            self.post({}, token=self.token, path="/apply")
+            calls = open(argdump).read().splitlines()
+            reloads = [c for c in calls if "--reload" in c]
+            self.assertEqual(len(reloads), 1, calls)
+            self.assertTrue(any("--mutate" in c for c in calls), calls)
+        finally:
+            self.httpd.RequestHandlerClass.importer_path = self.importer
+            os.unlink(path)
+            os.path.exists(argdump) and os.unlink(argdump)

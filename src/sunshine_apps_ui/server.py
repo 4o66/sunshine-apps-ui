@@ -111,7 +111,8 @@ class PlanHandler(BaseHTTPRequestHandler):
             auth_ok, _ = self._auth_state()
             self._send(200, grid_page(current, self.token, new_ids=new_ids,
                                       scanned=scanned, auth_ok=auth_ok,
-                                      pending=state.queue()))
+                                      pending=state.queue(),
+                                      found=len(new_ids)))
             return
 
         if parts.path == "/app.js":
@@ -164,7 +165,8 @@ class PlanHandler(BaseHTTPRequestHandler):
                 self._send(500, error_page("Could not work out what would change.",
                                            str(e), token=self.token))
                 return
-            self._send(200, confirm_page(doc, self.token, self.via_sunshine))
+            self._send(200, confirm_page(doc, self.token, self.via_sunshine,
+                                         pending=state.queue()))
             return
 
         if parts.path != "/plan":
@@ -314,17 +316,18 @@ class PlanHandler(BaseHTTPRequestHandler):
 
         if parts.path == "/apply":
             pending = state.queue()
+            ok, importer_log = True, ""
             if pending:
+                # Do not reload yet: the import below reloads once for both, so
+                # a session of changes costs one disconnect rather than two.
                 try:
-                    ok, message = mutate(self.importer_path, pending)
+                    ok, message = mutate(self.importer_path, pending, reload=False)
                 except ImporterError as e:
                     ok, message = False, str(e)
-                if ok:
-                    state.clear_queue()
-                    self._redirect("/applied")
-                else:
+                if not ok:
                     self._redirect("/", apply_error=message[:300])
-                return
+                    return
+                state.clear_queue()
             try:
                 ok, importer_log = apply_plan(self.importer_path, self.importer_args)
             except ImporterError as e:
