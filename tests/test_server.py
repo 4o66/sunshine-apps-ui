@@ -838,3 +838,42 @@ class HiddenEntryTest(ServerTest):
     def test_a_restore_without_a_selector_is_refused(self):
         status, _ = self.post({"op": "restore"}, token=self.token, path="/queue")
         self.assertEqual(status, 400)
+
+
+class AuthFailureWordingTest(ServerTest):
+    """Not every failure is a sign-in failure."""
+
+    def _importer_where_auth_says(self, message, ok="false"):
+        import tempfile as tf
+        fd, path = tf.mkstemp(suffix=".sh")
+        os.write(fd, (
+            "#!/bin/sh\ncase \"$*\" in\n"
+            f"  *--check-auth*) echo '{{\"ok\": {ok}, \"message\": \"{message}\"}}'; exit 1 ;;\n"
+            f"  *--state*) cat <<'S'\n{json.dumps(STATE)}\nS\n exit 0 ;;\n"
+            "esac\nexit 0\n").encode())
+        os.close(fd); os.chmod(path, 0o755)
+        return path
+
+    def test_a_parse_failure_is_not_reported_as_needing_a_sign_in(self):
+        path = self._importer_where_auth_says(
+            "Sunshine could not read its own apps.json.")
+        self.httpd.RequestHandlerClass.importer_path = path
+        try:
+            _, body = self.get(token=self.token)
+            self.assertIn("Sunshine is not answering", body)
+            self.assertIn("could not read its own apps.json", body)
+            self.assertNotIn("needs sign-in", body)
+        finally:
+            self.httpd.RequestHandlerClass.importer_path = self.importer
+            os.unlink(path)
+
+    def test_a_real_credential_problem_still_offers_the_sign_in(self):
+        path = self._importer_where_auth_says("Sunshine rejected the credentials")
+        self.httpd.RequestHandlerClass.importer_path = path
+        try:
+            _, body = self.get(token=self.token)
+            self.assertIn("needs sign-in", body)
+            self.assertIn("/connect", body)
+        finally:
+            self.httpd.RequestHandlerClass.importer_path = self.importer
+            os.unlink(path)

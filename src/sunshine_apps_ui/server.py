@@ -110,9 +110,14 @@ class PlanHandler(BaseHTTPRequestHandler):
                     log.info("scan staged %d change(s)", staged)
                 except ImporterError as e:
                     log.warning("scan failed: %s", e)
-            auth_ok, _ = self._auth_state()
+            auth_ok, auth_message = self._auth_state()
+            # A credential problem is one thing; Sunshine failing for another
+            # reason is a different thing and should not send you to a login.
+            detail = "" if (auth_ok or "credential" in auth_message.lower()
+                            or "No Sunshine credentials" in auth_message) else auth_message
             self._send(200, grid_page(current, self.token, scanned=scanned,
-                                      auth_ok=auth_ok, pending=state.queue()))
+                                      auth_ok=auth_ok, pending=state.queue(),
+                                      auth_detail=detail))
             return
 
         if parts.path == "/app.js":

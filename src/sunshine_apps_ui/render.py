@@ -509,7 +509,8 @@ def connect_page(token: str, message: str = "", username: str = "") -> str:
 
 def grid_page(state: Dict[str, Any], token: str, *, new_ids: Optional[set] = None,
               scanned: bool = False, auth_ok: bool = True,
-              pending: Optional[List[Dict[str, Any]]] = None) -> str:
+              pending: Optional[List[Dict[str, Any]]] = None,
+              auth_detail: str = "") -> str:
     new_ids = new_ids or set()
     pending = pending or []
     apps = state.get("apps") or []
@@ -603,11 +604,21 @@ def grid_page(state: Dict[str, Any], token: str, *, new_ids: Optional[set] = Non
                       f'style="display:inline">'
                       f'<button class="btn sec" type="submit">Discard</button></form>'
                       if queued else "")
-    auth_note = ("" if auth_ok else
-                 f'<div class="bar"><span class="chip">'
-                 f'<span class="dot error"></span><b>sunshine</b> needs sign-in</span>'
-                 f'<a class="chip" style="text-decoration:none;color:var(--primary)" '
-                 f'href="/connect?token={_e(token)}">Connect</a></div>')
+    # Not every failure is a sign-in failure. Saying so sent me looking at
+    # credentials when apps.json held a value Sunshine could not parse.
+    if auth_ok:
+        auth_note = ""
+    elif auth_detail:
+        auth_note = (f'<section class="err"><h2>Sunshine is not answering</h2>'
+                     f'<p class="why">{_e(auth_detail)}</p>'
+                     f'<div class="actions"><a class="btn sec" '
+                     f'href="/connect?token={_e(token)}">Check the sign-in</a>'
+                     f'</div></section>')
+    else:
+        auth_note = (f'<div class="bar"><span class="chip">'
+                     f'<span class="dot error"></span><b>sunshine</b> needs sign-in</span>'
+                     f'<a class="chip" style="text-decoration:none;color:var(--primary)" '
+                     f'href="/connect?token={_e(token)}">Connect</a></div>')
 
     return f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
