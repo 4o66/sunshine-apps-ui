@@ -189,6 +189,16 @@ def clear_draft(key: str) -> None:
         _write(DRAFTS_FILE, drafts)
 
 
+def clear_drafts() -> None:
+    """Forget every half-finished form.
+
+    A draft exists to survive one trip to a picker and back, not to outlive the
+    server. Keeping them would mean a form typed weeks ago quietly overriding
+    what is in apps.json now -- including fields it was captured without.
+    """
+    _write(DRAFTS_FILE, {})
+
+
 def prefs() -> Dict[str, Any]:
     value = _read(PREFS_FILE, {})
     return value if isinstance(value, dict) else {}

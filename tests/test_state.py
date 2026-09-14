@@ -190,3 +190,22 @@ class TestStableIds(StateTest):
         target = state.queue()[2]["qid"]
         state.drop_qid(state.queue()[0]["qid"])
         self.assertEqual(state.find(target)["name"], "C")
+
+
+class DraftLifetimeTest(StateTest):
+    """A draft belongs to a form that is open, not to the machine."""
+
+    def test_starting_the_server_forgets_old_drafts(self):
+        state.set_draft("index:1", {"name": "typed last month"})
+        state.clear_drafts()
+        self.assertEqual(state.draft("index:1"), {})
+
+    def test_it_does_not_touch_the_queue(self):
+        """Queued changes are the opposite: they exist to be applied later."""
+        state.enqueue({"op": "edit", "name": "A"})
+        state.clear_drafts()
+        self.assertEqual(len(state.queue()), 1)
+
+    def test_forgetting_when_there_is_nothing_to_forget_is_harmless(self):
+        state.clear_drafts()
+        self.assertEqual(state.draft("new"), {})

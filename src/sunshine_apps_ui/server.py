@@ -636,6 +636,10 @@ def serve(token: str, importer_path: str, importer_args: Optional[List[str]] = N
         # Set by our launcher, which only ever runs inside a streamed session.
         "via_sunshine": os.getenv("BSM_UI_VIA_SUNSHINE", "") == "1",
     })
+    # The queue is deliberately kept between runs; drafts are not. They belong
+    # to a form that is no longer open, and a stale one silently overrides the
+    # file it was drafted against.
+    state.clear_drafts()
     httpd = ThreadingHTTPServer((security.BIND_HOST, port), handler)
     handler.port = httpd.server_address[1]    # resolve port 0 to what we actually got
     return httpd
