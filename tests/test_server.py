@@ -917,3 +917,100 @@ class StagedArtworkTest(ServerTest):
                     "entry": {"name": "TF2", "image-path": self.png}})
         status, _ = self.get(f"/art?p={quote('/etc/passwd', safe='')}&token={self.token}")
         self.assertEqual(status, 404)
+
+
+class EditPendingTest(ServerTest):
+    """A change that has not happened yet should still be adjustable."""
+
+    def setUp(self):
+        super().setUp()
+        import tempfile as tf
+        self.sd = tf.mkdtemp()
+        self._old = os.environ.get("XDG_STATE_HOME")
+        os.environ["XDG_STATE_HOME"] = self.sd
+
+    def tearDown(self):
+        import shutil as sh
+        if self._old is None:
+            os.environ.pop("XDG_STATE_HOME", None)
+        else:
+            os.environ["XDG_STATE_HOME"] = self._old
+        sh.rmtree(self.sd, ignore_errors=True)
+        super().tearDown()
+
+    def _staged(self):
+        from sunshine_apps_ui import state as st
+        st.stage_plan({"added": [{
+            "name": "Half-Life", "source": "steam", "id": "70",
+            "entry": {"name": "Half-Life", "cmd": "steam -applaunch 70",
+                      "bsm": {"v": 1, "source": "steam", "id": "70", "fields": {}}}}]})
+        return st.queue()[0]["qid"]
+
+    def test_a_staged_tile_links_to_its_own_editor(self):
+        qid = self._staged()
+        _, body = self.get(token=self.token)
+        self.assertIn(f"/app?queued={qid}", body)
+
+    def test_the_editor_loads_the_queued_values(self):
+        qid = self._staged()
+        status, body = self.get(f"/app?queued={qid}&token={self.token}")
+        self.assertEqual(status, 200)
+        self.assertIn('value="Half-Life"', body)
+        self.assertIn("steam -applaunch 70", body)
+
+    def test_it_says_the_entry_does_not_exist_yet(self):
+        qid = self._staged()
+        _, body = self.get(f"/app?queued={qid}&token={self.token}")
+        self.assertIn("Not added yet", body)
+        self.assertNotIn("Created by the importer", body)
+
+    def test_saving_revises_the_queued_entry_in_place(self):
+        from sunshine_apps_ui import state as st
+        qid = self._staged()
+        self.post({"op": "revise", "qid": qid, "name": "Half-Life 1998",
+                   "cmd": "steam -applaunch 70", "working-dir": "",
+                   "image-path": "", "output": "", "exit-timeout": ""},
+                  token=self.token, path="/app")
+        op = st.find(qid)
+        self.assertEqual(op["entry"]["name"], "Half-Life 1998")
+        self.assertEqual(op["name"], "Half-Life 1998")
+        self.assertEqual(len(st.queue()), 1)
+
+    def test_revising_keeps_the_ownership_marker(self):
+        """Otherwise the importer stops maintaining it the moment you rename it."""
+        from sunshine_apps_ui import state as st
+        qid = self._staged()
+        self.post({"op": "revise", "qid": qid, "name": "Renamed", "cmd": "x",
+                   "working-dir": "", "image-path": "", "output": "",
+                   "exit-timeout": ""}, token=self.token, path="/app")
+        self.assertIn("bsm", st.find(qid)["entry"])
+
+    def test_the_grid_shows_the_revised_name(self):
+        qid = self._staged()
+        self.post({"op": "revise", "qid": qid, "name": "Renamed", "cmd": "x",
+                   "working-dir": "", "image-path": "", "output": "",
+                   "exit-timeout": ""}, token=self.token, path="/app")
+        _, body = self.get(token=self.token)
+        self.assertIn("Renamed", body)
+
+    def test_declining_it_removes_only_that_change(self):
+        from sunshine_apps_ui import state as st
+        qid = self._staged()
+        st.enqueue({"op": "hide", "index": 1, "name": "Portal 2"})
+        self.post({"qid": qid}, token=self.token, path="/unqueue")
+        self.assertEqual([o["op"] for o in st.queue()], ["hide"])
+
+    def test_the_editor_offers_a_way_to_decline_it(self):
+        qid = self._staged()
+        _, body = self.get(f"/app?queued={qid}&token={self.token}")
+        self.assertIn("Do not add this", body)
+
+    def test_a_change_that_is_gone_says_so(self):
+        status, body = self.get(f"/app?queued=nope&token={self.token}")
+        self.assertEqual(status, 404)
+        self.assertIn("no longer queued", body)
+
+    def test_revising_a_vanished_change_is_refused(self):
+        status, _ = self.post({"op": "revise", "qid": "nope", "name": "X"},
+                              token=self.token, path="/app")
+        self.assertEqual(status, 404)

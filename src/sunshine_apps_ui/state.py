@@ -9,7 +9,8 @@ ten.
 import json
 import os
 import tempfile
-from typing import Any, Dict, List
+import uuid
+from typing import Any, Dict, List, Optional
 
 QUEUE_FILE = "queue.json"
 PREFS_FILE = "prefs.json"
@@ -52,9 +53,37 @@ def queue() -> List[Dict[str, Any]]:
 
 def enqueue(op: Dict[str, Any]) -> List[Dict[str, Any]]:
     pending = queue()
+    # A stable id, because positions shift as other changes are queued and
+    # dropped, and editing one entry has to address exactly that entry.
+    op = dict(op)
+    op.setdefault("qid", uuid.uuid4().hex[:12])
     pending.append(op)
     _write(QUEUE_FILE, pending)
     return pending
+
+
+def find(qid: str) -> Optional[Dict[str, Any]]:
+    return next((op for op in queue() if op.get("qid") == qid), None)
+
+
+def update(qid: str, changes: Dict[str, Any]) -> bool:
+    """Replace fields of one queued operation, leaving its place in line."""
+    pending = queue()
+    for op in pending:
+        if op.get("qid") == qid:
+            op.update(changes)
+            _write(QUEUE_FILE, pending)
+            return True
+    return False
+
+
+def drop_qid(qid: str) -> bool:
+    pending = queue()
+    remaining = [op for op in pending if op.get("qid") != qid]
+    if len(remaining) == len(pending):
+        return False
+    _write(QUEUE_FILE, remaining)
+    return True
 
 
 def clear_queue() -> None:
@@ -93,7 +122,8 @@ def stage_plan(plan: Dict[str, Any]) -> int:
         key = f"{found.get('source')}:{found.get('id')}"
         if key in claimed or found.get("name") in claimed or not found.get("entry"):
             continue
-        pending.append({"op": "adopt", "entry": found["entry"],
+        pending.append({"qid": uuid.uuid4().hex[:12],
+                        "op": "adopt", "entry": found["entry"],
                         "name": found.get("name"),
                         "source": found.get("source"), "id": found.get("id"),
                         "from_scan": True})
@@ -104,7 +134,8 @@ def stage_plan(plan: Dict[str, Any]) -> int:
         key = f"{changed.get('source')}:{changed.get('id')}"
         if key in claimed or not changed.get("entry"):
             continue
-        pending.append({"op": "adopt", "entry": changed["entry"],
+        pending.append({"qid": uuid.uuid4().hex[:12],
+                        "op": "adopt", "entry": changed["entry"],
                         "name": changed.get("name"),
                         "source": changed.get("source"), "id": changed.get("id"),
                         "fields": changed.get("fields"), "from_scan": True})

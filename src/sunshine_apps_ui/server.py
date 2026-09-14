@@ -129,6 +129,24 @@ class PlanHandler(BaseHTTPRequestHandler):
             if "new" in query:
                 self._send(200, app_page({}, self.token, is_new=True))
                 return
+            if "queued" in query:
+                qid = (query.get("queued") or [""])[0]
+                op = state.find(qid)
+                if op is None:
+                    self._send(404, error_page("That change is no longer queued.",
+                                               token=self.token,
+                                               title="Nothing to show"))
+                    return
+                # Show whichever payload this kind of operation carries.
+                entry = dict(op.get("entry") or op.get("fields") or {})
+                entry.setdefault("name", op.get("name") or "")
+                marker = (op.get("entry") or {}).get("bsm") or {}
+                entry["managed"] = bool(marker)
+                entry["source"], entry["id"] = marker.get("source"), marker.get("id")
+                self._send(200, app_page(entry, self.token, qid=qid,
+                                         queued_op=str(op.get("op", ""))))
+                return
+
             if "hidden" in query:
                 wanted = (query.get("hidden") or [""])[0]
                 try:
@@ -302,6 +320,32 @@ class PlanHandler(BaseHTTPRequestHandler):
         if parts.path == "/app":
             fields = self._form()
             op = (fields.get("op") or [""])[0]
+
+            if op == "revise":
+                qid = (fields.get("qid") or [""])[0]
+                existing = state.find(qid)
+                if existing is None:
+                    self._send(404, error_page("That change is no longer queued.",
+                                               token=self.token,
+                                               title="Nothing to show"))
+                    return
+                values = {key: (fields.get(key) or [""])[0]
+                          for key, _l, _k, _h in render_fields()}
+                for key, _label in render_flags():
+                    values[key] = key in fields
+                # Revise the payload this operation actually carries, so the
+                # ownership marker on an adopted entry survives being edited.
+                if isinstance(existing.get("entry"), dict):
+                    revised = dict(existing["entry"])
+                    revised.update(values)
+                    state.update(qid, {"entry": revised,
+                                       "name": values.get("name") or existing.get("name")})
+                else:
+                    state.update(qid, {"fields": values,
+                                       "name": values.get("name") or existing.get("name")})
+                self._redirect("/")
+                return
+
             if op not in ("add", "edit", "clone"):
                 self._send(400, error_page("Unknown action.", token=self.token))
                 return
@@ -348,6 +392,12 @@ class PlanHandler(BaseHTTPRequestHandler):
 
         if parts.path == "/unqueue":
             fields = self._form()
+            qid = (fields.get("qid") or [""])[0]
+            if qid:
+                if not state.drop_qid(qid):
+                    log.info("nothing matched to un-queue: qid=%r", qid)
+                self._redirect("/")
+                return
             op = (fields.get("op") or [""])[0]
             criteria = {"op": op}
             for key in ("selector", "name"):

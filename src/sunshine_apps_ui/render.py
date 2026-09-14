@@ -534,7 +534,7 @@ def grid_page(state: Dict[str, Any], token: str, *, new_ids: Optional[set] = Non
         if kind in ("add", "clone"):
             fields = op.get("fields") or {}
             ghosts.append({"name": fields.get("name") or "(unnamed)",
-                           "op": kind, "from_scan": False,
+                           "op": kind, "from_scan": False, "qid": op.get("qid"),
                            "image-path": fields.get("image-path") or ""})
             continue
 
@@ -555,7 +555,7 @@ def grid_page(state: Dict[str, Any], token: str, *, new_ids: Optional[set] = Non
             # Nothing on the grid yet: a game a scan just found.
             entry = op.get("entry") or {}
             ghosts.append({"name": op.get("name") or "(unnamed)", "op": kind,
-                           "from_scan": scanned_op,
+                           "from_scan": scanned_op, "qid": op.get("qid"),
                            "image-path": entry.get("image-path") or ""})
         else:
             marks[index] = (kind, scanned_op)
@@ -578,9 +578,14 @@ def grid_page(state: Dict[str, Any], token: str, *, new_ids: Optional[set] = Non
             label, tone = "NEW QUEUED", "ghost"
         art = (f'<img src="/art?p={_eq(ghost["image-path"])}&token={_e(token)}" alt="">'
                if ghost.get("image-path") else '<div class="fallback">&nbsp;</div>')
-        tiles.append(f'<span class="tile {tone}">{art}'
+        qid = ghost.get("qid")
+        target = (f'/app?queued={_e(qid)}&token={_e(token)}' if qid else "")
+        open_tag = (f'<a class="tile {tone}" href="{target}">' if target
+                    else f'<span class="tile {tone}">')
+        close_tag = "</a>" if target else "</span>"
+        tiles.append(f'{open_tag}{art}'
                      f'<span class="flag">{label}</span>'
-                     f'<span class="cap">{_e(ghost["name"])}</span></span>')
+                     f'<span class="cap">{_e(ghost["name"])}</span>{close_tag}')
     tiles.append(f'<a class="tile add" href="/app?new=1&token={_e(token)}">'
                  f'<div class="fallback">+ Add an application</div></a>')
     queued = len(pending)
@@ -740,7 +745,8 @@ Un-hiding lets the next scan find it again.<br>
 
 
 def app_page(entry: Dict[str, Any], token: str, *, is_new: bool = False,
-             queued: int = 0, warning: str = "") -> str:
+             queued: int = 0, warning: str = "", qid: str = "",
+             queued_op: str = "") -> str:
     """One application, with everything about it editable."""
     name = entry.get("name") or ""
     index = entry.get("index")
@@ -761,22 +767,43 @@ def app_page(entry: Dict[str, Any], token: str, *, is_new: bool = False,
         for key, label in _FLAGS)
 
     preview = ""
-    if not is_new:
+    if not is_new or qid:
         art = (f'<img src="/art?p={_eq(image)}&token={_e(token)}" alt="">'
                if image else "")
-        origin = (f'Created by the importer (<code>{_e(entry.get("source"))}:'
-                  f'{_e(entry.get("id"))}</code>). Fields you change here are kept '
-                  f'and it stops updating them.'
-                  if managed else "Yours. The importer never changes it.")
+        if qid:
+            origin = ('<b>Not added yet.</b> This is queued, so these are the values '
+                      'it will be written with. Apply on the grid to create it.')
+        elif managed:
+            origin = (f'Created by the importer (<code>{_e(entry.get("source"))}:'
+                      f'{_e(entry.get("id"))}</code>). Fields you change here are kept '
+                      f'and it stops updating them.')
+        else:
+            origin = "Yours. The importer never changes it."
         preview = (f'<div class="preview">{art}<div class="meta">{origin}</div></div>')
 
     warn = (f'<section class="warn"><p>{_e(warning)}</p></section>' if warning else "")
 
-    hidden_id = (f'<input type="hidden" name="index" value="{_e(index)}">'
-                 f'<input type="hidden" name="orig_name" value="{_e(name)}">'
-                 if not is_new else "")
+    if qid:
+        hidden_id = f'<input type="hidden" name="qid" value="{_e(qid)}">'
+    elif not is_new:
+        hidden_id = (f'<input type="hidden" name="index" value="{_e(index)}">'
+                     f'<input type="hidden" name="orig_name" value="{_e(name)}">')
+    else:
+        hidden_id = ""
 
-    if is_new:
+    if qid:
+        # A change that has not happened yet: saving revises it in place, and
+        # the only destructive option is to drop it from the queue.
+        actions = (f'<button class="btn" data-apply type="submit" name="op" '
+                   f'value="revise">Save changes</button>'
+                   f'<a class="btn sec" href="/?token={_e(token)}">Back</a>')
+        extra = (f'<div class="actions danger">'
+                 f'<form method="post" action="/unqueue?token={_e(token)}">'
+                 f'<input type="hidden" name="qid" value="{_e(qid)}">'
+                 f'<button class="btn" type="submit">'
+                 f'{"Do not add this" if queued_op in ("adopt", "add") else "Cancel this change"}'
+                 f'</button></form></div>')
+    elif is_new:
         actions = (f'<button class="btn" data-apply type="submit" name="op" value="add">'
                    f'Add to the queue</button>'
                    f'<a class="btn sec" href="/?token={_e(token)}">Cancel</a>')

@@ -134,3 +134,59 @@ class TestStagePlan(StateTest):
     def test_an_empty_plan_stages_nothing(self):
         self.assertEqual(state.stage_plan({}), 0)
         self.assertEqual(state.queue(), [])
+
+
+class TestStableIds(StateTest):
+    """Positions shift as changes are queued and dropped; ids do not."""
+
+    def test_every_queued_op_gets_an_id(self):
+        state.enqueue({"op": "edit", "name": "A"})
+        self.assertTrue(state.queue()[0]["qid"])
+
+    def test_ids_are_unique(self):
+        for name in "ABC":
+            state.enqueue({"op": "edit", "name": name})
+        ids = [o["qid"] for o in state.queue()]
+        self.assertEqual(len(set(ids)), 3)
+
+    def test_staged_scan_results_get_ids_too(self):
+        state.stage_plan({"added": [{"name": "TF2", "source": "steam", "id": "440",
+                                     "entry": {"name": "TF2"}}]})
+        self.assertTrue(state.queue()[0]["qid"])
+
+    def test_find_locates_by_id(self):
+        state.enqueue({"op": "edit", "name": "A"})
+        qid = state.queue()[0]["qid"]
+        self.assertEqual(state.find(qid)["name"], "A")
+        self.assertIsNone(state.find("nope"))
+
+    def test_update_revises_in_place_and_keeps_its_position(self):
+        for name in "ABC":
+            state.enqueue({"op": "edit", "name": name})
+        qid = state.queue()[1]["qid"]
+        self.assertTrue(state.update(qid, {"name": "revised"}))
+        self.assertEqual([o["name"] for o in state.queue()], ["A", "revised", "C"])
+
+    def test_updating_an_unknown_id_changes_nothing(self):
+        state.enqueue({"op": "edit", "name": "A"})
+        self.assertFalse(state.update("nope", {"name": "x"}))
+        self.assertEqual(state.queue()[0]["name"], "A")
+
+    def test_drop_by_id_removes_only_that_one(self):
+        for name in "ABC":
+            state.enqueue({"op": "edit", "name": name})
+        qid = state.queue()[1]["qid"]
+        self.assertTrue(state.drop_qid(qid))
+        self.assertEqual([o["name"] for o in state.queue()], ["A", "C"])
+
+    def test_dropping_an_unknown_id_is_harmless(self):
+        state.enqueue({"op": "edit", "name": "A"})
+        self.assertFalse(state.drop_qid("nope"))
+        self.assertEqual(len(state.queue()), 1)
+
+    def test_an_id_survives_other_entries_being_dropped_around_it(self):
+        for name in "ABC":
+            state.enqueue({"op": "edit", "name": name})
+        target = state.queue()[2]["qid"]
+        state.drop_qid(state.queue()[0]["qid"])
+        self.assertEqual(state.find(target)["name"], "C")
