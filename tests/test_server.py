@@ -102,9 +102,10 @@ class ServerTest(unittest.TestCase):
         req = urllib.request.Request(url, headers=headers or {})
         try:
             with urllib.request.urlopen(req, timeout=10) as r:
-                return r.status, r.read().decode()
+                # Some responses are binary (artwork), so never assume text.
+                return r.status, r.read().decode("utf-8", "replace")
         except urllib.error.HTTPError as e:
-            return e.code, e.read().decode()
+            return e.code, e.read().decode("utf-8", "replace")
 
     def post(self, body, token=None, headers=None, path="/credentials"):
         url = f"http://127.0.0.1:{self.port}{path}"
