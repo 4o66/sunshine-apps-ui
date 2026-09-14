@@ -16,6 +16,9 @@ LOG="${XDG_RUNTIME_DIR:-/tmp}/sunshine-apps-ui.log"
 # wait on. Sharing the default profile hands the URL to whatever Chrome is
 # already running and returns immediately, leaving a window pointed at a server
 # we then shut down.
+#
+# That applies to our own profile the second time round, which is why
+# stop_previous below has to end the last browser before starting this one.
 PROFILE="$STATE/browser-profile"
 
 for candidate in "$HOME/.local/bin/sunshine-import" "$HOME/.local/bin/bsm-test-import"; do
@@ -25,9 +28,39 @@ if [[ -z "${IMPORTER:-}" ]]; then
   echo "No sunshine-import found" >&2; exit 1
 fi
 
+# The browser, identified by the one thing unique to it: the profile it was
+# started with. Not the `flatpak run` wrapper's pid -- a signal there does not
+# reach the browser inside the sandbox, which is how a window outlives the
+# session that opened it.
+#
+# Matched by the tail of the path rather than "$PROFILE" itself, because on an
+# ostree system /home is a symlink to /var/home and the same directory has two
+# spellings. A running browser started under one of them would not match a
+# pattern built from the other, and the whole point here is not to miss it.
+PROFILE_MATCH="--user-data-dir=.*sunshine-apps-ui/browser-profile"
+browsers() { pgrep -u "$(id -u)" -f -- "$PROFILE_MATCH"; }
+
 # One at a time. Relaunching should replace the previous session rather than
 # stack another server and another window on top of it.
-pkill -u "$(id -u)" -f "sunshine_apps_ui --port" 2>/dev/null
+#
+# Both halves matter. Leaving the old server running means two listeners; leaving
+# the old browser running means this launch hands its URL to that browser, gets
+# a window in someone else's process, and returns immediately -- so the launcher
+# exits and takes down the server it just started, leaving every window dead.
+stop_previous() {
+  pkill -u "$(id -u)" -f "sunshine_apps_ui --port" 2>/dev/null
+  browsers >/dev/null || return 0
+  pkill -u "$(id -u)" -f -- "$PROFILE_MATCH" 2>/dev/null
+  for _ in $(seq 1 40); do
+    browsers >/dev/null || return 0
+    sleep 0.25
+  done
+  # Still there after ten seconds: it is not going to exit politely, and
+  # starting anyway would hand the URL to it.
+  pkill -9 -u "$(id -u)" -f -- "$PROFILE_MATCH" 2>/dev/null
+  sleep 1
+}
+stop_previous
 mkdir -p "$PROFILE"
 
 export BSM_UI_VIA_SUNSHINE=1
@@ -38,7 +71,10 @@ SERVER=$!
 
 BROWSER_PID=""
 cleanup() {
+  # By profile, for the same reason as above: killing BROWSER_PID ends the
+  # `flatpak run` wrapper and leaves the browser behind.
   [[ -n "$BROWSER_PID" ]] && kill "$BROWSER_PID" 2>/dev/null
+  pkill -u "$(id -u)" -f -- "$PROFILE_MATCH" 2>/dev/null
   kill "$SERVER" 2>/dev/null
 }
 trap cleanup EXIT INT TERM
@@ -62,6 +98,11 @@ for browser in com.google.Chrome com.vivaldi.Vivaldi; do
       --app="$URL" --start-fullscreen &
     BROWSER_PID=$!
     wait "$BROWSER_PID"
+    # `flatpak run` returning does not mean the browser has gone: it can hand
+    # off and exit while the window stays up. Leaving now would shut the server
+    # down underneath a live window, which is how one ends up looking at a page
+    # that no longer loads anything.
+    while browsers >/dev/null; do sleep 1; done
     exit 0
   fi
 done
