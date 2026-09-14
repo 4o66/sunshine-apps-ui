@@ -66,7 +66,17 @@ class StopPreviousTest(unittest.TestCase):
         return proc
 
     def _run_prologue(self):
-        return subprocess.run(["bash", "-c", prologue()], env=self.env,
+        """From a file, never `bash -c`.
+
+        With -c the whole script is in the shell's own command line, so the
+        pattern it greps for matches the process doing the grepping and it
+        kills itself. The launcher runs from a file, where that cannot happen;
+        running it any other way tests something that does not exist.
+        """
+        path = os.path.join(self.home, "prologue.sh")
+        with open(path, "w", encoding="utf-8") as handle:
+            handle.write(prologue())
+        return subprocess.run(["bash", path], env=self.env,
                               capture_output=True, text=True, timeout=60)
 
     def test_a_browser_left_from_last_time_is_ended(self):
