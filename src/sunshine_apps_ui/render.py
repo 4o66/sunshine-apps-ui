@@ -432,6 +432,8 @@ background:linear-gradient(transparent,rgba(0,0,0,.85))}
 .tile.ghost{border:2px dashed var(--warning);background:transparent}
 .tile.ghost .fallback{background:transparent;color:var(--text-muted)}
 .tile.ghost .flag{background:var(--warning);color:#1a1a1a}
+.tile.ghost.found{border-color:var(--success);border-style:solid}
+.tile.ghost.found .flag{background:var(--success);color:#fff}
 .tile .flag{position:absolute;top:.4rem;left:.4rem;z-index:1;background:var(--success);
 color:#fff;font-size:.68rem;font-weight:700;letter-spacing:.04em;
 padding:.15rem .45rem;border-radius:999px}
@@ -458,19 +460,25 @@ _PENDING = {
     "delete": ("WILL DELETE", True),
     "edit": ("EDITED", False),
     "clone": ("COPY QUEUED", False),
+    "adopt": ("UPDATED", False),
+    "suppress": ("WILL HIDE", True),
 }
 
 
 def _tile(entry: Dict[str, Any], token: str, *, is_new: bool = False,
-          is_hidden: bool = False, pending: str = "") -> str:
+          is_hidden: bool = False, pending: str = "",
+          from_scan: bool = False) -> str:
     name = _e(entry.get("name") or "(unnamed)")
     image = entry.get("image-path") or ""
     inner = (f'<img src="/art?p={_eq(image)}&token={_e(token)}" alt="">'
              if image else f'<div class="fallback">{name}</div>')
 
     label, greyed = _PENDING.get(pending, ("", False))
-    classes = ("tile" + (" new" if is_new else "") + (" hidden" if is_hidden else "")
-               + (" pending" if label else "") + (" willgo" if greyed else ""))
+    # A change a scan proposed reads as green, the way a newly found game should;
+    # one you made by hand reads as amber. Both are queued, both are on the grid.
+    tone = " new" if (is_new or (label and from_scan)) else (" pending" if label else "")
+    classes = ("tile" + tone + (" hidden" if is_hidden else "")
+               + (" willgo" if greyed else ""))
     flag = (f'<span class="flag">{_e(label)}</span>' if label
             else ('<span class="flag">NEW</span>' if is_new else ""))
     mark = '<span class="mark">hidden</span>' if is_hidden else ""
@@ -499,8 +507,7 @@ def connect_page(token: str, message: str = "", username: str = "") -> str:
 
 def grid_page(state: Dict[str, Any], token: str, *, new_ids: Optional[set] = None,
               scanned: bool = False, auth_ok: bool = True,
-              pending: Optional[List[Dict[str, Any]]] = None,
-              found: int = 0) -> str:
+              pending: Optional[List[Dict[str, Any]]] = None) -> str:
     new_ids = new_ids or set()
     pending = pending or []
     apps = state.get("apps") or []
@@ -508,34 +515,60 @@ def grid_page(state: Dict[str, Any], token: str, *, new_ids: Optional[set] = Non
 
     # Which tile each queued operation refers to, matched the way the importer
     # matches them: by position, falling back to an unambiguous name.
-    marks: Dict[int, str] = {}
+    by_ident = {f'{a.get("source")}:{a.get("id")}': i
+                for i, a in enumerate(apps) if a.get("source")}
+    marks: Dict[int, tuple] = {}
     ghosts: List[Dict[str, Any]] = []
     for op in pending:
         kind = str(op.get("op", ""))
+        scanned_op = bool(op.get("from_scan"))
+
         if kind in ("add", "clone"):
             fields = op.get("fields") or {}
-            ghosts.append({"name": fields.get("name") or "(unnamed)", "op": kind})
-            if kind == "clone":
-                continue
+            ghosts.append({"name": fields.get("name") or "(unnamed)",
+                           "op": kind, "from_scan": False,
+                           "image-path": fields.get("image-path") or ""})
             continue
-        index = op.get("index")
-        if not isinstance(index, int) or not (0 <= index < len(apps)):
-            names = [i for i, a in enumerate(apps) if a.get("name") == op.get("name")]
-            index = names[0] if len(names) == 1 else None
-        if index is not None:
-            marks[index] = kind
+
+        index = None
+        key = f'{op.get("source")}:{op.get("id")}'
+        if key in by_ident:
+            index = by_ident[key]
+        else:
+            candidate = op.get("index")
+            if isinstance(candidate, int) and 0 <= candidate < len(apps):
+                index = candidate
+            else:
+                names = [i for i, a in enumerate(apps)
+                         if a.get("name") == op.get("name")]
+                index = names[0] if len(names) == 1 else None
+
+        if index is None:
+            # Nothing on the grid yet: a game a scan just found.
+            entry = op.get("entry") or {}
+            ghosts.append({"name": op.get("name") or "(unnamed)", "op": kind,
+                           "from_scan": scanned_op,
+                           "image-path": entry.get("image-path") or ""})
+        else:
+            marks[index] = (kind, scanned_op)
 
     tiles = []
     for position, entry in enumerate(apps):
-        key = f'{entry.get("source")}:{entry.get("id")}'
-        tiles.append(_tile(entry, token, is_new=key in new_ids,
-                           pending=marks.get(position, "")))
+        kind, scanned_op = marks.get(position, ("", False))
+        tiles.append(_tile(entry, token, pending=kind, from_scan=scanned_op))
     for entry in hidden:
         tiles.append(_tile(entry, token, is_hidden=True))
     for ghost in ghosts:
-        label = "NEW" if ghost["op"] == "add" else "COPY"
-        tiles.append(f'<span class="tile ghost"><div class="fallback">&nbsp;</div>'
-                     f'<span class="flag">{label} QUEUED</span>'
+        if ghost["op"] == "clone":
+            label, tone = "COPY QUEUED", "ghost"
+        elif ghost.get("from_scan"):
+            label, tone = "NEW", "ghost found"
+        else:
+            label, tone = "NEW QUEUED", "ghost"
+        art = (f'<img src="/art?p={_eq(ghost["image-path"])}&token={_e(token)}" alt="">'
+               if ghost.get("image-path") else '<div class="fallback">&nbsp;</div>')
+        tiles.append(f'<span class="tile {tone}">{art}'
+                     f'<span class="flag">{label}</span>'
                      f'<span class="cap">{_e(ghost["name"])}</span></span>')
     tiles.append(f'<a class="tile add" href="/app?new=1&token={_e(token)}">'
                  f'<div class="fallback">+ Add an application</div></a>')
@@ -552,8 +585,7 @@ def grid_page(state: Dict[str, Any], token: str, *, new_ids: Optional[set] = Non
     if parts:
         legend = f'<div class="legend">{"".join(parts)}</div>'
 
-    # Something to apply means queued edits, or games a scan just turned up.
-    outstanding = queued + found
+    outstanding = queued
     apply_button = (f'<a class="btn" href="/apply?token={_e(token)}">'
                     f'Apply {outstanding} change{"" if outstanding == 1 else "s"}</a>'
                     if outstanding else "")

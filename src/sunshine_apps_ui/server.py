@@ -12,8 +12,8 @@ from urllib.parse import parse_qs, urlencode, urlsplit
 
 from . import __version__, security
 from . import artwork, state
-from .importer import (ImporterError, apply_plan, check_auth, get_state,
-                       mutate, run_plan, save_auth)
+from .importer import (ImporterError, check_auth, get_state, mutate,
+                       run_plan, save_auth)
 from .render import (app_page, applied_page, confirm_page, connect_page,
                      error_page, explain_page, grid_page, page,
                      render_fields, render_flags)
@@ -99,20 +99,20 @@ class PlanHandler(BaseHTTPRequestHandler):
                 self._send(500, error_page("Could not read the app list.",
                                            str(e), token=self.token))
                 return
-            new_ids = set()
             scanned = "scan" in query
             if scanned:
+                # A scan stages what it found onto the grid as pending changes,
+                # rather than holding them aside to be applied by a second,
+                # invisible route. Everything that will happen is now one list.
                 try:
                     doc, _ = run_plan(self.importer_path, self.importer_args)
-                    new_ids = {f'{e.get("source")}:{e.get("id")}'
-                               for e in (doc.get("plan", {}).get("added") or [])}
+                    staged = state.stage_plan(doc.get("plan", {}) or {})
+                    log.info("scan staged %d change(s)", staged)
                 except ImporterError as e:
                     log.warning("scan failed: %s", e)
             auth_ok, _ = self._auth_state()
-            self._send(200, grid_page(current, self.token, new_ids=new_ids,
-                                      scanned=scanned, auth_ok=auth_ok,
-                                      pending=state.queue(),
-                                      found=len(new_ids)))
+            self._send(200, grid_page(current, self.token, scanned=scanned,
+                                      auth_ok=auth_ok, pending=state.queue()))
             return
 
         if parts.path == "/app.js":
@@ -316,36 +316,18 @@ class PlanHandler(BaseHTTPRequestHandler):
 
         if parts.path == "/apply":
             pending = state.queue()
-            ok, importer_log = True, ""
-            if pending:
-                # Do not reload yet: the import below reloads once for both, so
-                # a session of changes costs one disconnect rather than two.
-                try:
-                    ok, message = mutate(self.importer_path, pending, reload=False)
-                except ImporterError as e:
-                    ok, message = False, str(e)
-                if not ok:
-                    self._redirect("/", apply_error=message[:300])
-                    return
-                state.clear_queue()
+            if not pending:
+                self._redirect("/")
+                return
             try:
-                ok, importer_log = apply_plan(self.importer_path, self.importer_args)
+                ok, message = mutate(self.importer_path, pending, reload=True)
             except ImporterError as e:
-                ok, importer_log = False, str(e)
-            log.info("apply: %s", "ok" if ok else "failed")
-            params = {"token": self.token}
+                ok, message = False, str(e)
             if ok:
-                # Somewhere static: re-running the importer here would race the
-                # session teardown that this very apply just triggered.
-                target = "/applied?"
+                state.clear_queue()
+                self._redirect("/applied")
             else:
-                target = "/?"
-                tail = importer_log.strip().splitlines()
-                params["apply_error"] = (tail[-1] if tail else "Apply failed")[:300]
-            self.send_response(303)
-            self.send_header("Location", target + urlencode(params))
-            self.send_header("Content-Length", "0")
-            self.end_headers()
+                self._redirect("/", apply_error=message[:300])
             return
 
         if parts.path != "/credentials":

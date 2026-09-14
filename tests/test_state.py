@@ -87,3 +87,50 @@ class TestExplainPreference(StateTest):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestStagePlan(StateTest):
+    """A scan's findings become queued changes, visible on the grid."""
+
+    def _plan(self):
+        return {
+            "added": [{"name": "TF2", "source": "steam", "id": "440",
+                       "entry": {"name": "TF2", "bsm": {"source": "steam", "id": "440"}}}],
+            "updated": [{"name": "Portal 2", "source": "steam", "id": "620",
+                         "fields": ["image-path"],
+                         "entry": {"name": "Portal 2",
+                                   "bsm": {"source": "steam", "id": "620"}}}],
+        }
+
+    def test_findings_land_in_the_queue(self):
+        self.assertEqual(state.stage_plan(self._plan()), 2)
+        self.assertEqual([o["op"] for o in state.queue()], ["adopt", "adopt"])
+
+    def test_they_are_marked_as_coming_from_a_scan(self):
+        state.stage_plan(self._plan())
+        self.assertTrue(all(o["from_scan"] for o in state.queue()))
+
+    def test_the_whole_entry_is_carried_so_it_can_be_written_back(self):
+        state.stage_plan(self._plan())
+        self.assertIn("bsm", state.queue()[0]["entry"])
+
+    def test_scanning_twice_does_not_stage_the_same_thing_twice(self):
+        state.stage_plan(self._plan())
+        self.assertEqual(state.stage_plan(self._plan()), 0)
+        self.assertEqual(len(state.queue()), 2)
+
+    def test_a_decision_you_already_made_is_not_overridden(self):
+        """Hiding something then rescanning should not re-propose adding it."""
+        state.enqueue({"op": "hide", "index": 1, "name": "Portal 2",
+                       "source": "steam", "id": "620"})
+        self.assertEqual(state.stage_plan(self._plan()), 1)
+        ops = [(o["op"], o.get("name")) for o in state.queue()]
+        self.assertIn(("hide", "Portal 2"), ops)
+        self.assertNotIn(("adopt", "Portal 2"), ops)
+
+    def test_an_entry_without_a_payload_is_skipped(self):
+        self.assertEqual(state.stage_plan({"added": [{"name": "X"}]}), 0)
+
+    def test_an_empty_plan_stages_nothing(self):
+        self.assertEqual(state.stage_plan({}), 0)
+        self.assertEqual(state.queue(), [])

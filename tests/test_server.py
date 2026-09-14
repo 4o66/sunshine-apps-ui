@@ -29,7 +29,12 @@ PLAN = {
                "missing": 0, "kept_foreign": 1, "removed_by_user": 0,
                "suppressed": 0, "pruned": 0, "restored": 0},
     "plan": {
-        "added": [{"name": "Portal 2", "source": "steam", "id": "620"}],
+        # Deliberately not one of the apps in STATE: a scan's "added" means an
+        # entry the file does not have yet.
+        "added": [{"name": "Half-Life", "source": "steam", "id": "70",
+                   "entry": {"name": "Half-Life", "cmd": "steam -applaunch 70",
+                             "bsm": {"v": 1, "source": "steam", "id": "70",
+                                     "fields": {}}}}],
         "updated": [], "unchanged": [],
         "diverged": [{"name": "Cyberpunk 2077", "source": "steam", "id": "1091500",
                       "fields": [{"field": "cmd", "current": "mine <script>",
@@ -122,7 +127,7 @@ class ServerTest(unittest.TestCase):
     def test_valid_token_renders_the_plan(self):
         status, body = self.get("/plan", token=self.token)
         self.assertEqual(status, 200)
-        self.assertIn("Portal 2", body)
+        self.assertIn("Half-Life", body)
         self.assertIn("Cyberpunk 2077", body)
         self.assertIn("steam", body)
 
@@ -297,7 +302,7 @@ class ApplyTest(ServerTest):
         """Naming them beats asserting that some exist."""
         _, body = self.get("/apply", token=self.token)
         self.assertIn("Will be added", body)
-        self.assertIn("Portal 2", body)
+        self.assertIn("Half-Life", body)
 
     def test_the_confirmation_states_the_disconnect(self):
         _, body = self.get("/apply", token=self.token)
@@ -331,10 +336,11 @@ class ApplyTest(ServerTest):
                                        "Sec-Fetch-Dest": "document"})
         self.assertEqual(status, 404)
 
-    def test_a_successful_apply_redirects_to_the_applied_page(self):
+    def test_applying_nothing_just_returns_to_the_grid(self):
+        """Apply means "apply the queue"; an empty queue has nothing to do."""
         status, headers = self.post({}, token=self.token, path="/apply")
         self.assertEqual(status, 303)
-        self.assertIn("/applied", headers["Location"])
+        self.assertNotIn("/applied", headers["Location"])
 
     def test_the_apply_invocation_is_not_a_dry_run_and_does_reload(self):
         """The two flags that make apply mean 'write and reload'."""
@@ -540,10 +546,42 @@ class GridTest(ServerTest):
         _, body = self.get(token=self.token)
         self.assertNotIn("tile new", body)
 
-    def test_a_scan_marks_newly_found_entries(self):
-        _, body = self.get(f"/?scan=1&token={self.token}")
-        self.assertIn("tile new", body)
-        self.assertIn(">NEW<", body)
+    def test_a_scan_stages_what_it_found_onto_the_grid(self):
+        """Findings become pending changes you can see, not a separate channel."""
+        import tempfile as tf, shutil as sh
+        d = tf.mkdtemp()
+        old = os.environ.get("XDG_STATE_HOME")
+        os.environ["XDG_STATE_HOME"] = d
+        try:
+            from sunshine_apps_ui import state as st
+            _, body = self.get(f"/?scan=1&token={self.token}")
+            self.assertIn(">NEW<", body)
+            self.assertIn("ghost found", body)
+            self.assertEqual([o["op"] for o in st.queue()], ["adopt"])
+            self.assertIn("Apply 1 change", body)
+        finally:
+            if old is None:
+                os.environ.pop("XDG_STATE_HOME", None)
+            else:
+                os.environ["XDG_STATE_HOME"] = old
+            sh.rmtree(d, ignore_errors=True)
+
+    def test_scanning_twice_does_not_stage_it_twice(self):
+        import tempfile as tf, shutil as sh
+        d = tf.mkdtemp()
+        old = os.environ.get("XDG_STATE_HOME")
+        os.environ["XDG_STATE_HOME"] = d
+        try:
+            from sunshine_apps_ui import state as st
+            self.get(f"/?scan=1&token={self.token}")
+            self.get(f"/?scan=1&token={self.token}")
+            self.assertEqual(len(st.queue()), 1)
+        finally:
+            if old is None:
+                os.environ.pop("XDG_STATE_HOME", None)
+            else:
+                os.environ["XDG_STATE_HOME"] = old
+            sh.rmtree(d, ignore_errors=True)
 
     def test_there_is_an_add_tile(self):
         _, body = self.get(token=self.token)
