@@ -116,6 +116,17 @@ def stage_plan(plan: Dict[str, Any]) -> int:
     return added
 
 
+def drop_matching(**criteria: Any) -> bool:
+    """Remove the first queued operation matching every given field."""
+    pending = queue()
+    for position, op in enumerate(pending):
+        if all(op.get(key) == value for key, value in criteria.items()):
+            pending.pop(position)
+            _write(QUEUE_FILE, pending)
+            return True
+    return False
+
+
 def prefs() -> Dict[str, Any]:
     value = _read(PREFS_FILE, {})
     return value if isinstance(value, dict) else {}

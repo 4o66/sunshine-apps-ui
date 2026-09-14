@@ -806,12 +806,28 @@ class HiddenEntryTest(ServerTest):
         self.assertIn("WILL UN-HIDE", body)
         self.assertNotIn('class="mark">hidden', body)
 
-    def test_asking_twice_says_it_is_already_queued(self):
+    def test_asking_twice_says_it_is_already_queued_and_offers_a_way_out(self):
         from sunshine_apps_ui import state as st
         st.enqueue({"op": "restore", "selector": "steam:440", "name": "TF2"})
         _, body = self.get(f"/app?hidden=steam%3A440&token={self.token}")
-        self.assertIn("Already queued", body)
+        self.assertIn("Queued to come back", body)
         self.assertNotIn("Un-hide it", body)
+        self.assertIn("Cancel un-hiding", body)
+        self.assertIn("Back to the apps", body)
+
+    def test_cancelling_removes_it_from_the_queue(self):
+        from sunshine_apps_ui import state as st
+        st.enqueue({"op": "restore", "selector": "steam:440", "name": "TF2"})
+        self.post({"op": "restore", "selector": "steam:440"},
+                  token=self.token, path="/unqueue")
+        self.assertEqual(st.queue(), [])
+
+    def test_cancelling_something_not_queued_is_harmless(self):
+        from sunshine_apps_ui import state as st
+        status, _ = self.post({"op": "restore", "selector": "steam:999"},
+                              token=self.token, path="/unqueue")
+        self.assertEqual(status, 303)
+        self.assertEqual(st.queue(), [])
 
     def test_an_entry_that_is_not_hidden_says_so(self):
         status, body = self.get(f"/app?hidden=steam%3A999&token={self.token}")

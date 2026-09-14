@@ -318,7 +318,7 @@ def applied_page(token: str, via_sunshine: bool = False) -> str:
 <div class="wrap">
 <h1>Applied</h1>
 <section class="ok"><p class="why">apps.json was written. {_e(detail)}</p></section>
-<div class="actions"><a class="btn sec" href="/?token={_e(token)}">Back to the plan</a></div>
+<div class="actions"><a class="btn sec" href="/?token={_e(token)}">Back to the apps</a></div>
 </div></body></html>"""
 
 
@@ -691,8 +691,17 @@ def hidden_page(entry: Dict[str, Any], token: str, queued: bool = False) -> str:
     selector_text = f'{entry.get("source")}:{entry.get("id")}'
 
     if queued:
-        action = ('<p class="why">Already queued to come back. '
-                  'Apply on the grid to make it so.</p>')
+        # Every page needs a way out, and a queued change needs a way to undo
+        # the queueing -- otherwise the only route back is the browser button.
+        action = (f'<p class="why">Queued to come back. Apply on the grid to make '
+                  f'it so, then its settings can be edited like any other app.</p>'
+                  f'<form method="post" action="/unqueue?token={_e(token)}">'
+                  f'<input type="hidden" name="op" value="restore">'
+                  f'<input type="hidden" name="selector" value="{_e(selector_text)}">'
+                  f'<div class="actions">'
+                  f'<button class="btn sec" type="submit">Cancel un-hiding</button>'
+                  f'<a class="btn" href="/?token={_e(token)}">Back to the apps</a>'
+                  f'</div></form>')
     else:
         action = (f'<form method="post" action="/queue?token={_e(token)}">'
                   f'<input type="hidden" name="op" value="restore">'

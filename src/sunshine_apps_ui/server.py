@@ -340,6 +340,19 @@ class PlanHandler(BaseHTTPRequestHandler):
             self._redirect("/")
             return
 
+        if parts.path == "/unqueue":
+            fields = self._form()
+            op = (fields.get("op") or [""])[0]
+            criteria = {"op": op}
+            for key in ("selector", "name"):
+                value = (fields.get(key) or [""])[0]
+                if value:
+                    criteria[key] = value
+            if not op or not state.drop_matching(**criteria):
+                log.info("nothing matched to un-queue: %r", criteria)
+            self._redirect("/")
+            return
+
         if parts.path == "/discard":
             state.clear_queue()
             self._redirect("/")
