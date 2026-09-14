@@ -122,6 +122,15 @@ class ServerTest(unittest.TestCase):
         except urllib.error.HTTPError as e:
             return e.code, dict(e.headers)
 
+    def get_no_redirect(self, path):
+        url = f"http://127.0.0.1:{self.port}{path}"
+        opener = urllib.request.build_opener(NoRedirect)
+        try:
+            with opener.open(url, timeout=10) as r:
+                return r.status, dict(r.headers)
+        except urllib.error.HTTPError as e:
+            return e.code, dict(e.headers)
+
     def test_it_binds_loopback_only(self):
         self.assertEqual(self.httpd.server_address[0], "127.0.0.1")
 
@@ -1014,3 +1023,114 @@ class EditPendingTest(ServerTest):
         status, _ = self.post({"op": "revise", "qid": "nope", "name": "X"},
                               token=self.token, path="/app")
         self.assertEqual(status, 404)
+
+
+class FilePickerTest(ServerTest):
+    """Choosing a path without typing it, and without losing the form."""
+
+    LISTING = {
+        "ok": True, "path": "/home/u", "parent": "/home",
+        "entries": [{"name": "games", "path": "/home/u/games", "type": "directory"},
+                    {"name": "run.sh", "path": "/home/u/run.sh", "type": "file"}],
+    }
+
+    def setUp(self):
+        super().setUp()
+        import tempfile as tf
+        self.sd = tf.mkdtemp()
+        self._old = os.environ.get("XDG_STATE_HOME")
+        os.environ["XDG_STATE_HOME"] = self.sd
+        fd, self.imp = tf.mkstemp(suffix=".sh")
+        os.write(fd, (
+            "#!/bin/sh\ncase \"$*\" in\n"
+            f"  *--browse*) cat <<'B'\n{json.dumps(self.LISTING)}\nB\n exit 0 ;;\n"
+            "  *--check-auth*) echo '{\"ok\": true, \"message\": \"ok\"}'; exit 0 ;;\n"
+            f"  *--state*) cat <<'S'\n{json.dumps(STATE)}\nS\n exit 0 ;;\n"
+            "esac\n"
+            f"cat <<'P'\n{json.dumps(PLAN)}\nP\nexit 0\n").encode())
+        os.close(fd); os.chmod(self.imp, 0o755)
+        self.httpd.RequestHandlerClass.importer_path = self.imp
+
+    def tearDown(self):
+        import shutil as sh
+        self.httpd.RequestHandlerClass.importer_path = self.importer
+        os.path.exists(self.imp) and os.unlink(self.imp)
+        if self._old is None:
+            os.environ.pop("XDG_STATE_HOME", None)
+        else:
+            os.environ["XDG_STATE_HOME"] = self._old
+        sh.rmtree(self.sd, ignore_errors=True)
+        super().tearDown()
+
+    def test_the_form_offers_a_browse_button_for_path_fields(self):
+        _, body = self.get(f"/app?new=1&token={self.token}")
+        for field in ("cmd", "working-dir", "image-path"):
+            self.assertIn(f'value="browse:{field}"', body)
+
+    def test_it_does_not_offer_one_for_a_field_that_is_not_a_path(self):
+        _, body = self.get(f"/app?new=1&token={self.token}")
+        self.assertNotIn('value="browse:name"', body)
+
+    def test_pressing_browse_keeps_what_was_typed(self):
+        """Otherwise everything entered before choosing a file is lost."""
+        from sunshine_apps_ui import state as st
+        self.post({"op": "browse:cmd", "name": "My Game", "cmd": "",
+                   "working-dir": "/tmp", "image-path": "", "output": "",
+                   "exit-timeout": ""}, token=self.token, path="/app")
+        self.assertEqual(st.draft("new")["name"], "My Game")
+        self.assertEqual(st.draft("new")["working-dir"], "/tmp")
+
+    def test_the_form_comes_back_with_the_draft(self):
+        from sunshine_apps_ui import state as st
+        st.set_draft("new", {"name": "My Game", "cmd": "/bin/true"})
+        _, body = self.get(f"/app?new=1&token={self.token}")
+        self.assertIn('value="My Game"', body)
+        self.assertIn('value="/bin/true"', body)
+
+    def test_the_picker_lists_directories_and_files_differently(self):
+        status, body = self.get(f"/browse?key=new&field=cmd&token={self.token}")
+        self.assertEqual(status, 200)
+        self.assertIn("games", body)
+        self.assertIn("run.sh", body)
+        self.assertIn(">folder<", body)
+        self.assertIn(">choose<", body)
+
+    def test_choosing_a_file_records_it_and_returns_to_the_form(self):
+        from sunshine_apps_ui import state as st
+        st.set_draft("new", {"name": "My Game"})
+        from urllib.parse import quote
+        status, headers = self.get_no_redirect(
+            f"/browse?key=new&field=cmd&pick={quote('/home/u/run.sh', safe='')}"
+            f"&token={self.token}")
+        self.assertEqual(status, 303)
+        self.assertIn("/app?new=1", headers["Location"])
+        self.assertEqual(st.draft("new")["cmd"], "/home/u/run.sh")
+        self.assertEqual(st.draft("new")["name"], "My Game")
+
+    def test_a_field_that_cannot_be_browsed_is_refused(self):
+        status, _ = self.get(f"/browse?key=new&field=name&token={self.token}")
+        self.assertEqual(status, 404)
+
+    def test_the_picker_needs_a_token(self):
+        self.assertEqual(self.get("/browse?key=new&field=cmd")[0], 404)
+
+    def test_a_listing_failure_is_shown_rather_than_crashing(self):
+        import tempfile as tf
+        fd, bad = tf.mkstemp(suffix=".sh")
+        os.write(fd, b"#!/bin/sh\necho '{\"ok\": false, \"message\": \"nope\"}'\nexit 1\n")
+        os.close(fd); os.chmod(bad, 0o755)
+        self.httpd.RequestHandlerClass.importer_path = bad
+        try:
+            status, body = self.get(f"/browse?key=new&field=cmd&token={self.token}")
+            self.assertEqual(status, 200)
+            self.assertIn("nope", body)
+        finally:
+            os.unlink(bad)
+
+    def test_queueing_the_entry_clears_its_draft(self):
+        from sunshine_apps_ui import state as st
+        st.set_draft("new", {"name": "leftover"})
+        self.post({"op": "add", "name": "My Game", "cmd": "/bin/true",
+                   "working-dir": "", "image-path": "", "output": "",
+                   "exit-timeout": ""}, token=self.token, path="/app")
+        self.assertEqual(st.draft("new"), {})

@@ -12,11 +12,12 @@ from urllib.parse import parse_qs, urlencode, urlsplit
 
 from . import __version__, security
 from . import artwork, state
-from .importer import (ImporterError, check_auth, get_state, mutate,
-                       run_plan, save_auth)
+from .importer import (ImporterError, browse, check_auth, get_state,
+                       mutate, run_plan, save_auth)
 from .render import (app_page, applied_page, confirm_page, connect_page,
                      error_page, explain_page, grid_page, hidden_page,
-                     page, render_fields, render_flags)
+                     page, picker_page, render_browsable, render_fields,
+                     render_flags)
 
 log = logging.getLogger("sunshine-apps-ui")
 
@@ -127,7 +128,8 @@ class PlanHandler(BaseHTTPRequestHandler):
 
         if parts.path == "/app":
             if "new" in query:
-                self._send(200, app_page({}, self.token, is_new=True))
+                self._send(200, app_page(dict(state.draft("new")), self.token,
+                                         is_new=True, draft_key="new"))
                 return
             if "queued" in query:
                 qid = (query.get("queued") or [""])[0]
@@ -143,8 +145,10 @@ class PlanHandler(BaseHTTPRequestHandler):
                 marker = (op.get("entry") or {}).get("bsm") or {}
                 entry["managed"] = bool(marker)
                 entry["source"], entry["id"] = marker.get("source"), marker.get("id")
+                entry.update(state.draft(f"qid:{qid}"))
                 self._send(200, app_page(entry, self.token, qid=qid,
-                                         queued_op=str(op.get("op", ""))))
+                                         queued_op=str(op.get("op", "")),
+                                         draft_key=f"qid:{qid}"))
                 return
 
             if "hidden" in query:
@@ -174,7 +178,10 @@ class PlanHandler(BaseHTTPRequestHandler):
                                            token=self.token,
                                            title="Nothing to show"))
                 return
-            self._send(200, app_page(entry, self.token))
+            entry = dict(entry)
+            entry.update(state.draft(f"index:{entry.get('index')}"))
+            self._send(200, app_page(entry, self.token,
+                                     draft_key=f"index:{entry.get('index')}"))
             return
 
         if parts.path == "/explain":
@@ -192,6 +199,34 @@ class PlanHandler(BaseHTTPRequestHandler):
                 self._queue_and_return(op, entry)
                 return
             self._send(200, explain_page(op, entry, self.token))
+            return
+
+        if parts.path == "/browse":
+            key = (query.get("key") or [""])[0]
+            field = (query.get("field") or [""])[0]
+            browsable = render_browsable()
+            if field not in browsable:
+                self._send(404, error_page("Nothing to choose here.",
+                                           token=self.token, title="Nothing to show"))
+                return
+
+            picked = (query.get("pick") or [""])[0]
+            if picked:
+                values = dict(state.draft(key))
+                values[field] = picked
+                state.set_draft(key, values)
+                self._redirect_raw(self._form_target(key))
+                return
+
+            label = next(l for k, l, _t, _h in render_fields() if k == field)
+            where = (query.get("path") or [""])[0] or os.path.expanduser("~")
+            error = ""
+            try:
+                listing = browse(self.importer_path, where, browsable[field])
+            except ImporterError as e:
+                error, listing = str(e), {"path": where, "parent": "", "entries": []}
+            self._send(200, picker_page(listing, self.token, key=key, field=field,
+                                        label=label, error=error))
             return
 
         if parts.path == "/connect":
@@ -274,10 +309,27 @@ class PlanHandler(BaseHTTPRequestHandler):
                 return app
         return None
 
-    def _redirect(self, path: str, **params) -> None:
+    def _form_target(self, key: str) -> str:
+        if key == "new":
+            return f"/app?new=1&token={self.token}"
+        if key.startswith("qid:"):
+            return f"/app?queued={key[4:]}&token={self.token}"
+        if key.startswith("index:"):
+            return f"/app?index={key[6:]}&token={self.token}"
+        return f"/?token={self.token}"
+
+    def _redirect_raw(self, location: str) -> None:
+        self.send_response(303)
+        self.send_header("Location", location)
+        self.send_header("Content-Length", "0")
+        self.end_headers()
+
+    def _redirect(self, location: str, **params) -> None:
+        # Named "location", not "path": "path" is also a query parameter the
+        # picker needs to pass, and the collision crashed the handler.
         params.setdefault("token", self.token)
         self.send_response(303)
-        self.send_header("Location", path + "?" + urlencode(params))
+        self.send_header("Location", location + "?" + urlencode(params))
         self.send_header("Content-Length", "0")
         self.end_headers()
 
@@ -321,6 +373,25 @@ class PlanHandler(BaseHTTPRequestHandler):
             fields = self._form()
             op = (fields.get("op") or [""])[0]
 
+            if op.startswith("browse:"):
+                field = op.split(":", 1)[1]
+                if field not in render_browsable():
+                    self._send(400, error_page("Nothing to choose there.",
+                                               token=self.token))
+                    return
+                values = {k: (fields.get(k) or [""])[0]
+                          for k, _l, _t, _h in render_fields()}
+                for k, _label in render_flags():
+                    values[k] = k in fields
+                qid = (fields.get("qid") or [""])[0]
+                index = (fields.get("index") or [""])[0]
+                key = (f"qid:{qid}" if qid
+                       else f"index:{index}" if index != "" else "new")
+                state.set_draft(key, values)
+                self._redirect("/browse", key=key, field=field,
+                               path=values.get(field) or "")
+                return
+
             if op == "revise":
                 qid = (fields.get("qid") or [""])[0]
                 existing = state.find(qid)
@@ -343,6 +414,7 @@ class PlanHandler(BaseHTTPRequestHandler):
                 else:
                     state.update(qid, {"fields": values,
                                        "name": values.get("name") or existing.get("name")})
+                state.clear_draft(f"qid:{qid}")
                 self._redirect("/")
                 return
 
@@ -354,13 +426,16 @@ class PlanHandler(BaseHTTPRequestHandler):
             for key, _label in render_flags():
                 values[key] = key in fields
             entry = {"op": op, "fields": values}
+            key_for_form = "new"
             if op != "add":
                 try:
                     entry["index"] = int((fields.get("index") or ["-1"])[0])
                 except ValueError:
                     entry["index"] = -1
                 entry["name"] = (fields.get("orig_name") or [""])[0]
+                key_for_form = f"index:{entry['index']}"
             state.enqueue(entry)
+            state.clear_draft(key_for_form)
             self._redirect("/")
             return
 

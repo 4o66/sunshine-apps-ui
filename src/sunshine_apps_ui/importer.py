@@ -90,6 +90,24 @@ def get_state(importer: str, timeout: int = 30,
     return doc
 
 
+def browse(importer: str, path: str = "", kind: str = "any",
+           timeout: int = 30) -> Dict[str, Any]:
+    """List a directory through the importer, which asks Sunshine."""
+    cmd = [importer, "--browse", path or "", "--browse-type", kind or "any", "--json"]
+    try:
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+    except subprocess.TimeoutExpired as e:
+        raise ImporterError(f"Listing took longer than {timeout}s") from e
+    try:
+        doc = json.loads(proc.stdout)
+    except json.JSONDecodeError:
+        tail = (proc.stderr or "").strip().splitlines()
+        raise ImporterError(tail[-1] if tail else "Could not list that directory")
+    if not doc.get("ok"):
+        raise ImporterError(str(doc.get("message") or "Could not list that directory"))
+    return doc
+
+
 def check_auth(importer: str, timeout: int = 30) -> Tuple[bool, str]:
     """Are stored Sunshine credentials present and accepted?"""
     proc = subprocess.run([importer, "--check-auth", "--json"],

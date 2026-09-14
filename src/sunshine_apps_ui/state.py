@@ -158,6 +158,37 @@ def drop_matching(**criteria: Any) -> bool:
     return False
 
 
+DRAFTS_FILE = "drafts.json"
+
+
+def _drafts() -> Dict[str, Any]:
+    value = _read(DRAFTS_FILE, {})
+    return value if isinstance(value, dict) else {}
+
+
+def draft(key: str) -> Dict[str, Any]:
+    """Half-finished form values, so leaving the form does not discard them.
+
+    Picking a file means navigating away and back; without this, everything
+    typed before pressing Browse would be gone on return.
+    """
+    value = _drafts().get(key)
+    return value if isinstance(value, dict) else {}
+
+
+def set_draft(key: str, fields: Dict[str, Any]) -> None:
+    drafts = _drafts()
+    drafts[key] = fields
+    _write(DRAFTS_FILE, drafts)
+
+
+def clear_draft(key: str) -> None:
+    drafts = _drafts()
+    if key in drafts:
+        del drafts[key]
+        _write(DRAFTS_FILE, drafts)
+
+
 def prefs() -> Dict[str, Any]:
     value = _read(PREFS_FILE, {})
     return value if isinstance(value, dict) else {}

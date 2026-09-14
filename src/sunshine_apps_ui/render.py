@@ -654,6 +654,9 @@ _APP_CSS = """
 border:1px solid var(--border);border-radius:var(--radius-md);
 padding:.55rem .7rem;font:inherit;font-size:.95rem;width:100%}
 .field input:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+.withbtn{display:flex;gap:.4rem;align-items:stretch}
+.withbtn input{flex:1}
+.withbtn .browse{white-space:nowrap;padding:.55rem .9rem}
 .row{display:flex;gap:1.2rem;flex-wrap:wrap}
 .check{display:flex;gap:.5rem;align-items:center;font-size:.9rem}
 .btn[disabled]{opacity:.45;cursor:not-allowed}
@@ -675,6 +678,9 @@ _FIELDS = [
     ("output", "Output log", "text", "File to capture the command's output. Usually empty."),
     ("exit-timeout", "Exit timeout", "text", "Seconds to wait for a clean exit before forcing it."),
 ]
+# Fields that name something on disk, so a picker is worth offering.
+_BROWSABLE = {"cmd": "executable", "working-dir": "directory", "image-path": "any"}
+
 _FLAGS = [
     ("elevated", "Run elevated"),
     ("auto-detach", "Auto-detach"),
@@ -688,9 +694,84 @@ def render_fields():
     return list(_FIELDS)
 
 
+def render_browsable():
+    """Which fields name something on disk, and what kind."""
+    return dict(_BROWSABLE)
+
+
 def render_flags():
     """The editable boolean fields."""
     return list(_FLAGS)
+
+
+_PICKER_CSS = """
+.crumb{color:var(--text-muted);font-family:var(--mono);font-size:.85rem;
+margin:0 0 .75rem;word-break:break-all}
+.listing{display:grid;gap:.3rem;max-height:60vh;overflow:auto;margin:0 0 1rem}
+.listing a{display:flex;gap:.6rem;align-items:center;text-decoration:none;
+color:inherit;background:var(--bg-subtle);border:1px solid var(--border);
+border-radius:var(--radius-md);padding:.5rem .7rem;font-size:.92rem}
+.listing a:hover,.listing a:focus-visible{border-color:var(--primary);outline:none}
+.listing .k{color:var(--text-subtle);font-size:.78rem;min-width:4.5rem}
+.listing a.dir .k{color:var(--accent)}
+"""
+
+
+def picker_page(listing: Dict[str, Any], token: str, *, key: str, field: str,
+                label: str, error: str = "") -> str:
+    """Choose a path, through Sunshine's own directory listing."""
+    here = str(listing.get("path") or "")
+    parent = str(listing.get("parent") or "")
+    entries = listing.get("entries") or []
+
+    def link(path: str, name: str, is_dir: bool) -> str:
+        what = "go" if is_dir else "pick"
+        return (f'<a class="{"dir" if is_dir else "file"}" '
+                f'href="/browse?key={_eq(key)}&field={_eq(field)}'
+                f'&{"path" if is_dir else "pick"}={_eq(path)}&token={_e(token)}">'
+                f'<span class="k">{"folder" if is_dir else "choose"}</span>'
+                f'<span>{_e(name)}</span></a>')
+
+    rows = []
+    if parent and parent != here:
+        rows.append(link(parent, "..", True))
+    for item in entries:
+        if not isinstance(item, dict):
+            continue
+        rows.append(link(str(item.get("path") or ""), str(item.get("name") or ""),
+                         item.get("type") == "directory"))
+
+    body = ("".join(rows) if rows
+            else '<p class="why">Nothing here to choose.</p>')
+    problem = f'<section class="err"><p class="why">{_e(error)}</p></section>' if error else ""
+
+    return f"""<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Choose {_e(label)}</title>
+<style>{_CSS}{_APP_CSS}{_PICKER_CSS}</style></head>
+<body>
+<div class="navbar"><span class="brand">Sunshine</span><span class="sep">/</span>
+<span class="where">apps</span></div>
+<div class="wrap">
+<h1>Choose {_e(label)}</h1>
+{problem}
+<p class="crumb">{_e(here or "/")}</p>
+<div class="listing">{body}</div>
+<div class="actions">
+<a class="btn sec" href="{_e(_form_url(key, token))}">Cancel</a></div>
+</div></body></html>"""
+
+
+def _form_url(key: str, token: str) -> str:
+    """Where a form lives, so the picker can go back to the one that opened it."""
+    if key == "new":
+        return f"/app?new=1&token={_e(token)}"
+    if key.startswith("qid:"):
+        return f"/app?queued={_e(key[4:])}&token={_e(token)}"
+    if key.startswith("index:"):
+        return f"/app?index={_e(key[6:])}&token={_e(token)}"
+    return f"/?token={_e(token)}"
 
 
 def hidden_page(entry: Dict[str, Any], token: str, queued: bool = False) -> str:
@@ -746,7 +827,7 @@ Un-hiding lets the next scan find it again.<br>
 
 def app_page(entry: Dict[str, Any], token: str, *, is_new: bool = False,
              queued: int = 0, warning: str = "", qid: str = "",
-             queued_op: str = "") -> str:
+             queued_op: str = "", draft_key: str = "") -> str:
     """One application, with everything about it editable."""
     name = entry.get("name") or ""
     index = entry.get("index")
@@ -757,9 +838,15 @@ def app_page(entry: Dict[str, Any], token: str, *, is_new: bool = False,
     for key, label, _kind, hint in _FIELDS:
         value = entry.get(key)
         value = "" if value is None else str(value)
+        browse = ""
+        if key in _BROWSABLE:
+            browse = (f'<button class="btn sec browse" type="submit" '
+                      f'name="op" value="browse:{key}" formnovalidate>Browse</button>')
         fields.append(
             f'<div class="field"><label for="f_{key}">{_e(label)}</label>'
+            f'<div class="withbtn">'
             f'<input id="f_{key}" name="{key}" type="text" value="{_e(value)}">'
+            f'{browse}</div>'
             f'<span class="hint">{_e(hint)}</span></div>')
     flags = "".join(
         f'<label class="check"><input type="checkbox" name="{key}"'
