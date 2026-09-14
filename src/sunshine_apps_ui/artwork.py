@@ -31,6 +31,26 @@ def resolve(image_path: str) -> str:
     return ""
 
 
+# Artwork the importer caches for the picker: candidates it has fetched, and
+# covers already chosen. Both directories hold nothing but images this tool put
+# there, and both are read as a list of filenames rather than matched as a path
+# prefix, so the allowlist stays an exact set.
+_CACHE_DIRS = (os.path.join("images", ".candidates"),
+               os.path.join("images", "chosen"))
+
+
+def _cached_artwork(config_dir: str) -> Set[str]:
+    paths = set()
+    for relative in _CACHE_DIRS:
+        directory = os.path.join(config_dir, relative)
+        try:
+            names = os.listdir(directory)
+        except OSError:
+            continue
+        paths.update(os.path.join(directory, name) for name in names)
+    return paths
+
+
 def allowed_paths(state: Dict[str, Any],
                   pending: Optional[List[Dict[str, Any]]] = None) -> Set[str]:
     """Every image-path the interface may legitimately show.
@@ -38,8 +58,13 @@ def allowed_paths(state: Dict[str, Any],
     That is the current configuration *and* anything queued but not yet applied:
     a game a scan has just staged is in neither apps.json nor its tombstones, so
     leaving the queue out means every newly found tile shows a broken image.
+    Artwork being chosen is in neither, either -- a candidate has been fetched
+    but nothing refers to it until someone picks it.
     """
     paths = set()
+    config_dir = str(state.get("config_dir") or "")
+    if config_dir:
+        paths |= _cached_artwork(config_dir)
     for group in ("apps", "hidden"):
         for entry in state.get(group) or []:
             if isinstance(entry, dict) and entry.get("image-path"):

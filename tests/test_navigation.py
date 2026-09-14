@@ -17,6 +17,8 @@ from sunshine_apps_ui import render  # noqa: E402
 APP = {"name": "X", "index": 0, "source": "steam", "id": "1"}
 HIDDEN = {"name": "X", "source": "steam", "id": "1", "image-path": ""}
 PLAN = {"plan": {"added": []}, "totals": {}}
+ART = [{"id": "a" * 16, "source": "steam-cdn", "label": "Portrait",
+        "path": "/img/a.png"}]
 
 
 def pages():
@@ -29,6 +31,9 @@ def pages():
         "explain hide": render.explain_page("hide", APP, "t"),
         "explain delete": render.explain_page("delete", APP, "t"),
         "connect": render.connect_page("t"),
+        "artwork": render.artwork_page(ART, "t", key="index:0", label="X",
+                                       notes=["nothing configured"]),
+        "artwork (empty)": render.artwork_page([], "t", key="new", label="X"),
         "confirm": render.confirm_page(PLAN, "t"),
         "confirm (nothing)": render.confirm_page({"plan": {}, "totals": {}}, "t"),
         "applied": render.applied_page("t"),
@@ -65,10 +70,21 @@ class TestEveryPageHasAWayOnward(unittest.TestCase):
         """A link without one lands on a refusal, as /app.js did."""
         for name, html in pages().items():
             with self.subTest(page=name):
-                for target in re.findall(r'(?:href|action|src)="(/[^"]*)"', html):
+                for target in re.findall(r'(?:href|src)="(/[^"]*)"', html):
                     if target.startswith("//"):
                         continue
                     self.assertIn("token=", target, f"{name}: {target} has no token")
+
+    def test_every_form_carries_a_token(self):
+        """A GET form drops its action's query string, so those pass it as a
+        hidden field instead. Either way it has to be in the request."""
+        for name, html in pages().items():
+            with self.subTest(page=name):
+                for form in re.findall(r'<form\b.*?</form>', html, re.S):
+                    action = re.search(r'action="([^"]*)"', form)
+                    carried = ("token=" in (action.group(1) if action else "")
+                               or 'name="token"' in form)
+                    self.assertTrue(carried, f"{name}: a form has no token")
 
 
 if __name__ == "__main__":

@@ -108,6 +108,49 @@ def browse(importer: str, path: str = "", kind: str = "any",
     return doc
 
 
+def art_search(importer: str, *, name: str = "", source: str = "",
+               ident: str = "", timeout: int = 120) -> Dict[str, Any]:
+    """Every cover on offer for one app, each already cached as a local file.
+
+    Slow by nature -- it fetches a dozen images from two or three services -- so
+    it gets a generous timeout and is only ever run when someone asks for it.
+    """
+    cmd = [importer, "--art-search", "--json",
+           "--art-name", name or "", "--art-source", source or "",
+           "--art-ident", str(ident or "")]
+    try:
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+    except subprocess.TimeoutExpired as e:
+        raise ImporterError(
+            f"Looking for artwork took longer than {timeout}s.") from e
+    try:
+        doc = json.loads(proc.stdout)
+    except json.JSONDecodeError:
+        tail = (proc.stderr or "").strip().splitlines()
+        raise ImporterError(tail[-1] if tail else "Could not look for artwork")
+    if not doc.get("ok"):
+        raise ImporterError(str(doc.get("message") or "Could not look for artwork"))
+    return doc
+
+
+def art_choose(importer: str, chosen_id: str, name: str = "",
+               timeout: int = 30) -> str:
+    """Take a candidate from that list. Returns the image-path to use."""
+    cmd = [importer, "--art-choose", chosen_id, "--art-name", name or "", "--json"]
+    try:
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+    except subprocess.TimeoutExpired as e:
+        raise ImporterError(f"Saving the artwork took longer than {timeout}s.") from e
+    try:
+        doc = json.loads(proc.stdout)
+    except json.JSONDecodeError:
+        tail = (proc.stderr or "").strip().splitlines()
+        raise ImporterError(tail[-1] if tail else "Could not save that artwork")
+    if not doc.get("ok"):
+        raise ImporterError(str(doc.get("message") or "Could not save that artwork"))
+    return str(doc.get("image-path") or "")
+
+
 def check_auth(importer: str, timeout: int = 30) -> Tuple[bool, str]:
     """Are stored Sunshine credentials present and accepted?"""
     proc = subprocess.run([importer, "--check-auth", "--json"],

@@ -12,12 +12,12 @@ from urllib.parse import parse_qs, urlencode, urlsplit
 
 from . import __version__, security
 from . import artwork, state
-from .importer import (ImporterError, browse, check_auth, get_state,
-                       mutate, run_plan, save_auth)
-from .render import (app_page, applied_page, confirm_page, connect_page,
-                     error_page, explain_page, grid_page, hidden_page,
-                     page, picker_page, render_browsable, render_fields,
-                     render_flags)
+from .importer import (ImporterError, art_choose, art_search, browse,
+                       check_auth, get_state, mutate, run_plan, save_auth)
+from .render import (app_page, applied_page, artwork_page, confirm_page,
+                     connect_page, error_page, explain_page, grid_page,
+                     hidden_page, page, picker_page, render_browsable,
+                     render_fields, render_flags)
 
 log = logging.getLogger("sunshine-apps-ui")
 
@@ -230,6 +230,42 @@ class PlanHandler(BaseHTTPRequestHandler):
                                         filter_text=(query.get("q") or [""])[0]))
             return
 
+        if parts.path == "/artwork":
+            key = (query.get("key") or [""])[0]
+            name, source, ident = self._art_subject(key)
+
+            chosen = (query.get("choose") or [""])[0]
+            if chosen:
+                try:
+                    picked = art_choose(self.importer_path, chosen, name)
+                except ImporterError as e:
+                    self._send(500, error_page("Could not save that artwork.",
+                                               str(e), token=self.token))
+                    return
+                values = dict(state.draft(key))
+                values["image-path"] = picked
+                state.set_draft(key, values)
+                self._redirect_raw(self._form_target(key))
+                return
+
+            # Searching for a different title means a different game, so the
+            # ownership marker no longer applies: look it up by that name alone.
+            searched = (query.get("q") or [""])[0] or name
+            if searched != name:
+                source = ident = ""
+            error, doc = "", {"candidates": [], "notes": []}
+            try:
+                doc = art_search(self.importer_path, name=searched,
+                                 source=source, ident=ident)
+            except ImporterError as e:
+                error = str(e)
+            self._send(200, artwork_page(
+                doc.get("candidates") or [], self.token, key=key,
+                label=name or "this app",
+                current=str(state.draft(key).get("image-path") or ""),
+                notes=doc.get("notes") or [], searched=searched, error=error))
+            return
+
         if parts.path == "/connect":
             auth_ok, auth_message = self._auth_state()
             posted = (query.get("msg") or [""])[0]
@@ -310,6 +346,34 @@ class PlanHandler(BaseHTTPRequestHandler):
                 return app
         return None
 
+    def _art_subject(self, key: str):
+        """(name, source, ident) for whichever form the artwork picker opened from.
+
+        The name comes from the draft rather than from apps.json, so renaming an
+        entry and then looking for artwork searches for the new name. The marker
+        is what turns a search into a lookup: with an appid there is no guessing.
+        """
+        values = state.draft(key)
+        name = str(values.get("name") or "")
+        source = ident = ""
+        if key.startswith("qid:"):
+            op = state.find(key[4:]) or {}
+            name = name or str(op.get("name") or "")
+            marker = (op.get("entry") or {}).get("bsm") or {}
+            source, ident = str(marker.get("source") or ""), str(marker.get("id") or "")
+        elif key.startswith("index:"):
+            try:
+                current = get_state(self.importer_path, use_cache=True)
+            except ImporterError:
+                current = {}
+            for app in current.get("apps") or []:
+                if str(app.get("index")) == key[6:]:
+                    name = name or str(app.get("name") or "")
+                    source = str(app.get("source") or "")
+                    ident = str(app.get("id") or "")
+                    break
+        return name, source, ident
+
     def _form_target(self, key: str) -> str:
         if key == "new":
             return f"/app?new=1&token={self.token}"
@@ -374,12 +438,15 @@ class PlanHandler(BaseHTTPRequestHandler):
             fields = self._form()
             op = (fields.get("op") or [""])[0]
 
-            if op.startswith("browse:"):
-                field = op.split(":", 1)[1]
+            if op in ("artwork",) or op.startswith("browse:"):
+                field = "image-path" if op == "artwork" else op.split(":", 1)[1]
                 if field not in render_browsable():
                     self._send(400, error_page("Nothing to choose there.",
                                                token=self.token))
                     return
+                # Whichever picker this is, the half-typed form goes into a
+                # draft first: leaving the page must not discard the edits that
+                # were the reason for opening a picker in the first place.
                 values = {k: (fields.get(k) or [""])[0]
                           for k, _l, _t, _h in render_fields()}
                 for k, _label in render_flags():
@@ -389,6 +456,9 @@ class PlanHandler(BaseHTTPRequestHandler):
                 key = (f"qid:{qid}" if qid
                        else f"index:{index}" if index != "" else "new")
                 state.set_draft(key, values)
+                if op == "artwork":
+                    self._redirect("/artwork", key=key)
+                    return
                 self._redirect("/browse", key=key, field=field,
                                path=values.get(field) or "")
                 return

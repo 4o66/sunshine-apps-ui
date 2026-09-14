@@ -862,6 +862,108 @@ Un-hiding lets the next scan find it again.<br>
 </div></body></html>"""
 
 
+
+_ARTWORK_CSS = """
+.arts{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));
+gap:1rem;margin:0 0 1.5rem}
+.arts figure{margin:0;display:flex;flex-direction:column;gap:.4rem}
+.arts a{display:block;border:2px solid var(--border);border-radius:var(--radius-md);
+overflow:hidden;background:var(--bg-subtle);text-decoration:none}
+.arts a:hover,.arts a:focus-visible{border-color:var(--primary);outline:none}
+.arts img{display:block;width:100%;aspect-ratio:2/3;object-fit:cover}
+.arts figcaption{font-size:.8rem;color:var(--text-muted);text-align:center;
+line-height:1.3}
+.arts figcaption b{display:block;color:var(--text);font-size:.85rem}
+.arts .current a{border-color:var(--accent)}
+.arts .current figcaption b{color:var(--accent)}
+.notes{margin:0 0 1.25rem;padding:0;list-style:none}
+.notes li{font-size:.9rem;color:var(--text-muted);margin:.25rem 0}
+.find{display:flex;gap:.4rem;margin:0 0 1.25rem}
+.find input[type=text]{flex:1;background:var(--bg-base);color:var(--text);
+border:1px solid var(--border);border-radius:var(--radius-md);
+padding:.5rem .7rem;font:inherit}
+.find input:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+"""
+
+# Where each candidate came from, said the way it matters to someone choosing:
+# not the name of an API, but why this picture might be the right one.
+_ART_SOURCES = [
+    ("steam-local", "On this machine",
+     "What Steam has already downloaded for its own library. Usually the "
+     "current art, because Steam keeps it up to date."),
+    ("steam-cdn", "From Steam",
+     "What Valve publishes today. Sometimes older than the copy above: these "
+     "addresses are not always refreshed when a game's art changes."),
+    ("sgdb", "From SteamGridDB",
+     "Made by other people and voted on, best first. Where to look when a game "
+     "has no cover of its own."),
+]
+
+
+def artwork_page(candidates: List[Dict[str, Any]], token: str, *, key: str,
+                 label: str, current: str = "", notes: Optional[List[str]] = None,
+                 searched: str = "", error: str = "") -> str:
+    """Choose cover art from everything that could be found for one app."""
+    by_source: Dict[str, List[Dict[str, Any]]] = {}
+    for candidate in candidates:
+        by_source.setdefault(str(candidate.get("source")), []).append(candidate)
+
+    def tile(candidate: Dict[str, Any]) -> str:
+        path = str(candidate.get("path") or "")
+        is_current = bool(current) and path == current
+        return (f'<figure class="{"current" if is_current else ""}">'
+                f'<a href="/artwork?key={_eq(key)}&choose={_eq(str(candidate.get("id")))}'
+                f'&q={_eq(searched)}&token={_e(token)}">'
+                f'<img src="/art?p={_eq(path)}&token={_e(token)}" alt=""></a>'
+                f'<figcaption><b>{_e(str(candidate.get("label") or ""))}</b>'
+                f'{"in use" if is_current else "choose"}</figcaption></figure>')
+
+    sections = []
+    for source, heading, why in _ART_SOURCES:
+        found = by_source.get(source) or []
+        if not found:
+            continue
+        sections.append(
+            f'<h2>{_e(heading)}</h2><p class="why">{_e(why)}</p>'
+            f'<div class="arts">{"".join(tile(c) for c in found)}</div>')
+
+    if not sections:
+        sections.append('<p class="why">Nothing was found for this one. '
+                        'Try a different name, or browse for a file.</p>')
+
+    note_items = "".join(f"<li>{_e(n)}</li>" for n in (notes or []))
+    note_list = f'<ul class="notes">{note_items}</ul>' if note_items else ""
+    problem = (f'<section class="err"><p class="why">{_e(error)}</p></section>'
+               if error else "")
+
+    # Searching by a different name is the way out of a title that does not
+    # match what SteamGridDB calls it -- an edition, a subtitle, a re-release.
+    find = (f'<form class="find" method="get" action="/artwork">'
+            f'<input type="hidden" name="key" value="{_e(key)}">'
+            f'<input type="hidden" name="token" value="{_e(token)}">'
+            f'<input type="text" name="q" value="{_e(searched)}" '
+            f'placeholder="Search by another name" aria-label="Search by another name">'
+            f'<button class="btn sec" type="submit">Search</button></form>')
+
+    return f"""<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Artwork for {_e(label)}</title>
+<style>{_CSS}{_APP_CSS}{_ARTWORK_CSS}</style></head>
+<body>
+<div class="navbar"><span class="brand">Sunshine</span><span class="sep">/</span>
+<span class="where">apps</span></div>
+<div class="wrap">
+<h1>Artwork for {_e(label)}</h1>
+{problem}{note_list}{find}
+{"".join(sections)}
+<div class="actions">
+<a class="btn sec" href="{_e(_form_url(key, token))}">Back</a>
+<a class="btn sec" href="/browse?key={_eq(key)}&field=image-path&token={_e(token)}">
+Browse for a file</a></div>
+</div></body></html>"""
+
+
 def app_page(entry: Dict[str, Any], token: str, *, is_new: bool = False,
              queued: int = 0, warning: str = "", qid: str = "",
              queued_op: str = "", draft_key: str = "") -> str:
@@ -879,6 +981,13 @@ def app_page(entry: Dict[str, Any], token: str, *, is_new: bool = False,
         if key in _BROWSABLE:
             browse = (f'<button class="btn sec browse" type="submit" '
                       f'name="op" value="browse:{key}" formnovalidate>Browse</button>')
+        if key == "image-path":
+            # Typing a path is the fallback here, not the main way: almost
+            # nobody knows where a cover lives, but everybody knows one when
+            # they see it.
+            browse = (f'<button class="btn sec browse" type="submit" '
+                      f'name="op" value="artwork" formnovalidate>Find artwork'
+                      f'</button>') + browse
         fields.append(
             f'<div class="field"><label for="f_{key}">{_e(label)}</label>'
             f'<div class="withbtn">'

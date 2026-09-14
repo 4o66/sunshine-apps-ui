@@ -23,6 +23,52 @@ class TestAllowlist(unittest.TestCase):
         self.assertNotIn("", artwork.allowed_paths(STATE))
 
 
+class TestCachedArtworkIsAllowed(unittest.TestCase):
+    """Artwork being chosen is referred to by nothing yet, so nothing else
+    would let the picker show it."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.conf = self.tmp.name
+        self.candidates = os.path.join(self.conf, "images", ".candidates")
+        self.chosen = os.path.join(self.conf, "images", "chosen")
+        for directory in (self.candidates, self.chosen):
+            os.makedirs(directory)
+        self.state = dict(STATE, config_dir=self.conf)
+
+    def _write(self, directory, name):
+        path = os.path.join(directory, name)
+        with open(path, "wb") as handle:
+            handle.write(b"\x89PNG\r\n\x1a\n")
+        return path
+
+    def test_a_fetched_candidate_may_be_shown(self):
+        path = self._write(self.candidates, "abc.png")
+        self.assertIn(path, artwork.allowed_paths(self.state))
+
+    def test_a_chosen_cover_may_be_shown_before_it_is_applied(self):
+        path = self._write(self.chosen, "Game-abc.png")
+        self.assertIn(path, artwork.allowed_paths(self.state))
+
+    def test_a_file_beside_the_cache_is_not_allowed(self):
+        other = self._write(os.path.join(self.conf, "images"), "elsewhere.png")
+        self.assertNotIn(other, artwork.allowed_paths(self.state))
+
+    def test_walking_out_of_the_cache_is_not_allowed(self):
+        self._write(self.candidates, "abc.png")
+        allowed = artwork.allowed_paths(self.state)
+        self.assertIsNone(artwork.read(
+            os.path.join(self.candidates, "../../../etc/passwd"), allowed))
+
+    def test_the_apps_own_artwork_is_still_allowed(self):
+        self.assertIn("/tmp/a.png", artwork.allowed_paths(self.state))
+
+    def test_a_state_without_a_config_dir_is_not_an_error(self):
+        self.assertEqual(artwork.allowed_paths(STATE),
+                         {"/tmp/a.png", "/tmp/c.png"})
+
+
 class TestRead(unittest.TestCase):
     def setUp(self):
         fd, self.png = tempfile.mkstemp(suffix=".png")

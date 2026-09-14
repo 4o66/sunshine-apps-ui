@@ -2,14 +2,27 @@
 
 Companion web UI for [bazzite-sunshine-manager](https://github.com/4o66/bazzite-sunshine-manager).
 
-**Status: phase 1 — a read-only dashboard. It never writes to `apps.json`.**
+**Status: a tile manager.** The grid shows what Sunshine currently offers, a
+scan stages what it found onto that same grid, and nothing reaches `apps.json`
+until Apply.
 
 ## What this is
 
 The importer is a CLI. It scans Steam and Heroic libraries and reconciles the
 result into Sunshine's `apps.json`. This project is the front end for the part
-that benefits from being seen rather than logged: *here is what is about to
-change -- apply it or not.*
+that benefits from being seen rather than logged: the tiles themselves.
+
+Everything is driven from the grid. A tile can be edited, hidden, cloned or
+deleted; a scan marks what it found; new applications are added by hand. Each of
+those queues a change and shows it on the tile, so what is about to happen is
+visible in one place, and one Apply writes the file and asks Sunshine to re-read
+it. Paths are chosen with a file picker rather than typed, and cover art is
+chosen from what can actually be found for the game -- Steam's own library
+cache, Valve's CDN, and SteamGridDB -- rather than from a path to a PNG.
+
+It writes to `apps.json` only through the importer's `--mutate` contract: the
+rules about ownership markers, tombstones and Sunshine's own defaults live in
+one place, and this is not that place.
 
 It is a separate repository on purpose. The two talk over a versioned JSON
 contract (`sunshine-import --dry-run --json`), never by importing each other's
@@ -41,9 +54,9 @@ not the same as private, so it is not the only defence. See
     pip install -e .
     sunshine-apps-ui --open
 
-It finds `sunshine-import` on `PATH` (or take `--importer PATH`), runs it with
-`--dry-run --json`, and renders the plan. Arguments after `--` are passed
-through to the importer:
+It finds `sunshine-import` on `PATH` (or takes `--importer PATH`) and asks it
+what is in `apps.json` now. Arguments after `--` are passed through to the
+importer when it scans:
 
     sunshine-apps-ui -- --no-heroic
 
@@ -55,8 +68,10 @@ request is refused.
     src/sunshine_apps_ui/
       importer.py   runs sunshine-import and validates the plan schema
       security.py   token, Host and cross-site checks
-      render.py     the page
+      render.py     the pages
       server.py     the listener
+      state.py      the queue of pending changes, and per-form drafts
+      artwork.py    which images may be served, as an exact allowlist
     docs/security.md  threat model and the decisions behind it
 
 ## License

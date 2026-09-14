@@ -1166,3 +1166,171 @@ class FilePickerTest(ServerTest):
                    "working-dir": "", "image-path": "", "output": "",
                    "exit-timeout": ""}, token=self.token, path="/app")
         self.assertEqual(st.draft("new"), {})
+
+
+class ArtworkPickerTest(ServerTest):
+    """Choosing a cover from what can be found, rather than typing a path."""
+
+    FOUND = {
+        "ok": True,
+        "candidates": [
+            {"id": "a" * 16, "source": "steam-local", "label": "Portrait",
+             "origin": "/steam/526870/library_capsule.jpg",
+             "path": "/home/u/.config/sunshine/images/.candidates/aaaa.png"},
+            {"id": "b" * 16, "source": "steam-cdn", "label": "Portrait",
+             "origin": "https://steam/library_600x900.jpg",
+             "path": "/home/u/.config/sunshine/images/.candidates/bbbb.png"},
+            {"id": "c" * 16, "source": "sgdb", "label": "by someone",
+             "origin": "https://sgdb/1.png",
+             "path": "/home/u/.config/sunshine/images/.candidates/cccc.png"},
+        ],
+        "notes": ["SteamGridDB is not configured."],
+    }
+
+    def setUp(self):
+        super().setUp()
+        import tempfile as tf
+        self.sd = tf.mkdtemp()
+        self._old = os.environ.get("XDG_STATE_HOME")
+        os.environ["XDG_STATE_HOME"] = self.sd
+        self.args = os.path.join(self.sd, "args")
+        fd, self.imp = tf.mkstemp(suffix=".sh")
+        os.write(fd, (
+            "#!/bin/sh\n"
+            f'echo "$*" >> {self.args}\n'
+            "case \"$*\" in\n"
+            f"  *--art-search*) cat <<'A'\n{json.dumps(self.FOUND)}\nA\n exit 0 ;;\n"
+            "  *--art-choose*) echo '{\"ok\": true, \"image-path\": "
+            "\"/home/u/.config/sunshine/images/chosen/Portal-2-aaaa.png\"}'; exit 0 ;;\n"
+            "  *--check-auth*) echo '{\"ok\": true, \"message\": \"ok\"}'; exit 0 ;;\n"
+            f"  *--state*) cat <<'S'\n{json.dumps(STATE)}\nS\n exit 0 ;;\n"
+            "esac\n"
+            f"cat <<'P'\n{json.dumps(PLAN)}\nP\nexit 0\n").encode())
+        os.close(fd); os.chmod(self.imp, 0o755)
+        self.httpd.RequestHandlerClass.importer_path = self.imp
+
+    def tearDown(self):
+        import shutil as sh
+        self.httpd.RequestHandlerClass.importer_path = self.importer
+        os.path.exists(self.imp) and os.unlink(self.imp)
+        if self._old is None:
+            os.environ.pop("XDG_STATE_HOME", None)
+        else:
+            os.environ["XDG_STATE_HOME"] = self._old
+        sh.rmtree(self.sd, ignore_errors=True)
+        super().tearDown()
+
+    def _args(self):
+        with open(self.args) as handle:
+            return handle.read()
+
+    def test_the_form_offers_to_find_artwork(self):
+        _, body = self.get(f"/app?index=1&token={self.token}")
+        self.assertIn('value="artwork"', body)
+
+    def test_it_offers_that_only_for_the_artwork_field(self):
+        _, body = self.get(f"/app?index=1&token={self.token}")
+        self.assertEqual(body.count('value="artwork"'), 1)
+
+    def test_candidates_are_grouped_by_where_they_came_from(self):
+        _, body = self.get(f"/artwork?key=index:1&token={self.token}")
+        self.assertIn("On this machine", body)
+        self.assertIn("From Steam", body)
+        self.assertIn("From SteamGridDB", body)
+
+    def test_every_candidate_is_shown_as_a_picture(self):
+        _, body = self.get(f"/artwork?key=index:1&token={self.token}")
+        self.assertEqual(body.count('<img src="/art?p='), 3)
+
+    def test_a_steam_entry_is_looked_up_by_its_appid(self):
+        self.get(f"/artwork?key=index:1&token={self.token}")
+        self.assertIn("--art-source steam", self._args())
+        self.assertIn("--art-ident 620", self._args())
+
+    def test_the_name_being_edited_is_what_gets_searched_for(self):
+        from sunshine_apps_ui import state as st
+        st.set_draft("index:1", {"name": "Portal 2 Deluxe"})
+        self.get(f"/artwork?key=index:1&token={self.token}")
+        self.assertIn("Portal 2 Deluxe", self._args())
+
+    def test_searching_another_title_drops_the_appid(self):
+        """A different name means a different game; its appid would win and
+        silently ignore what was typed."""
+        self.get(f"/artwork?key=index:1&q=Hades&token={self.token}")
+        args = self._args()
+        self.assertIn("--art-name Hades", args)
+        self.assertNotIn("--art-ident 620", args)
+
+    def test_searching_the_same_title_keeps_the_appid(self):
+        self.get(f"/artwork?key=index:1&q=Portal%202&token={self.token}")
+        self.assertIn("--art-ident 620", self._args())
+
+    def test_notes_explain_a_source_that_gave_nothing(self):
+        _, body = self.get(f"/artwork?key=index:1&token={self.token}")
+        self.assertIn("SteamGridDB is not configured", body)
+
+    def test_choosing_a_cover_records_it_and_returns_to_the_form(self):
+        from sunshine_apps_ui import state as st
+        st.set_draft("index:1", {"name": "Portal 2", "cmd": "keep me"})
+        status, headers = self.get_no_redirect(
+            f"/artwork?key=index:1&choose={'a' * 16}&token={self.token}")
+        self.assertEqual(status, 303)
+        self.assertIn("/app?index=1", headers["Location"])
+        draft = st.draft("index:1")
+        self.assertTrue(draft["image-path"].endswith("Portal-2-aaaa.png"))
+        self.assertEqual(draft["cmd"], "keep me")
+
+    def test_the_cover_in_use_is_marked_rather_than_offered_again(self):
+        from sunshine_apps_ui import state as st
+        st.set_draft("index:1", {
+            "image-path": self.FOUND["candidates"][0]["path"]})
+        _, body = self.get(f"/artwork?key=index:1&token={self.token}")
+        self.assertIn("in use", body)
+
+    def test_pressing_find_artwork_keeps_what_was_typed(self):
+        from sunshine_apps_ui import state as st
+        status, headers = self.post(
+            {"op": "artwork", "index": "1", "name": "Portal 2", "cmd": "half typed",
+             "working-dir": "", "image-path": "", "output": "", "exit-timeout": ""},
+            token=self.token, path="/app")
+        self.assertEqual(status, 303)
+        self.assertIn("/artwork", headers["Location"])
+        self.assertEqual(st.draft("index:1")["cmd"], "half typed")
+
+    def test_a_new_entry_can_look_for_artwork_too(self):
+        from sunshine_apps_ui import state as st
+        st.set_draft("new", {"name": "Some Game"})
+        status, body = self.get(f"/artwork?key=new&token={self.token}")
+        self.assertEqual(status, 200)
+        self.assertIn("Some Game", body)
+
+    def test_a_queued_addition_looks_up_its_own_appid(self):
+        from sunshine_apps_ui import state as st
+        st.clear_queue()
+        qid = st.enqueue({"op": "add", "name": "Half-Life",
+                          "entry": {"name": "Half-Life",
+                                    "bsm": {"source": "steam", "id": "70"}}}
+                         )[-1]["qid"]
+        self.get(f"/artwork?key=qid:{qid}&token={self.token}")
+        self.assertIn("--art-ident 70", self._args())
+
+    def test_the_picker_needs_a_token(self):
+        self.assertEqual(self.get("/artwork?key=index:1")[0], 404)
+
+    def test_a_failure_to_search_is_shown_rather_than_crashing(self):
+        import tempfile as tf
+        fd, bad = tf.mkstemp(suffix=".sh")
+        os.write(fd, b"#!/bin/sh\necho '{\"ok\": false, \"message\": \"no network\"}'\n")
+        os.close(fd); os.chmod(bad, 0o755)
+        self.httpd.RequestHandlerClass.importer_path = bad
+        try:
+            status, body = self.get(f"/artwork?key=index:1&token={self.token}")
+            self.assertEqual(status, 200)
+            self.assertIn("no network", body)
+        finally:
+            os.unlink(bad)
+
+    def test_there_is_always_a_way_back(self):
+        _, body = self.get(f"/artwork?key=index:1&token={self.token}")
+        self.assertIn("/app?index=1", body)
+        self.assertIn("Browse for a file", body)

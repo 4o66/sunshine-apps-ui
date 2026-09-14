@@ -38,5 +38,19 @@ running has no attack surface, and the Sunshine app entry launches it anyway.
 
 Applying changes without restarting Sunshine requires posting to Sunshine's own
 API, which needs its web-UI credentials. Those are read from a mode-600 file or
-prompted per session. Never on argv -- the parent project already gets this
-wrong with `--sgdb-key`, which leaks into `ps` output and shell history.
+prompted per session. Never on argv -- the parent project got this wrong with
+`--sgdb-key`, which leaks into `ps` output and shell history. That one now has
+`--save-sgdb-key`, which reads the key on stdin and stores it the same way.
+
+## Images are served from an allowlist, never from a path
+
+`/art` takes a path, but it does not inspect it: the path has to be in a set
+rebuilt from the current `apps.json`, the pending queue, and the importer's two
+artwork cache directories on every request. There is no `..` check because there
+is nothing for `..` to escape -- a path that is not in the set is simply not
+found. Adding a source of images means adding it to that set, not relaxing a
+rule.
+
+The artwork picker is a case in point. A candidate it has fetched is referred to
+by nothing yet, so it is allowed by enumerating what is in the cache directory,
+which is still an exact set of filenames rather than a prefix match.
