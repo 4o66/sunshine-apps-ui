@@ -38,7 +38,7 @@ PROFILE="$STATE/browser-profile"
 # ostree system /home is a symlink to /var/home and the same directory has two
 # spellings. A running browser started under one of them would not match a
 # pattern built from the other, and the whole point here is not to miss it.
-PROFILE_MATCH="--user-data-dir=.*sunshine-apps-ui/browser-profile"
+PROFILE_MATCH="(--user-data-dir=|--profile )[^ ]*sunshine-apps-ui/browser-profile"
 browsers() { pgrep -u "$(id -u)" -f -- "$PROFILE_MATCH"; }
 
 # One at a time. Relaunching should replace the previous session rather than
@@ -91,34 +91,90 @@ if [[ -z "$URL" ]]; then
   echo "UI did not start; see $LOG" >&2; exit 1
 fi
 
-# Chrome's flatpak shares the host network, so loopback resolves to this
-# machine's, not the sandbox's.
-for browser in com.google.Chrome com.vivaldi.Vivaldi; do
-  if flatpak info "$browser" >/dev/null 2>&1; then
-    flatpak run "$browser" --user-data-dir="$PROFILE" --no-first-run \
-      --app="$URL" --start-fullscreen &
-    BROWSER_PID=$!
-    # Give the browser a moment to appear before watching for it to disappear.
-    for _ in $(seq 1 60); do
-      browsers >/dev/null && break
-      kill -0 "$BROWSER_PID" 2>/dev/null || break
-      sleep 0.5
-    done
-    # Stay until one of the two goes, then let the trap take the other with it.
-    #
-    # Waiting on BROWSER_PID alone was wrong twice over. `flatpak run` can hand
-    # off and return while the window stays up, which would shut the server down
-    # under a live page. And the server can stop on its own -- it does exactly
-    # that after applying -- which would leave the window up showing a page that
-    # no longer loads.
-    while browsers >/dev/null && kill -0 "$SERVER" 2>/dev/null; do
-      sleep 1
-    done
-    exit 0
-  fi
+# A browser, in order of preference, each launched so that it is a window for
+# this and nothing else.
+#
+# Bazzite has Chrome as a flatpak; nothing else necessarily does. Every other
+# distribution Sunshine ships packages for -- Debian, Ubuntu, Fedora, Arch,
+# openSUSE -- installs browsers natively, so trying only flatpak meant falling
+# through to xdg-open and losing the window this waits on.
+#
+# Chromium-family browsers take --app and --user-data-dir, which is what makes
+# the window ours to find and to close. Firefox is listed last because --kiosk
+# has no equivalent of --app: it takes over the screen rather than giving us a
+# window, which is right on a television and wrong on a desktop.
+launch_flatpak() {
+  flatpak info "$1" >/dev/null 2>&1 || return 1
+  flatpak run "$1" --user-data-dir="$PROFILE" --no-first-run \
+    --app="$URL" --start-fullscreen &
+  BROWSER_PID=$!
+}
+
+launch_chromium() {
+  command -v "$1" >/dev/null 2>&1 || return 1
+  "$1" --user-data-dir="$PROFILE" --no-first-run \
+    --app="$URL" --start-fullscreen &
+  BROWSER_PID=$!
+}
+
+launch_firefox() {
+  command -v "$1" >/dev/null 2>&1 || return 1
+  "$1" --profile "$PROFILE" --kiosk "$URL" &
+  BROWSER_PID=$!
+}
+
+started() { [[ -n "${BROWSER_PID:-}" ]]; }
+
+# Flatpak first: on an immutable system it is the one that is actually there,
+# and its network is the host's, so loopback means this machine.
+for app in com.google.Chrome com.brave.Browser com.vivaldi.Vivaldi \
+           org.chromium.Chromium com.microsoft.Edge; do
+  launch_flatpak "$app" && break
 done
 
-xdg-open "$URL"
-# No browser process to wait on, so hold the server open until the app is
-# stopped rather than exiting and tearing it down immediately.
+if ! started; then
+  for binary in google-chrome google-chrome-stable chromium chromium-browser \
+                brave-browser vivaldi-stable microsoft-edge-stable; do
+    launch_chromium "$binary" && break
+  done
+fi
+
+if ! started; then
+  for binary in firefox firefox-esr; do
+    launch_firefox "$binary" && break
+  done
+fi
+
+if started; then
+  # Give the browser a moment to appear before watching for it to disappear.
+  for _ in $(seq 1 60); do
+    browsers >/dev/null && break
+    kill -0 "$BROWSER_PID" 2>/dev/null || break
+    sleep 0.5
+  done
+  # Stay until one of the two goes, then let the trap take the other with it.
+  #
+  # Waiting on BROWSER_PID alone was wrong twice over. `flatpak run` can hand
+  # off and return while the window stays up, which would shut the server down
+  # under a live page. And the server can stop on its own -- it does exactly
+  # that after applying -- which would leave the window up showing a page that
+  # no longer loads.
+  while browsers >/dev/null && kill -0 "$SERVER" 2>/dev/null; do
+    sleep 1
+  done
+  exit 0
+fi
+
+if command -v xdg-open >/dev/null 2>&1; then
+  echo "No browser found that can be opened as a window; handing the URL to the" >&2
+  echo "desktop instead. Closing the page will not stop the server." >&2
+  xdg-open "$URL"
+  # Nothing to wait on, so hold the server open until this is stopped rather
+  # than exiting and tearing it down immediately.
+  wait "$SERVER"
+  exit 0
+fi
+
+echo "No browser found. The interface is running at:" >&2
+echo "  $URL" >&2
 wait "$SERVER"

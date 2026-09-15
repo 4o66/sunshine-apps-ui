@@ -97,9 +97,39 @@ stdlib-only Python. This is a port of the edges, not a rewrite.
 
 ### Suggested order
 
-1. SteamOS, on the Legion Go S. Mostly confirming what already works.
-2. Generic Linux: remove the Bazzite assumptions from discovery and the
-   installer, and say what is required instead.
+1. **Generic Linux -- done, 2026-09-15.** See below.
+2. SteamOS, on the Legion Go S. Mostly confirming what already works.
 3. macOS: paths and the browser launch; no Flatpak to worry about.
 4. Windows: the real port. Config discovery, the launcher, file permissions,
    and an installer that suits the platform rather than imitating ours.
+
+### What generic Linux established
+
+Tested on throwaway VMs on the Unraid host, built from cloud images:
+Fedora 43, Ubuntu 24.04 and Arch, alongside Bazzite and macOS. Python 3.10
+through 3.14. The full suite passes on all of them.
+
+The interesting part was a real Sunshine, installed on Ubuntu 24.04 from
+LizardByte's own `.deb`:
+
+- Its default `apps.json` ships three entries -- Desktop, Low Res Desktop,
+  Steam Big Picture. A scan added our three launchers and left all three of
+  Sunshine's alone, which is the data loss this fork exists to prevent.
+- Writing and reloading through Sunshine's own API worked with no restart.
+- **Our ownership markers survive Sunshine reading the file back** -- three of
+  six entries came back through `/api/apps` with their `bsm` key intact. That
+  assumption was previously read out of Sunshine's source; it is now measured.
+
+What actually needed changing was smaller than expected, and none of it was in
+the engine:
+
+- The launcher only knew Chrome-as-a-flatpak, which only Bazzite necessarily
+  has. It now tries flatpak browsers, then natively installed Chromium-family
+  ones, then Firefox, then `xdg-open`, and says so if there is nothing.
+- `sunshine-apps-ui --scan` ran the kiosk launcher rather than the program,
+  because the installed command is the launcher. Any argument now runs the
+  program.
+
+Still untested anywhere: a desktop session. Cloud images have no display, so
+the browser launch, gamescope and the tile itself are still only exercised on
+Bazzite.

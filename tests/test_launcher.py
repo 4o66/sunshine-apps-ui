@@ -256,3 +256,48 @@ class LauncherArgumentsTest(unittest.TestCase):
             text = handle.read()
         launch = text[text.index('if [[ $# -gt 0 ]]'):]
         self.assertIn("flatpak run", launch)
+
+
+class BrowserChoiceTest(unittest.TestCase):
+    """Which browser it opens, on machines that are not Bazzite.
+
+    Only Bazzite necessarily has Chrome as a flatpak. Every other distribution
+    Sunshine ships packages for installs browsers natively, and trying only
+    flatpak meant falling through to xdg-open and losing the window this waits
+    on -- which is what tells it when to shut the server down.
+    """
+
+    def setUp(self):
+        with open(LAUNCHER, encoding="utf-8") as handle:
+            self.text = handle.read()
+
+    def test_flatpak_is_tried_first(self):
+        """On an immutable system it is the one that is actually installed."""
+        self.assertLess(self.text.index("launch_flatpak"),
+                        self.text.index("launch_chromium"))
+
+    def test_natively_installed_browsers_are_tried_too(self):
+        for binary in ("google-chrome", "chromium", "brave-browser",
+                       "vivaldi-stable"):
+            self.assertIn(binary, self.text)
+
+    def test_firefox_is_a_fallback_rather_than_a_peer(self):
+        """--kiosk has no equivalent of --app: it takes the screen rather than
+        giving us a window."""
+        self.assertLess(self.text.index("launch_chromium"),
+                        self.text.index("launch_firefox"))
+
+    def test_a_window_is_still_found_when_it_is_firefox(self):
+        """The teardown matches on the profile, and firefox spells it its own way."""
+        self.assertIn("--profile ", self.text.split("PROFILE_MATCH=")[1][:120])
+
+    def test_no_browser_at_all_says_so_and_keeps_serving(self):
+        tail = self.text[self.text.index("No browser found."):]
+        self.assertIn("$URL", tail)
+        self.assertIn('wait "$SERVER"', tail)
+
+    def test_every_launcher_records_the_pid_it_started(self):
+        """Without it there is nothing to wait on, and the server exits at once."""
+        for function in ("launch_flatpak", "launch_chromium", "launch_firefox"):
+            body = self.text.split(f"{function}() {{", 1)[1].split("}", 1)[0]
+            self.assertIn("BROWSER_PID=$!", body, function)
