@@ -80,6 +80,12 @@ Sunshine tile it creates, or directly:
 The URL it prints carries a token generated for that run. Without it, every
 request is refused.
 
+Credentials, when you want them. Both read the secret without echo and hand it
+over on stdin, never as an argument:
+
+    scripts/set-sunshine-credentials    # Sunshine's web UI login, for reloads
+    scripts/set-sgdb-key                # SteamGridDB, for community artwork
+
 Scanning without opening the interface, for scripts:
 
     sunshine-apps-ui --scan                 # scan, write, and reload Sunshine

@@ -301,3 +301,45 @@ class BrowserChoiceTest(unittest.TestCase):
         for function in ("launch_flatpak", "launch_chromium", "launch_firefox"):
             body = self.text.split(f"{function}() {{", 1)[1].split("}", 1)[0]
             self.assertIn("BROWSER_PID=$!", body, function)
+
+
+class CredentialScriptTest(unittest.TestCase):
+    """Capturing a secret without it reaching argv, ps or shell history."""
+
+    def setUp(self):
+        self.scripts = {
+            name: os.path.join(ROOT, "scripts", name)
+            for name in ("set-sgdb-key", "set-sunshine-credentials")
+        }
+        self.text = {name: open(path, encoding="utf-8").read()
+                     for name, path in self.scripts.items()}
+
+    def test_both_are_valid_shell_and_executable(self):
+        for name, path in self.scripts.items():
+            with self.subTest(script=name):
+                self.assertEqual(subprocess.run(["bash", "-n", path]).returncode, 0)
+                self.assertTrue(os.access(path, os.X_OK))
+
+    def test_the_secret_is_read_without_echo(self):
+        for name, text in self.text.items():
+            with self.subTest(script=name):
+                self.assertIn("read -rs", text)
+
+    def test_the_secret_never_becomes_an_argument(self):
+        """argv is visible in ps and lands in history."""
+        for name, text in self.text.items():
+            with self.subTest(script=name):
+                self.assertNotIn("--sgdb-key ", text)
+                self.assertNotIn("--password ", text)
+
+    def test_the_key_goes_to_the_manager_on_stdin(self):
+        self.assertIn("--save-sgdb-key", self.text["set-sgdb-key"])
+        self.assertIn("printf '%s\\n' \"$SGDB_KEY\" |", self.text["set-sgdb-key"])
+
+    def test_it_no_longer_looks_for_the_old_importer(self):
+        """That program is gone; asking for it would just fail confusingly."""
+        self.assertNotIn("sunshine-import", self.text["set-sgdb-key"])
+        self.assertNotIn("bsm-test-import", self.text["set-sgdb-key"])
+
+    def test_nothing_is_written_when_the_key_is_refused(self):
+        self.assertIn("Nothing was written", self.text["set-sgdb-key"])

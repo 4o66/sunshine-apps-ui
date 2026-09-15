@@ -47,6 +47,10 @@ def main(argv=None) -> int:
                         help="with --scan, report what would change and write nothing")
     parser.add_argument("--no-reload", action="store_true",
                         help="with --scan, do not ask Sunshine to re-read the file")
+    parser.add_argument("--save-sgdb-key", action="store_true",
+                        help="read a SteamGridDB key on stdin, check it against "
+                             "the API, and store it mode 600. Never as an "
+                             "argument: argv is visible in ps and in history")
     parser.add_argument("--verbose", action="store_true", help="log every request")
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     parser.add_argument("importer_args", nargs="*",
@@ -70,6 +74,12 @@ def main(argv=None) -> int:
             print(f"error: scan options are NAME=VALUE, not {pair!r}", file=sys.stderr)
             return 2
         options[name] = value
+
+    if args.save_sgdb_key:
+        from .core import api
+        ok, message = api.save_sgdb(conf_dir, sys.stdin.readline())
+        print(message, file=sys.stderr)
+        return 0 if ok else 1
 
     if args.scan:
         return _scan(conf_dir, options, dry_run=args.dry_run,
