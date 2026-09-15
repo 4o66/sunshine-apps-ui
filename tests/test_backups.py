@@ -228,3 +228,46 @@ class AdoptLegacyTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class WhereCopiesLiveTest(unittest.TestCase):
+    """Copies must not live inside the directory an install replaces.
+
+    They did. An rsync --delete onto the install directory removed ten of them,
+    and scripts/uninstall would have removed the rest -- at the moment you are
+    most likely to want one.
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.env = mock.patch.dict(os.environ, {
+            "XDG_STATE_HOME": os.path.join(self.tmp.name, "state"),
+            "XDG_DATA_HOME": os.path.join(self.tmp.name, "share"),
+            "BSM_BACKUP_DIR": ""})
+        self.env.start()
+        self.addCleanup(self.env.stop)
+
+    def test_copies_are_not_kept_where_the_program_is_installed(self):
+        install = os.path.join(self.tmp.name, "share", "sunshine-apps-ui")
+        self.assertFalse(backups.backup_dir().startswith(install),
+                         backups.backup_dir())
+
+    def test_they_are_kept_under_state(self):
+        self.assertTrue(
+            backups.backup_dir().startswith(os.path.join(self.tmp.name, "state")))
+
+    def test_copies_left_in_the_old_place_are_rescued(self):
+        old = os.path.join(self.tmp.name, "share", "sunshine-apps-ui", "backups")
+        os.makedirs(old)
+        apps_file(os.path.join(old, "apps-20260915-101500.json"), ["Rescued"])
+        self.assertEqual(backups.adopt_previous_location(), 1)
+        self.assertEqual([b["name"] for b in backups.list_backups()],
+                         ["apps-20260915-101500.json"])
+
+    def test_rescuing_is_not_an_error_when_there_is_nothing_there(self):
+        self.assertEqual(backups.adopt_previous_location(), 0)
+
+    def test_an_override_is_still_honoured(self):
+        with mock.patch.dict(os.environ, {"BSM_BACKUP_DIR": "/tmp/elsewhere"}):
+            self.assertEqual(backups.backup_dir(), "/tmp/elsewhere")

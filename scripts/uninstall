@@ -10,12 +10,18 @@
 #   scripts/uninstall
 #   scripts/uninstall --keep-state     # keep the queue and preferences
 #   scripts/uninstall --keep-tile      # leave apps.json alone
+#   scripts/uninstall --purge-backups  # also delete the kept copies of apps.json
+#
+# The kept copies of apps.json survive by default. They are copies of your
+# configuration, not of this program, and an uninstall is a moment you might
+# want one back.
 #
 set -uo pipefail
 
 PREFIX="${PREFIX:-$HOME/.local}"
 KEEP_STATE=0
 KEEP_TILE=0
+PURGE_BACKUPS=0
 
 usage() {
   sed -n '2,14p' "$0" | sed 's/^# \{0,1\}//' >&2
@@ -27,6 +33,7 @@ while (( "$#" )); do
     --prefix)      PREFIX="${2:-}"; shift 2 ;;
     --keep-state)  KEEP_STATE=1; shift ;;
     --keep-tile)   KEEP_TILE=1; shift ;;
+    --purge-backups) PURGE_BACKUPS=1; shift ;;
     -h|--help)     usage ;;
     *) echo "Unknown option: $1" >&2; usage ;;
   esac
@@ -35,6 +42,7 @@ done
 DEST="$PREFIX/share/sunshine-apps-ui"
 LINK="$PREFIX/bin/sunshine-apps-ui"
 STATE="${XDG_STATE_HOME:-$HOME/.local/state}/sunshine-apps-ui"
+BACKUPS="$STATE/backups"
 
 # Stop anything still running before removing what it is running from.
 pkill -u "$(id -u)" -f "sunshine_apps_ui --port" 2>/dev/null
@@ -76,9 +84,17 @@ echo "Removed $DEST"
 
 if (( KEEP_STATE )); then
   echo "Kept $STATE"
-else
+elif (( PURGE_BACKUPS )); then
   rm -rf "${STATE:?}"
-  echo "Removed $STATE"
+  echo "Removed $STATE, kept copies included"
+else
+  # Everything under state except the copies, which are copies of your
+  # configuration rather than of this program.
+  find "$STATE" -mindepth 1 -maxdepth 1 ! -name backups -exec rm -rf {} + 2>/dev/null
+  if [[ -d "$BACKUPS" ]]; then
+    echo "Kept $BACKUPS ($(ls -1 "$BACKUPS" 2>/dev/null | wc -l) copies of apps.json)"
+    echo "  Remove them with --purge-backups, or by hand."
+  fi
 fi
 
 echo "Done. Sunshine, and everything in apps.json that was not ours, is untouched."

@@ -192,10 +192,13 @@ def mutate(conf_dir: str, ops: List[Dict[str, Any]],
 
 
 def list_backups(conf_dir: str) -> List[Dict[str, Any]]:
-    """Kept copies, newest first, sweeping up any the old layout left behind."""
+    """Kept copies, newest first, sweeping up any earlier layout's."""
     moved = _backups.adopt_legacy(conf_dir)
     if moved:
         log(f"Moved {moved} older copy(s) out of {conf_dir}")
+    rescued = _backups.adopt_previous_location()
+    if rescued:
+        log(f"Moved {rescued} copy(s) out of the install directory")
     return _backups.list_backups()
 
 

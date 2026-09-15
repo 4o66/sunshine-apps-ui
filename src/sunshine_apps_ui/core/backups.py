@@ -32,16 +32,58 @@ _LEGACY_PREFIX = "apps.json.bak-"
 
 
 def backup_dir(create: bool = False) -> str:
-    """Where copies are kept. Override with BSM_BACKUP_DIR."""
+    """Where copies are kept. Override with BSM_BACKUP_DIR.
+
+    Under state, not share, and that is not arbitrary. Share is where the
+    program is installed, so anything kept there is inside the directory an
+    install replaces and an uninstall deletes -- which is the moment you most
+    want the copies to still exist. I proved that by deleting ten of them with
+    an rsync --delete onto the install directory.
+    """
     override = os.getenv("BSM_BACKUP_DIR", "").strip()
     if override:
         directory = os.path.abspath(os.path.expanduser(override))
     else:
-        base = os.getenv("XDG_DATA_HOME") or os.path.expanduser("~/.local/share")
+        base = os.getenv("XDG_STATE_HOME") or os.path.expanduser("~/.local/state")
         directory = os.path.join(base, "sunshine-apps-ui", "backups")
     if create:
         os.makedirs(directory, exist_ok=True)
     return directory
+
+
+def _previous_dir() -> str:
+    """Where copies used to be kept, so any still there can be rescued."""
+    base = os.getenv("XDG_DATA_HOME") or os.path.expanduser("~/.local/share")
+    return os.path.join(base, "sunshine-apps-ui", "backups")
+
+
+def adopt_previous_location(keep: int = KEEP) -> int:
+    """Move copies out of the install directory they used to sit in."""
+    source = _previous_dir()
+    destination = backup_dir()
+    if os.path.realpath(source) == os.path.realpath(destination):
+        return 0
+    try:
+        names = sorted(n for n in os.listdir(source) if is_backup(n))
+    except OSError:
+        return 0
+    if not names:
+        return 0
+    os.makedirs(destination, exist_ok=True)
+    moved = 0
+    for name in names:
+        target = os.path.join(destination, name)
+        try:
+            if os.path.exists(target):
+                os.remove(os.path.join(source, name))
+            else:
+                shutil.move(os.path.join(source, name), target)
+                moved += 1
+        except OSError:
+            continue
+    if moved:
+        prune(keep)
+    return moved
 
 
 def _name(when: Optional[float] = None) -> str:

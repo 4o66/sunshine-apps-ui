@@ -201,6 +201,13 @@ class InstallScriptTest(unittest.TestCase):
     def test_uninstall_keeps_going_only_if_the_tile_really_went(self):
         self.assertIn("leaving the files in place", self.uninstall_text)
 
+    def test_uninstall_keeps_the_copies_of_apps_json(self):
+        """They are copies of your configuration, not of this program, and an
+        uninstall is a moment you might want one back."""
+        code = self.code(self.uninstall_text)
+        self.assertIn("! -name backups", code)
+        self.assertIn("--purge-backups", self.uninstall_text)
+
     def test_uninstall_leaves_everything_that_is_not_ours(self):
         """Removing this tool is not a reason to disturb the rest of apps.json."""
         self.assertIn("is untouched", self.uninstall_text)
