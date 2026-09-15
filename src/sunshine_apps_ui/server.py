@@ -322,6 +322,12 @@ class PlanHandler(BaseHTTPRequestHandler):
             return
 
         if parts.path == "/applied":
+            # Decided before the response goes out, armed after. The client can
+            # be reading the page while this thread is still here, so anything
+            # that happens after _send is not yet true when the page arrives.
+            stopping = bool(self.applied and self.via_sunshine)
+            if stopping:
+                type(self).stopping = True
             self._send(200, applied_page(self.token, self.via_sunshine))
             # Applying reloads Sunshine, and that reload has already ended the
             # stream this page was being watched through -- Sunshine replaces
@@ -330,7 +336,7 @@ class PlanHandler(BaseHTTPRequestHandler):
             # page any more, and the browser showing it would sit on the host's
             # desktop until something else swept it up. So stop, and let the
             # launcher take the window down with us.
-            if self.applied and self.via_sunshine:
+            if stopping:
                 self._stop_soon()
             return
 
@@ -491,8 +497,6 @@ class PlanHandler(BaseHTTPRequestHandler):
         From a timer thread, because shutdown() waits for the serving loop to
         finish and this is running inside it.
         """
-        if self.stopping:
-            return
         type(self).stopping = True
         threading.Timer(delay, self.server.shutdown).start()
 

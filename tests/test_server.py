@@ -1668,3 +1668,34 @@ class RestoreCopyTest(ServerTest):
 
     def test_the_picker_needs_a_token(self):
         self.assertEqual(self.get("/backups")[0], 404)
+
+
+class ResponseOrderingTest(ServerTest):
+    """What the page says must be true by the time the page arrives.
+
+    /applied decided to stop after sending the response, so a client could read
+    the page and find the decision not yet made. That is a real ordering bug and
+    not merely a flaky test: anything acting on the response -- a script, a
+    second request, a person clicking quickly -- could arrive first.
+    """
+
+    def setUp(self):
+        super().setUp()
+        handler = self.httpd.RequestHandlerClass
+        handler.applied = False
+        handler.stopping = False
+        self.addCleanup(setattr, handler, "via_sunshine", False)
+        self.addCleanup(setattr, handler, "applied", False)
+        self.addCleanup(setattr, handler, "stopping", False)
+
+    def test_the_decision_to_stop_is_true_when_the_page_arrives(self):
+        from sunshine_apps_ui import state as st
+        self.httpd.RequestHandlerClass.via_sunshine = True
+        st.enqueue({"op": "edit", "index": 1, "name": "Portal 2",
+                    "fields": {"name": "Portal 2"}})
+        self.post({}, token=self.token, path="/apply")
+        for _ in range(20):
+            self.get(f"/applied?token={self.token}")
+            self.assertTrue(self.httpd.RequestHandlerClass.stopping,
+                            "the page arrived before the decision was made")
+            self.httpd.RequestHandlerClass.stopping = False
