@@ -146,6 +146,64 @@ scripts, the kiosk launcher -- becomes Python, since bash is not there. More
 work now and less forever, and it removes the pgrep/pkill/flatpak assumptions
 from every platform at once rather than adding a second set for Windows.
 
+#### The browser must not inherit the elevation
+
+Availability is not the problem it is on Linux: Edge ships with Windows and is
+Chromium-based, so `--app=` and `--user-data-dir=` work. There is always a
+browser.
+
+The problem is that a browser launched by an elevated process inherits its
+rights, and a browser running as administrator is a far bigger surface than our
+server running as administrator -- a general-purpose program with a JIT, a
+network stack and extensions, on the user's desktop. `--app` narrows what the
+window is *for*; it does not stop someone opening a normal window in an
+administrator browser.
+
+So **launch the browser de-elevated**: take the non-elevated linked token (or
+the shell's) and `CreateProcessWithTokenW`. Only the server holds the
+privilege. Treat this as a requirement of the port, not a refinement.
+
+The teardown needs rewriting too -- `pgrep`/`pkill` by profile path has no
+Windows equivalent -- and Sunshine shows the better answer. `sunshinesvc.cpp`
+puts its child in a **job object with kill-on-close**::
+
+    // Kill Sunshine.exe when the final job object handle is closed
+    job_limit_info.BasicLimitInformation.LimitFlags |= JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+
+That is stronger than what we do on Linux: the OS guarantees the browser dies
+with us even if we are killed rather than exiting.
+
+#### Do not restart Sunshine. Reload it.
+
+Elevation is not what decides whether a restart works. `POST /api/restart`
+needs only credentials, so an unelevated process can call it -- but what
+happens next is decided by `platf::restart()`::
+
+    // If we're running standalone, we have to respawn ourselves via CreateProcess().
+    // If we're running from the service, we should just exit and let it respawn us.
+    if (GetConsoleWindow() != nullptr) {
+      atexit(restart_on_exit);
+    }
+    lifetime::exit_sunshine(0, true);
+
+Three cases, and the third is a trap:
+
+| Started as | Restart does |
+|---|---|
+| The service | Exits; the service respawns it. Works. |
+| Standalone **with a console** (`sunshine` from cmd) | Respawns itself. Works. |
+| Standalone **without a console** (shortcut, Start Menu, autostart) | `GetConsoleWindow()` is null, nothing is registered: **it exits and stays dead.** |
+
+We do not call restart and should not start. Apply reloads by saving one
+unchanged app, which triggers `proc::refresh` without terminating anything,
+and that needs credentials rather than elevation -- so it works unelevated.
+
+Which gives the summary worth keeping: **being unelevated does not break
+reloading, it breaks writing.** Restarting is not a workaround for that, and
+reaching for it risks shutting Sunshine down with no way back. Check the token
+at startup, so this is discovered before someone queues a dozen changes rather
+than after.
+
 #### Still open
 
 - **Shipping a Python interpreter.** Windows users will not have one. PyInstaller
