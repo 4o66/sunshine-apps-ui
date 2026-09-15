@@ -91,6 +91,33 @@ to it. It is the textbook answer and it costs IPC, a second thing to install
 and uninstall, and a privileged surface that exists permanently rather than
 only while the tile is open.
 
+**Sunshine does not have to run as a service**, and that turns out to simplify
+this rather than complicate it. Running it by hand is documented and supported
+-- the portable "lite" zip is exactly that, with the service install a separate
+optional step. What changes without it:
+
+- `"elevated": true` stops meaning anything. The non-service path says so:
+  "launch the process using CreateProcessW() -- this will inherit the elevation
+  of whatever the user launched Sunshine with." Upstream's own documentation
+  agrees that elevation is a service feature.
+- No autostart before login, and no handling of session changes -- the service
+  watches for them and restarts Sunshine into the new console session, so
+  without it Sunshine stays bound to the session that launched it.
+
+So there are two ways we end up able to write the file: as a service, with an
+admin user, through the linked token; or hand-run, if Sunshine itself was
+started elevated, because everything it launches inherits that.
+
+**Which means we never need to detect the service.** One check of our own token
+at startup answers the only question that matters -- can I write this file --
+and covers both modes and every failure case without branching on how somebody
+installed Sunshine.
+
+Do not require the non-service mode to obtain elevation. It would mean asking
+people to reconfigure their whole Sunshine install for our benefit, giving up
+autostart and session handling, and running every game as administrator to
+solve a problem that `"elevated": true` solves for one entry.
+
 **Two silent degradations to handle explicitly**, because both fail quietly:
 
 - A **non-admin account gets no elevation and no error**. Sunshine logs
