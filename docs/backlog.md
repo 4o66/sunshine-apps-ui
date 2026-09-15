@@ -4,6 +4,24 @@ Things decided but not built. Each says what it is, why it matters, and what is
 already known about the shape of it -- so picking one up does not start from a
 blank page.
 
+## Releasing 0.1
+
+**Held 2026-09-14. Ready but deliberately not cut.**
+
+Both projects are versioned and could be released today -- `2.0+4o66.0.1.0` for
+the importer fork, `0.1.0` here. The decision was to wait, possibly until after
+the port below.
+
+Two things to remember when picking this up:
+
+- **This repository is private and the importer fork is not.** Tagging the fork
+  is therefore already a public release, so either both go out or neither does.
+  A release naming a companion nobody can open is not a release.
+- **The history was audited on 2026-09-14** and holds no keys, tokens,
+  credentials, internal hostnames or addresses; the only commit identity is the
+  GitHub noreply address. That audit is only good as of that date -- redo it
+  before publishing rather than trusting this line.
+
 ## Run everywhere Sunshine runs
 
 **Logged 2026-09-14. Not started.**
