@@ -105,9 +105,14 @@ stdlib-only Python. This is a port of the edges, not a rewrite.
 
 ### What generic Linux established
 
-Tested on throwaway VMs on the Unraid host, built from cloud images:
-Fedora 43, Ubuntu 24.04 and Arch, alongside Bazzite and macOS. Python 3.10
-through 3.14. The full suite passes on all of them.
+Tested on throwaway VMs on the Unraid host, built from cloud images: Debian 13,
+Ubuntu 24.04, Fedora 43 and Arch, alongside Bazzite and macOS. Python 3.10,
+3.12, 3.13, 3.14. The full suite passes on all of them.
+
+One note for whoever builds the next VM: Debian's genericcloud image will not
+boot under SeaBIOS. GRUB loads, fails to start the kernel, and loops in its
+menu with nothing on the serial console. It needs OVMF. Fedora, Ubuntu and
+Arch all boot either way.
 
 The interesting part was a real Sunshine, installed on Ubuntu 24.04 from
 LizardByte's own `.deb`:
