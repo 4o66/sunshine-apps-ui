@@ -16,12 +16,13 @@ from urllib.parse import parse_qs, urlencode, urlsplit
 
 from . import __version__, security
 from . import artwork, state
-from .importer import (ImporterError, art_choose, art_search, browse,
-                       check_auth, get_state, mutate, run_plan, save_auth)
+from .importer import (ImporterError, art_choose, art_search, backup_diff,
+                       browse, check_auth, get_state, list_backups, mutate,
+                       run_plan, save_auth)
 from .render import (LOCK_NOTE, app_page, applied_page, artwork_page,
-                     confirm_page, connect_page, error_page, explain_page,
-                     grid_page, hidden_page, is_protected, page, picker_page,
-                     render_browsable, render_fields, render_flags)
+                     backups_page, confirm_page, connect_page, error_page,
+                     explain_page, grid_page, hidden_page, is_protected, page,
+                     picker_page, render_browsable, render_fields, render_flags)
 
 log = logging.getLogger("sunshine-apps-ui")
 
@@ -126,9 +127,26 @@ class PlanHandler(BaseHTTPRequestHandler):
             # reason is a different thing and should not send you to a login.
             detail = "" if (auth_ok or "credential" in auth_message.lower()
                             or "No Sunshine credentials" in auth_message) else auth_message
+            queued = state.queue()
+            # A queued restore is a change to the whole file, so what it would
+            # do has to be worked out rather than read off the operation.
+            restore = None
+            rollback = next((op for op in queued
+                             if op.get("op") == "rollback"), None)
+            if rollback:
+                try:
+                    restore = backup_diff(self.importer_path,
+                                          str(rollback.get("backup", "")))
+                    restore["qid"] = rollback.get("qid", "")
+                except ImporterError as e:
+                    log.warning("could not preview the restore: %s", e)
+                    restore = {"backup": str(rollback.get("backup", "")),
+                               "qid": rollback.get("qid", ""),
+                               "returning": [], "going": [], "changing": [],
+                               "unreadable": str(e)}
             self._send(200, grid_page(current, self.token, scanned=scanned,
-                                      auth_ok=auth_ok, pending=state.queue(),
-                                      auth_detail=detail))
+                                      auth_ok=auth_ok, pending=queued,
+                                      auth_detail=detail, restore=restore))
             return
 
         if parts.path == "/app.js":
@@ -241,6 +259,24 @@ class PlanHandler(BaseHTTPRequestHandler):
             self._send(200, picker_page(listing, self.token, key=key, field=field,
                                         label=label, error=error,
                                         filter_text=(query.get("q") or [""])[0]))
+            return
+
+        if parts.path == "/backups":
+            chosen = (query.get("restore") or [""])[0]
+            if chosen:
+                # Queued, not applied. The grid then shows what it would do,
+                # and it can be cancelled from there like anything else.
+                state.drop_matching(op="rollback")
+                state.enqueue({"op": "rollback", "backup": chosen,
+                               "name": f"the copy from {chosen}"})
+                self._redirect("/")
+                return
+            error, copies = "", []
+            try:
+                copies = list_backups(self.importer_path)
+            except ImporterError as e:
+                error = str(e)
+            self._send(200, backups_page(copies, self.token, error=error))
             return
 
         if parts.path == "/artwork":

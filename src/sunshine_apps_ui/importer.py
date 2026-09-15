@@ -152,6 +152,32 @@ def art_choose(importer: str, chosen_id: str, name: str = "",
     return str(doc.get("image-path") or "")
 
 
+def list_backups(importer: str, timeout: int = 30) -> List[Dict[str, Any]]:
+    """The kept copies of apps.json, newest first."""
+    proc = subprocess.run([importer, "--backups", "--json"],
+                          capture_output=True, text=True, timeout=timeout)
+    try:
+        doc = json.loads(proc.stdout)
+    except json.JSONDecodeError:
+        tail = (proc.stderr or "").strip().splitlines()
+        raise ImporterError(tail[-1] if tail else "Could not list the kept copies")
+    return doc.get("backups") or []
+
+
+def backup_diff(importer: str, name: str, timeout: int = 30) -> Dict[str, Any]:
+    """What restoring one copy would change. Changes nothing."""
+    proc = subprocess.run([importer, "--backup-diff", name, "--json"],
+                          capture_output=True, text=True, timeout=timeout)
+    try:
+        doc = json.loads(proc.stdout)
+    except json.JSONDecodeError:
+        tail = (proc.stderr or "").strip().splitlines()
+        raise ImporterError(tail[-1] if tail else "Could not read that copy")
+    if not doc.get("ok"):
+        raise ImporterError(str(doc.get("message") or "Could not read that copy"))
+    return doc
+
+
 def check_auth(importer: str, timeout: int = 30) -> Tuple[bool, str]:
     """Are stored Sunshine credentials present and accepted?"""
     proc = subprocess.run([importer, "--check-auth", "--json"],

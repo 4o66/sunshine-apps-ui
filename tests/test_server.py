@@ -1709,3 +1709,151 @@ class ProtectedTileTest(ServerTest):
             self.assertEqual(status, 400)
         finally:
             os.unlink(bad)
+
+
+class RestoreCopyTest(ServerTest):
+    """Going back to a kept copy of apps.json.
+
+    The copy is chosen, what it would do is shown on the grid in the same
+    language as every other pending change, and nothing is written until apply.
+    """
+
+    COPIES = [
+        {"name": "apps-20260915-101500.json", "apps": 9, "readable": True,
+         "at": "2026-09-15T10:15:00", "size": 4096},
+        {"name": "apps-20260914-090000.json", "apps": 7, "readable": True,
+         "at": "2026-09-14T09:00:00", "size": 3000},
+        {"name": "apps-20260913-080000.json", "apps": 0, "readable": False,
+         "at": "2026-09-13T08:00:00", "size": 12},
+    ]
+    DIFF = {
+        "ok": True, "backup": "apps-20260915-101500.json",
+        "returning": [{"name": "Hades"}],
+        "going": [{"name": "Portal 2"}],
+        "changing": [{"name": "Desktop", "fields": ["cmd"]}],
+        "hidden_now": 0, "hidden_then": 2, "nothing_to_do": False,
+    }
+
+    def setUp(self):
+        super().setUp()
+        import tempfile as tf
+        state_doc = dict(STATE, apps=[
+            {"index": 0, "name": "Desktop", "image-path": "", "cmd": "",
+             "source": None, "id": None, "managed": False},
+            {"index": 1, "name": "Portal 2", "image-path": "", "cmd": "x",
+             "source": "steam", "id": "620", "managed": True},
+        ])
+        fd, self.imp = tf.mkstemp(suffix=".sh")
+        os.write(fd, (
+            "#!/bin/sh\ncase \"$*\" in\n"
+            f"  *--backups*) cat <<'B'\n{json.dumps({'ok': True, 'backups': self.COPIES})}\nB\n exit 0 ;;\n"
+            f"  *--backup-diff*) cat <<'D'\n{json.dumps(self.DIFF)}\nD\n exit 0 ;;\n"
+            "  *--check-auth*) echo '{\"ok\": true, \"message\": \"ok\"}'; exit 0 ;;\n"
+            f"  *--state*) cat <<'S'\n{json.dumps(state_doc)}\nS\n exit 0 ;;\n"
+            "esac\n"
+            f"cat <<'P'\n{json.dumps(PLAN)}\nP\nexit 0\n").encode())
+        os.close(fd); os.chmod(self.imp, 0o755)
+        self.httpd.RequestHandlerClass.importer_path = self.imp
+        importer._STATE_CACHE["doc"] = None
+
+    def tearDown(self):
+        self.httpd.RequestHandlerClass.importer_path = self.importer
+        os.path.exists(self.imp) and os.unlink(self.imp)
+        importer._STATE_CACHE["doc"] = None
+        super().tearDown()
+
+    def test_the_grid_offers_a_way_to_restore(self):
+        _, body = self.get(f"/?token={self.token}")
+        self.assertIn("/backups?token=", body)
+
+    def test_the_picker_lists_the_copies_by_when_they_were_taken(self):
+        _, body = self.get(f"/backups?token={self.token}")
+        self.assertIn("15 Sep 2026 at 10:15:00", body)
+        self.assertIn("9 applications", body)
+
+    def test_a_copy_that_cannot_be_read_is_shown_but_not_offered(self):
+        """Hiding it would be worse: you would wonder where it went."""
+        _, body = self.get(f"/backups?token={self.token}")
+        self.assertIn("cannot be read", body)
+        self.assertNotIn("restore=apps-20260913-080000.json", body)
+
+    def test_choosing_one_queues_it_rather_than_applying_it(self):
+        from sunshine_apps_ui import state as st
+        status, headers = self.get_no_redirect(
+            f"/backups?restore=apps-20260915-101500.json&token={self.token}")
+        self.assertEqual(status, 303)
+        self.assertTrue(headers["Location"].startswith("/?"))
+        self.assertEqual(st.queue()[0]["op"], "rollback")
+        self.assertEqual(st.queue()[0]["backup"], "apps-20260915-101500.json")
+
+    def test_the_grid_then_says_what_it_would_do(self):
+        self.get_no_redirect(
+            f"/backups?restore=apps-20260915-101500.json&token={self.token}")
+        _, body = self.get(f"/?token={self.token}")
+        self.assertIn("Restoring the copy from 15 Sep 2026 at 10:15:00", body)
+        self.assertIn("would come back", body)
+        self.assertIn("would be removed", body)
+        self.assertIn("would change", body)
+
+    def test_it_says_the_part_no_tile_can_show(self):
+        """The hidden list is why this is a whole-file operation."""
+        self.get_no_redirect(
+            f"/backups?restore=apps-20260915-101500.json&token={self.token}")
+        _, body = self.get(f"/?token={self.token}")
+        self.assertIn("What you have hidden goes from", body)
+
+    def test_the_tiles_themselves_are_marked(self):
+        self.get_no_redirect(
+            f"/backups?restore=apps-20260915-101500.json&token={self.token}")
+        _, body = self.get(f"/?token={self.token}")
+        # What would go is marked like a deletion, what returns appears as a
+        # tile that is not there yet.
+        self.assertIn("Hades", body)
+        self.assertIn("tile ghost", body)
+
+    def test_nothing_is_applied_by_looking(self):
+        self.get_no_redirect(
+            f"/backups?restore=apps-20260915-101500.json&token={self.token}")
+        _, body = self.get(f"/?token={self.token}")
+        self.assertIn("Nothing has changed yet", body)
+        self.assertIn("Apply 1 change", body)
+
+    def test_it_can_be_cancelled_from_the_grid(self):
+        from sunshine_apps_ui import state as st
+        self.get_no_redirect(
+            f"/backups?restore=apps-20260915-101500.json&token={self.token}")
+        qid = st.queue()[0]["qid"]
+        _, body = self.get(f"/?token={self.token}")
+        self.assertIn("Cancel this restore", body)
+        self.assertIn(f'value="{qid}"', body)
+        self.post({"qid": qid}, token=self.token, path="/unqueue")
+        self.assertEqual(st.queue(), [])
+
+    def test_choosing_a_second_copy_replaces_the_first(self):
+        """Two restores queued at once would be a fight over the same file."""
+        from sunshine_apps_ui import state as st
+        for name in ("apps-20260915-101500.json", "apps-20260914-090000.json"):
+            self.get_no_redirect(f"/backups?restore={name}&token={self.token}")
+        rollbacks = [op for op in st.queue() if op["op"] == "rollback"]
+        self.assertEqual(len(rollbacks), 1)
+        self.assertEqual(rollbacks[0]["backup"], "apps-20260914-090000.json")
+
+    def test_a_preview_that_fails_does_not_take_the_grid_down(self):
+        import tempfile as tf
+        from sunshine_apps_ui import state as st
+        st.enqueue({"op": "rollback", "backup": "apps-20260915-101500.json"})
+        fd, bad = tf.mkstemp(suffix=".sh")
+        os.write(fd, b"#!/bin/sh\ncase \"$*\" in *--state*) echo '"
+                 + json.dumps(STATE).encode() + b"'; exit 0;; esac\n"
+                 b"echo '{\"ok\": false, \"message\": \"gone\"}'\nexit 1\n")
+        os.close(fd); os.chmod(bad, 0o755)
+        self.httpd.RequestHandlerClass.importer_path = bad
+        importer._STATE_CACHE["doc"] = None
+        try:
+            status, body = self.get(f"/?token={self.token}")
+            self.assertEqual(status, 200)
+        finally:
+            os.unlink(bad)
+
+    def test_the_picker_needs_a_token(self):
+        self.assertEqual(self.get("/backups")[0], 404)

@@ -411,6 +411,73 @@ def error_page(message: str, detail: str = "", token: str = "",
 </div></body></html>"""
 
 
+def _when(backup_name: str) -> str:
+    """A kept copy's name, said the way a person would say it."""
+    import time
+    stamp = backup_name[len("apps-"):-len(".json")] if backup_name else ""
+    try:
+        return time.strftime("%d %b %Y at %H:%M:%S",
+                             time.strptime(stamp, "%Y%m%d-%H%M%S"))
+    except ValueError:
+        return backup_name or "an earlier copy"
+
+
+_BACKUPS_CSS = """
+.copies{display:grid;gap:.5rem;margin:0 0 1.5rem}
+.copy{display:flex;align-items:center;gap:1rem;background:var(--bg-subtle);
+border:1px solid var(--border);border-radius:var(--radius-md);padding:.7rem .9rem}
+.copy .when{font-weight:600}
+.copy .what{color:var(--text-muted);font-size:.9rem;flex:1}
+.copy.broken{opacity:.6}
+.copy.broken .what{color:var(--danger)}
+"""
+
+
+def backups_page(copies: List[Dict[str, Any]], token: str,
+                 error: str = "") -> str:
+    """Pick a kept copy of apps.json to go back to."""
+    rows = []
+    for copy in copies:
+        when = _when(str(copy.get("name", "")))
+        if not copy.get("readable"):
+            rows.append(f'<div class="copy broken"><span class="when">{_e(when)}</span>'
+                        f'<span class="what">This copy cannot be read, so it cannot '
+                        f'be restored.</span></div>')
+            continue
+        count = copy.get("apps", 0)
+        rows.append(
+            f'<div class="copy"><span class="when">{_e(when)}</span>'
+            f'<span class="what">{count} application{"" if count == 1 else "s"}</span>'
+            f'<a class="btn sec" href="/backups?restore={_eq(str(copy.get("name")))}'
+            f'&token={_e(token)}">See what this would change</a></div>')
+
+    body = ("".join(rows) if rows else
+            '<p class="why">No copies yet. One is taken automatically before '
+            'anything is written to apps.json.</p>')
+    problem = (f'<section class="err"><p class="why">{_e(error)}</p></section>'
+               if error else "")
+
+    return f"""<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Restore a copy</title>
+<style>{_CSS}{_BACKUPS_CSS}</style></head>
+<body>
+<div class="navbar"><span class="brand">Sunshine</span><span class="sep">/</span>
+<span class="where">apps</span></div>
+<div class="wrap">
+<h1>Restore a copy</h1>
+<p class="sub">A copy of apps.json is taken before anything is written to it.
+The most recent {len(copies)} are kept.</p>
+{problem}
+<div class="copies">{body}</div>
+<p class="why">Choosing one shows what it would change on the grid. Nothing is
+written until you apply it, and a copy of the current file is taken first --
+so a restore can itself be undone.</p>
+<div class="actions"><a class="btn sec" href="/?token={_e(token)}">Back</a></div>
+</div></body></html>"""
+
+
 # ---------------------------------------------------------------- the grid ---
 
 _GRID_CSS = """
@@ -511,7 +578,8 @@ def connect_page(token: str, message: str = "", username: str = "") -> str:
 def grid_page(state: Dict[str, Any], token: str, *, new_ids: Optional[set] = None,
               scanned: bool = False, auth_ok: bool = True,
               pending: Optional[List[Dict[str, Any]]] = None,
-              auth_detail: str = "") -> str:
+              auth_detail: str = "",
+              restore: Optional[Dict[str, Any]] = None) -> str:
     new_ids = new_ids or set()
     pending = pending or []
     apps = state.get("apps") or []
@@ -530,6 +598,12 @@ def grid_page(state: Dict[str, Any], token: str, *, new_ids: Optional[set] = Non
 
         if kind == "restore":
             restores.add(str(op.get("selector", "")))
+            continue
+
+        if kind == "rollback":
+            # Not a change to one tile, so it cannot be marked on one. What it
+            # would do is worked out by the importer and drawn below, in the
+            # same marks and ghosts every other pending change uses.
             continue
 
         if kind in ("add", "clone"):
@@ -560,6 +634,25 @@ def grid_page(state: Dict[str, Any], token: str, *, new_ids: Optional[set] = Non
                            "image-path": entry.get("image-path") or ""})
         else:
             marks[index] = (kind, scanned_op)
+
+    # A queued restore, translated into the grid's own language: what would go
+    # is marked like a deletion, what would change like an edit, and what would
+    # come back appears as a tile that is not there yet.
+    if restore:
+        by_name = {}
+        for position, entry in enumerate(apps):
+            by_name.setdefault(entry.get("name"), position)
+        for item in restore.get("going") or []:
+            position = by_name.get(item.get("name"))
+            if position is not None:
+                marks.setdefault(position, ("delete", False))
+        for item in restore.get("changing") or []:
+            position = by_name.get(item.get("name"))
+            if position is not None:
+                marks.setdefault(position, ("edit", False))
+        for item in restore.get("returning") or []:
+            ghosts.append({"name": item.get("name") or "(unnamed)", "op": "add",
+                           "from_scan": False, "qid": None, "image-path": ""})
 
     tiles = []
     for position, entry in enumerate(apps):
@@ -602,6 +695,40 @@ def grid_page(state: Dict[str, Any], token: str, *, new_ids: Optional[set] = Non
     if parts:
         legend = f'<div class="legend">{"".join(parts)}</div>'
 
+    # A queued restore is a whole-file change, so it is said in words above the
+    # grid as well as drawn on it -- including the part no tile can show.
+    restore_note = ""
+    if restore:
+        counts = []
+        for key, word in (("returning", "would come back"),
+                          ("going", "would be removed"),
+                          ("changing", "would change")):
+            items = restore.get(key) or []
+            if items:
+                names = ", ".join(_e(str(i.get("name"))) for i in items[:6])
+                if len(items) > 6:
+                    names += f" and {len(items) - 6} more"
+                counts.append(f"<li><b>{len(items)}</b> {word}: {names}</li>")
+        hidden_change = ""
+        if restore.get("hidden_now") != restore.get("hidden_then"):
+            hidden_change = (f'<li>What you have hidden goes from '
+                             f'<b>{restore.get("hidden_now")}</b> to '
+                             f'<b>{restore.get("hidden_then")}</b> entries</li>')
+        body = "".join(counts) + hidden_change
+        if not body:
+            body = "<li>Nothing would change. This copy matches what you have now.</li>"
+        restore_note = (
+            f'<section class="warn"><h2>Restoring the copy from '
+            f'{_e(_when(restore.get("backup", "")))}</h2>'
+            f'<ul class="why">{body}</ul>'
+            f'<p class="why">Nothing has changed yet. A copy of the current file '
+            f'is taken before this is applied, so this can be undone the same way.</p>'
+            f'<div class="actions">'
+            f'<form method="post" action="/unqueue?token={_e(token)}">'
+            f'<input type="hidden" name="qid" value="{_e(restore.get("qid", ""))}">'
+            f'<button class="btn sec" type="submit">Cancel this restore</button>'
+            f'</form></div></section>')
+
     outstanding = queued
     apply_button = (f'<a class="btn" href="/apply?token={_e(token)}">'
                     f'Apply {outstanding} change{"" if outstanding == 1 else "s"}</a>'
@@ -636,9 +763,10 @@ def grid_page(state: Dict[str, Any], token: str, *, new_ids: Optional[set] = Non
 <div class="wrap">
 <h1>{len(apps)} application{'' if len(apps) == 1 else 's'}</h1>
 <p class="sub"><code>{_e(state.get("apps_json", ""))}</code></p>
-{auth_note}
+{auth_note}{restore_note}
 <div class="actions">{apply_button}{discard_button}
-<a class="btn{'' if not queued else ' sec'}" href="/?scan=1&token={_e(token)}">Rescan</a></div>
+<a class="btn{'' if not queued else ' sec'}" href="/?scan=1&token={_e(token)}">Rescan</a>
+<a class="btn sec" href="/backups?token={_e(token)}">Restore a copy</a></div>
 {legend}
 <div class="grid">{"".join(tiles)}</div>
 </div></body></html>"""
