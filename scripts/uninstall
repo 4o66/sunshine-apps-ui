@@ -1,0 +1,94 @@
+#!/usr/bin/env bash
+# Remove the app manager for the current user, tile included.
+#
+# The tile goes first, while the importer is still there to do it properly --
+# through its --mutate contract, so apps.json keeps its structure and its
+# ownership markers stay consistent. Deleting our files first would leave a tile
+# pointing at a command that no longer exists.
+#
+#   scripts/uninstall
+#   scripts/uninstall --keep-state     # keep the queue and preferences
+#   scripts/uninstall --keep-tile      # leave apps.json alone
+#
+set -uo pipefail
+
+PREFIX="${PREFIX:-$HOME/.local}"
+KEEP_STATE=0
+KEEP_TILE=0
+
+usage() {
+  sed -n '2,14p' "$0" | sed 's/^# \{0,1\}//' >&2
+  exit 1
+}
+
+while (( "$#" )); do
+  case "$1" in
+    --prefix)      PREFIX="${2:-}"; shift 2 ;;
+    --keep-state)  KEEP_STATE=1; shift ;;
+    --keep-tile)   KEEP_TILE=1; shift ;;
+    -h|--help)     usage ;;
+    *) echo "Unknown option: $1" >&2; usage ;;
+  esac
+done
+
+DEST="$PREFIX/share/sunshine-apps-ui"
+LINK="$PREFIX/bin/sunshine-apps-ui"
+STATE="${XDG_STATE_HOME:-$HOME/.local/state}/sunshine-apps-ui"
+
+IMPORTER=""
+for candidate in "$HOME/.local/bin/sunshine-import" \
+                 "$HOME/.local/bin/bsm-test-import" \
+                 "$(command -v sunshine-import 2>/dev/null)"; do
+  if [[ -n "$candidate" && -x "$candidate" ]]; then IMPORTER="$candidate"; break; fi
+done
+
+# Stop anything still running before removing what it is running from.
+pkill -u "$(id -u)" -f "sunshine_apps_ui --port" 2>/dev/null
+pkill -u "$(id -u)" -f -- "--user-data-dir=.*sunshine-apps-ui/browser-profile" 2>/dev/null
+
+if (( ! KEEP_TILE )); then
+  if [[ -z "$IMPORTER" ]]; then
+    echo "No sunshine-import found, so the tile cannot be removed cleanly." >&2
+    echo "Remove it from Sunshine's web UI, then re-run with --keep-tile." >&2
+    exit 1
+  fi
+  # Find it by its ownership marker, not by name: renaming the tile is allowed,
+  # so the name is not what identifies it.
+  OPS=$("$IMPORTER" --state --json 2>/dev/null | python3 -c '
+import json, sys
+try:
+    apps = json.load(sys.stdin).get("apps") or []
+except json.JSONDecodeError:
+    sys.exit(2)
+for app in apps:
+    if app.get("source") == "launcher" and app.get("id") == "apps-ui":
+        json.dump({"ops": [{"op": "delete", "index": app.get("index"),
+                            "name": app.get("name")}]}, sys.stdout)
+        sys.exit(0)
+sys.exit(1)
+')
+  case $? in
+    0) if printf '%s' "$OPS" | "$IMPORTER" --mutate --json --reload >/dev/null; then
+         echo "Removed the tile from Sunshine."
+       else
+         echo "Could not remove the tile; leaving the files in place." >&2
+         exit 1
+       fi ;;
+    1) echo "No tile to remove; it is not in apps.json." ;;
+    *) echo "Could not read the app list; leaving the files in place." >&2
+       exit 1 ;;
+  esac
+fi
+
+rm -f "$LINK"
+rm -rf "${DEST:?}"
+echo "Removed $DEST"
+
+if (( KEEP_STATE )); then
+  echo "Kept $STATE"
+else
+  rm -rf "${STATE:?}"
+  echo "Removed $STATE"
+fi
+
+echo "Done. bazzite-sunshine-manager itself is untouched."

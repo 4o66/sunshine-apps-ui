@@ -129,3 +129,75 @@ class LauncherShapeTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class InstallScriptTest(unittest.TestCase):
+    """The installer and uninstaller, as shapes rather than as runs.
+
+    Running them for real would write to the machine the tests are on. What can
+    be checked without that is the part that would be dangerous to get wrong.
+    """
+
+    @staticmethod
+    def code(text: str) -> str:
+        """The script without its comments.
+
+        Otherwise a comment saying a flag is deliberately not passed reads as
+        the flag being passed.
+        """
+        return "\n".join(line for line in text.splitlines()
+                          if not line.lstrip().startswith("#"))
+
+    def setUp(self):
+        self.install = os.path.join(ROOT, "scripts", "install")
+        self.uninstall = os.path.join(ROOT, "scripts", "uninstall")
+        with open(self.install, encoding="utf-8") as handle:
+            self.install_text = handle.read()
+        with open(self.uninstall, encoding="utf-8") as handle:
+            self.uninstall_text = handle.read()
+
+    def test_both_are_valid_shell(self):
+        for path in (self.install, self.uninstall):
+            with self.subTest(script=os.path.basename(path)):
+                self.assertEqual(subprocess.run(["bash", "-n", path]).returncode, 0)
+
+    def test_both_are_executable(self):
+        for path in (self.install, self.uninstall):
+            self.assertTrue(os.access(path, os.X_OK), path)
+
+    def test_install_offers_to_put_the_tile_back(self):
+        self.assertIn("--put-the-tile-back-because-i-deleted-it", self.install_text)
+
+    def test_putting_the_tile_back_does_not_become_a_library_scan(self):
+        """Restoring one tile should not import every game found since."""
+        self.assertIn("--no-steam --no-heroic --reload", self.install_text)
+
+    def test_install_never_prunes(self):
+        """A restore that removed entries would be a very unwelcome surprise."""
+        self.assertNotIn("--remove-uninstalled", self.code(self.install_text))
+
+    def test_uninstall_removes_the_tile_through_the_importer(self):
+        """Editing apps.json directly would lose the marker and tombstone rules."""
+        self.assertIn("--mutate", self.uninstall_text)
+
+    def test_uninstall_finds_the_tile_by_marker_not_by_name(self):
+        """Renaming the tile is allowed, so the name identifies nothing."""
+        self.assertIn('"launcher"', self.uninstall_text)
+        self.assertIn('"apps-ui"', self.uninstall_text)
+
+    def test_uninstall_removes_the_tile_before_the_files(self):
+        """The other order leaves a tile pointing at a command that is gone."""
+        self.assertLess(self.uninstall_text.index("--mutate"),
+                        self.uninstall_text.index('rm -rf "${DEST'))
+
+    def test_uninstall_keeps_going_only_if_the_tile_really_went(self):
+        self.assertIn("leaving the files in place", self.uninstall_text)
+
+    def test_uninstall_leaves_the_importer_alone(self):
+        """It is a separate project and may be managing other things."""
+        self.assertIn("bazzite-sunshine-manager itself is untouched",
+                      self.uninstall_text)
+
+    def test_neither_needs_root(self):
+        for text in (self.install_text, self.uninstall_text):
+            self.assertNotIn("sudo", text)

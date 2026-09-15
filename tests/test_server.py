@@ -1546,3 +1546,165 @@ class StopAfterApplyTest(ServerTest):
         self.httpd.RequestHandlerClass.via_sunshine = True
         self.get(f"/applied?token={self.token}")
         self.assertFalse(self.httpd.RequestHandlerClass.stopping)
+
+
+class ProtectedTileTest(ServerTest):
+    """The tile this manager is launched from can be renamed and nothing else.
+
+    Every other change to it takes away the way back in, and none of them can
+    be undone from a page you can no longer reach.
+    """
+
+    MANAGER = {"index": 0, "name": "Zz App Manager", "cmd": "/home/u/.local/bin/x",
+               "image-path": "/img/ui.png", "source": "launcher", "id": "apps-ui",
+               "managed": True, "wait-all": True, "exit-timeout": 5}
+    GAME = {"index": 1, "name": "Portal 2", "cmd": "steam -applaunch 620",
+            "image-path": "/img/620.png", "source": "steam", "id": "620",
+            "managed": True}
+
+    def setUp(self):
+        super().setUp()
+        import tempfile as tf
+        doc = dict(STATE, apps=[self.MANAGER, self.GAME])
+        fd, self.imp = tf.mkstemp(suffix=".sh")
+        os.write(fd, (
+            "#!/bin/sh\ncase \"$*\" in\n"
+            "  *--check-auth*) echo '{\"ok\": true, \"message\": \"ok\"}'; exit 0 ;;\n"
+            f"  *--state*) cat <<'S'\n{json.dumps(doc)}\nS\n exit 0 ;;\n"
+            "esac\n"
+            f"cat <<'P'\n{json.dumps(PLAN)}\nP\nexit 0\n").encode())
+        os.close(fd); os.chmod(self.imp, 0o755)
+        self.httpd.RequestHandlerClass.importer_path = self.imp
+        importer._STATE_CACHE["doc"] = None
+
+    def tearDown(self):
+        self.httpd.RequestHandlerClass.importer_path = self.importer
+        os.path.exists(self.imp) and os.unlink(self.imp)
+        importer._STATE_CACHE["doc"] = None
+        super().tearDown()
+
+    def _edit(self, index, **overrides):
+        body = {"op": "edit", "index": str(index), "orig_name": "Zz App Manager",
+                "name": "Zz App Manager", "cmd": "", "working-dir": "",
+                "image-path": "", "output": "", "exit-timeout": ""}
+        body.update(overrides)
+        return self.post(body, token=self.token, path="/app")
+
+    # --- what the page offers
+
+    def test_its_settings_are_shown(self):
+        _, body = self.get(f"/app?index=0&token={self.token}")
+        self.assertIn("/home/u/.local/bin/x", body)
+
+    def test_but_not_as_something_you_can_type_into(self):
+        _, body = self.get(f"/app?index=0&token={self.token}")
+        self.assertIn('name="cmd" type="text" value="/home/u/.local/bin/x" readonly',
+                      body)
+
+    def test_the_name_stays_editable(self):
+        _, body = self.get(f"/app?index=0&token={self.token}")
+        self.assertNotIn('name="name" type="text" value="Zz App Manager" readonly',
+                         body)
+
+    def test_the_flags_cannot_be_toggled(self):
+        _, body = self.get(f"/app?index=0&token={self.token}")
+        self.assertIn('name="wait-all" checked disabled', body)
+
+    def test_it_says_why(self):
+        _, body = self.get(f"/app?index=0&token={self.token}")
+        self.assertIn("way back in", body)
+
+    def test_hide_delete_and_copy_are_not_offered(self):
+        _, body = self.get(f"/app?index=0&token={self.token}")
+        self.assertNotIn("op=hide", body)
+        self.assertNotIn("op=delete", body)
+        self.assertNotIn('value="clone"', body)
+
+    def test_the_button_says_rename(self):
+        _, body = self.get(f"/app?index=0&token={self.token}")
+        self.assertIn(">Rename</button>", body)
+
+    def test_an_ordinary_tile_is_untouched(self):
+        _, body = self.get(f"/app?index=1&token={self.token}")
+        self.assertIn("op=delete", body)
+        self.assertIn('value="clone"', body)
+        self.assertNotIn("readonly", body)
+
+    # --- what the server allows, which is the part that counts
+
+    def test_a_rename_goes_through(self):
+        from sunshine_apps_ui import state as st
+        status, _ = self._edit(0, name="Zz Tiles")
+        self.assertEqual(status, 303)
+        self.assertEqual(st.queue()[0]["fields"], {"name": "Zz Tiles"})
+
+    def test_a_posted_command_change_is_dropped_rather_than_queued(self):
+        """The form said read-only; a form is only a suggestion."""
+        from sunshine_apps_ui import state as st
+        self._edit(0, cmd="/bin/false")
+        self.assertEqual(st.queue()[0]["fields"], {"name": "Zz App Manager"})
+
+    def test_a_posted_flag_change_is_dropped_too(self):
+        from sunshine_apps_ui import state as st
+        self._edit(0, elevated="on")
+        self.assertNotIn("elevated", st.queue()[0]["fields"])
+
+    def test_copying_it_is_refused(self):
+        from sunshine_apps_ui import state as st
+        status, _ = self.post({"op": "clone", "index": "0",
+                               "orig_name": "Zz App Manager", "name": "Copy",
+                               "cmd": "", "working-dir": "", "image-path": "",
+                               "output": "", "exit-timeout": ""},
+                              token=self.token, path="/app")
+        self.assertEqual(status, 400)
+        self.assertEqual(st.queue(), [])
+
+    def test_hiding_it_is_refused_at_the_interstitial(self):
+        status, body = self.get(
+            f"/explain?op=hide&index=0&name=Zz%20App%20Manager&token={self.token}")
+        self.assertEqual(status, 400)
+        self.assertIn("way back in", body)
+
+    def test_deleting_it_is_refused_even_posted_straight_to_the_queue(self):
+        """The interstitial can be skipped once it has been silenced."""
+        from sunshine_apps_ui import state as st
+        status, _ = self.post({"op": "delete", "index": "0",
+                               "name": "Zz App Manager"},
+                              token=self.token, path="/queue")
+        self.assertEqual(status, 400)
+        self.assertEqual(st.queue(), [])
+
+    def test_an_ordinary_tile_can_still_be_deleted(self):
+        from sunshine_apps_ui import state as st
+        status, _ = self.post({"op": "delete", "index": "1", "name": "Portal 2"},
+                              token=self.token, path="/queue")
+        self.assertEqual(status, 303)
+        self.assertEqual(st.queue()[0]["op"], "delete")
+
+    def test_an_ordinary_tile_can_still_be_edited_in_full(self):
+        from sunshine_apps_ui import state as st
+        self.post({"op": "edit", "index": "1", "orig_name": "Portal 2",
+                   "name": "Portal 2", "cmd": "/bin/new", "working-dir": "",
+                   "image-path": "", "output": "", "exit-timeout": ""},
+                  token=self.token, path="/app")
+        self.assertEqual(st.queue()[0]["fields"]["cmd"], "/bin/new")
+
+    def test_it_is_identified_by_its_marker_not_its_name(self):
+        """Renaming it must not unlock it."""
+        from sunshine_apps_ui.render import is_protected
+        self.assertTrue(is_protected(dict(self.MANAGER, name="Something Else")))
+        self.assertFalse(is_protected(self.GAME))
+
+    def test_an_unreadable_app_list_refuses_rather_than_allows(self):
+        import tempfile as tf
+        fd, bad = tf.mkstemp(suffix=".sh")
+        os.write(fd, b"#!/bin/sh\nexit 1\n")
+        os.close(fd); os.chmod(bad, 0o755)
+        self.httpd.RequestHandlerClass.importer_path = bad
+        importer._STATE_CACHE["doc"] = None
+        try:
+            status, _ = self.post({"op": "delete", "index": "0", "name": "x"},
+                                  token=self.token, path="/queue")
+            self.assertEqual(status, 400)
+        finally:
+            os.unlink(bad)

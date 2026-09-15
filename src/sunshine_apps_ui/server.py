@@ -15,10 +15,10 @@ from . import __version__, security
 from . import artwork, state
 from .importer import (ImporterError, art_choose, art_search, browse,
                        check_auth, get_state, mutate, run_plan, save_auth)
-from .render import (app_page, applied_page, artwork_page, confirm_page,
-                     connect_page, error_page, explain_page, grid_page,
-                     hidden_page, page, picker_page, render_browsable,
-                     render_fields, render_flags)
+from .render import (LOCK_NOTE, app_page, applied_page, artwork_page,
+                     confirm_page, connect_page, error_page, explain_page,
+                     grid_page, hidden_page, is_protected, page, picker_page,
+                     render_browsable, render_fields, render_flags)
 
 log = logging.getLogger("sunshine-apps-ui")
 
@@ -195,6 +195,9 @@ class PlanHandler(BaseHTTPRequestHandler):
             op = (query.get("op") or [""])[0]
             if op not in state.EXPLAINED:
                 self._send(404, error_page("Not found.", token=self.token))
+                return
+            if self._protects((query.get("index") or [""])[0]):
+                self._refuse_locked()
                 return
             entry = self._entry(query)
             if entry is None:
@@ -382,6 +385,30 @@ class PlanHandler(BaseHTTPRequestHandler):
         entry.update(values)
         return entry, differs
 
+    def _protects(self, index) -> bool:
+        """Is *index* the tile this manager is launched from?
+
+        Looked up in apps.json rather than trusted from the form: the page can
+        say a field is read-only, but a form is only a suggestion. This is the
+        check that decides.
+        """
+        if index in (None, ""):
+            return False
+        try:
+            current = get_state(self.importer_path, use_cache=True)
+        except ImporterError:
+            # Refuse rather than allow: not being able to tell is not a reason
+            # to permit the one change that cannot be undone from here.
+            return True
+        for app in current.get("apps") or []:
+            if str(app.get("index")) == str(index):
+                return is_protected(app)
+        return False
+
+    def _refuse_locked(self) -> None:
+        self._send(400, error_page("That cannot be changed.", LOCK_NOTE,
+                                   token=self.token, title="Not allowed"))
+
     def _art_subject(self, key: str):
         """(name, source, ident) for whichever form the artwork picker opened from.
 
@@ -543,6 +570,19 @@ class PlanHandler(BaseHTTPRequestHandler):
                       for key, _l, _k, _h in render_fields()}
             for key, _label in render_flags():
                 values[key] = key in fields
+
+            posted_index = (fields.get("index") or [""])[0]
+            if op != "add" and self._protects(posted_index):
+                if op == "clone":
+                    # A copy would be made from a form whose fields are not
+                    # editable, so it could only ever be a duplicate or a
+                    # broken one.
+                    self._refuse_locked()
+                    return
+                # Rename and nothing else. The importer updates exactly the
+                # fields it is given, so sending only this one is the guard.
+                values = {"name": values.get("name", "")}
+
             entry = {"op": op, "fields": values}
             key_for_form = "new"
             if op != "add":
@@ -571,6 +611,9 @@ class PlanHandler(BaseHTTPRequestHandler):
                 return
             if op not in state.EXPLAINED:
                 self._send(400, error_page("Unknown action.", token=self.token))
+                return
+            if self._protects((fields.get("index") or [""])[0]):
+                self._refuse_locked()
                 return
             if "keep_explaining" not in fields:
                 state.set_explain(op, False)

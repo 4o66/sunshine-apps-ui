@@ -1,0 +1,104 @@
+#!/usr/bin/env bash
+# Install the app manager for the current user.
+#
+# Everything lands under ~/.local, and nothing needs root. That is deliberate
+# rather than modest: both machines this targets have an operating system you do
+# not install into. Bazzite is rpm-ostree, where /usr is read-only and anything
+# layered there has to survive every rebase; SteamOS resets /usr wholesale on
+# update. ~/.local survives both, and an uninstall is then a matter of deleting
+# files rather than unpicking a package.
+#
+#   scripts/install
+#   scripts/install --put-the-tile-back-because-i-deleted-it
+#
+set -uo pipefail
+
+PREFIX="${PREFIX:-$HOME/.local}"
+RESTORE_TILE=0
+
+usage() {
+  sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//' >&2
+  exit 1
+}
+
+while (( "$#" )); do
+  case "$1" in
+    --prefix) PREFIX="${2:-}"; shift 2 ;;
+    --put-the-tile-back-because-i-deleted-it|--restore-tile)
+                 RESTORE_TILE=1; shift ;;
+    -h|--help)   usage ;;
+    *) echo "Unknown option: $1" >&2; usage ;;
+  esac
+done
+
+SRC="$(cd -P "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+DEST="$PREFIX/share/sunshine-apps-ui"
+BIN="$PREFIX/bin"
+LINK="$BIN/sunshine-apps-ui"
+
+if ! command -v python3 >/dev/null 2>&1; then
+  echo "python3 is required and was not found." >&2
+  exit 1
+fi
+
+# The importer owns apps.json; this is only its front end. Without it there is
+# nothing to manage, so say so now rather than at the first click.
+IMPORTER=""
+for candidate in "$HOME/.local/bin/sunshine-import" \
+                 "$HOME/.local/bin/bsm-test-import" \
+                 "$(command -v sunshine-import 2>/dev/null)"; do
+  if [[ -n "$candidate" && -x "$candidate" ]]; then IMPORTER="$candidate"; break; fi
+done
+
+echo "Installing from $SRC"
+mkdir -p "$DEST" "$BIN"
+
+# Copy only what is needed to run. Tests, git history and build files are not.
+for item in src assets scripts docs README.md LICENSE; do
+  [[ -e "$SRC/$item" ]] || continue
+  rm -rf "${DEST:?}/$item"
+  cp -R "$SRC/$item" "$DEST/$item"
+done
+find "$DEST" -name '__pycache__' -type d -prune -exec rm -rf {} + 2>/dev/null
+
+chmod +x "$DEST/scripts/sunshine-apps-ui-launch"
+ln -sfn "$DEST/scripts/sunshine-apps-ui-launch" "$LINK"
+
+echo "Installed to $DEST"
+echo "Launcher    $LINK"
+
+case ":$PATH:" in
+  *":$BIN:"*) ;;
+  *) echo
+     echo "Note: $BIN is not on your PATH. The Sunshine tile still works -- it"
+     echo "runs the launcher by its full path -- but you cannot type the command."
+     ;;
+esac
+
+if [[ -z "$IMPORTER" ]]; then
+  echo
+  echo "No sunshine-import found. Install bazzite-sunshine-manager first;"
+  echo "this is its front end and cannot manage apps.json on its own."
+  exit 1
+fi
+
+if (( RESTORE_TILE )); then
+  echo
+  echo "Rebuilding the launcher tiles so the manager's own tile comes back..."
+  # Only the launcher entries. Steam and Heroic are switched off so that putting
+  # one tile back does not turn into a full library scan and a pile of unrelated
+  # changes. Nothing is pruned: that needs --remove-uninstalled, which is not
+  # passed here.
+  "$IMPORTER" --no-steam --no-heroic --reload
+  status=$?
+  if (( status != 0 )); then
+    echo "The importer exited $status; the tile may not have been restored." >&2
+    exit "$status"
+  fi
+  echo "Done. It appears in Moonlight within about 30 seconds."
+else
+  echo
+  echo "The tile appears the next time the importer runs. To do that now:"
+  echo "  $IMPORTER --no-steam --no-heroic --reload"
+  echo "or re-run this with --put-the-tile-back-because-i-deleted-it"
+fi

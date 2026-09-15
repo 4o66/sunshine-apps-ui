@@ -678,6 +678,25 @@ _FIELDS = [
     ("output", "Output log", "text", "File to capture the command's output. Usually empty."),
     ("exit-timeout", "Exit timeout", "text", "Seconds to wait for a clean exit before forcing it."),
 ]
+# The tile that launches this interface, by its ownership marker rather than by
+# its name -- renaming it is the one change that is allowed, so the name cannot
+# be what identifies it.
+PROTECTED = ("launcher", "apps-ui")
+
+LOCK_NOTE = ("This is the tile you launch this manager from. Changing how it "
+             "runs would take away the way back in: a command that no longer "
+             "works, or a tile that is hidden, cannot be fixed from here, only "
+             "from a terminal. Its settings are shown but cannot be edited, and "
+             "it cannot be hidden, copied or deleted. Renaming it is safe, so "
+             "that is allowed. To remove it, run the uninstall script.")
+
+
+def is_protected(entry: Dict[str, Any]) -> bool:
+    """Is this the manager's own tile?"""
+    return (str(entry.get("source") or ""),
+            str(entry.get("id") or "")) == PROTECTED
+
+
 # Fields that name something on disk, so a picker is worth offering.
 _BROWSABLE = {"cmd": "executable", "working-dir": "directory", "image-path": "any"}
 
@@ -968,16 +987,31 @@ def app_page(entry: Dict[str, Any], token: str, *, is_new: bool = False,
              queued: int = 0, warning: str = "", qid: str = "",
              queued_op: str = "", draft_key: str = "",
              dirty: bool = False) -> str:
-    """One application, with everything about it editable."""
+    """One application, with everything about it editable.
+
+    Everything except the tile this manager is launched from, which can only be
+    renamed -- see LOCK_NOTE.
+    """
     name = entry.get("name") or ""
     index = entry.get("index")
     managed = bool(entry.get("managed"))
     image = entry.get("image-path") or ""
+    locked = is_protected(entry) and not is_new and not qid
 
     fields = []
     for key, label, _kind, hint in _FIELDS:
         value = entry.get(key)
         value = "" if value is None else str(value)
+        if locked and key != "name":
+            # Shown, so it can be read, but not editable. "readonly" rather than
+            # "disabled" on purpose: a disabled field is not submitted at all,
+            # and this form writes every field back.
+            fields.append(
+                f'<div class="field"><label for="f_{key}">{_e(label)}</label>'
+                f'<input id="f_{key}" name="{key}" type="text" value="{_e(value)}" '
+                f'readonly tabindex="-1">'
+                f'<span class="hint">{_e(hint)}</span></div>')
+            continue
         browse = ""
         if key in _BROWSABLE:
             browse = (f'<button class="btn sec browse" type="submit" '
@@ -997,7 +1031,8 @@ def app_page(entry: Dict[str, Any], token: str, *, is_new: bool = False,
             f'<span class="hint">{_e(hint)}</span></div>')
     flags = "".join(
         f'<label class="check"><input type="checkbox" name="{key}"'
-        f'{" checked" if entry.get(key) else ""}> {_e(label)}</label>'
+        f'{" checked" if entry.get(key) else ""}'
+        f'{" disabled" if locked else ""}> {_e(label)}</label>'
         for key, label in _FLAGS)
 
     preview = ""
@@ -1016,6 +1051,8 @@ def app_page(entry: Dict[str, Any], token: str, *, is_new: bool = False,
         preview = (f'<div class="preview">{art}<div class="meta">{origin}</div></div>')
 
     warn = (f'<section class="warn"><p>{_e(warning)}</p></section>' if warning else "")
+    if locked:
+        warn = f'<section class="warn"><p>{_e(LOCK_NOTE)}</p></section>' + warn
 
     if qid:
         hidden_id = f'<input type="hidden" name="qid" value="{_e(qid)}">'
@@ -1041,6 +1078,13 @@ def app_page(entry: Dict[str, Any], token: str, *, is_new: bool = False,
         actions = (f'<button class="btn" data-apply type="submit" name="op" value="add">'
                    f'Add to the queue</button>'
                    f'<a class="btn sec" href="/?token={_e(token)}">Cancel</a>')
+        extra = ""
+    elif locked:
+        # Rename and leave. Every other way out of this page changes something
+        # that would cost you the way back in.
+        actions = (f'<button class="btn" data-apply type="submit" name="op" value="edit">'
+                   f'Rename</button>'
+                   f'<a class="btn sec" href="/?token={_e(token)}">Back</a>')
         extra = ""
     else:
         actions = (f'<button class="btn" data-apply type="submit" name="op" value="edit">'
