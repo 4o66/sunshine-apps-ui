@@ -1,0 +1,69 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+"""Sunshine's own default apps: locating them, seeding from them, restoring them.
+
+Sunshine ships an apps.json containing the entries a fresh install starts with
+(Desktop, Low Res Desktop, Steam Big Picture). This module implements the
+INCLUDE_SYSTEM_APPS and SYSTEM_APPS_JSON settings, which config/README.md has
+always documented but nothing read.
+
+These entries are never modified by this tool: they carry no ownership marker,
+so the reconciler treats them as foreign and passes them through. What this adds
+is putting them back -- on a fresh config, or on request after they were deleted
+by an older version of this tool that rewrote apps.json wholesale.
+"""
+
+import os
+from typing import Any, Dict, List, Optional, Tuple
+
+from .utils import log, read_json
+
+# Where the defaults live, per install type. The Flatpak keeps them inside the
+# runtime rather than /usr/share, so looking only at the native path finds
+# nothing on a Flatpak-only system.
+_SYSTEM_APPS_CANDIDATES = (
+    "/usr/share/sunshine/apps.json",
+    "/usr/local/share/sunshine/apps.json",
+    "/var/lib/flatpak/app/dev.lizardbyte.app.Sunshine/current/active/files/share/sunshine/apps.json",
+    "~/.local/share/flatpak/app/dev.lizardbyte.app.Sunshine/current/active/files/share/sunshine/apps.json",
+    "/var/lib/flatpak/app/dev.lizardbyte.Sunshine/current/active/files/share/sunshine/apps.json",
+    "~/.local/share/flatpak/app/dev.lizardbyte.Sunshine/current/active/files/share/sunshine/apps.json",
+)
+
+
+def find_system_apps_json(override: str = "") -> str:
+    """Path to Sunshine's shipped apps.json, or "" if it cannot be found."""
+    if override:
+        path = os.path.abspath(os.path.expanduser(os.path.expandvars(override)))
+        return path if os.path.isfile(path) else ""
+    for candidate in _SYSTEM_APPS_CANDIDATES:
+        path = os.path.expanduser(candidate)
+        if os.path.isfile(path):
+            return path
+    return ""
+
+
+def load_system_apps(path: str) -> List[Dict[str, Any]]:
+    if not path:
+        return []
+    data = read_json(path, {})
+    apps = data.get("apps") if isinstance(data, dict) else data
+    return [a for a in apps if isinstance(a, dict) and a.get("name")] if isinstance(apps, list) else []
+
+
+def system_app_names(apps: List[Dict[str, Any]]) -> set:
+    return {a.get("name") for a in apps if a.get("name")}
+
+
+def restore_missing(existing: List[Dict[str, Any]],
+                    system_apps: List[Dict[str, Any]]) -> Tuple[List[Dict[str, Any]], List[str]]:
+    """Prepend any default entry that is absent from *existing*, by name.
+
+    Matching is by name only. An entry you renamed or rewrote is yours, and a
+    default of the same name that you edited is left exactly as you have it --
+    only wholly absent ones come back.
+    """
+    present = {a.get("name") for a in existing if isinstance(a, dict)}
+    missing = [a for a in system_apps if a.get("name") not in present]
+    if not missing:
+        return existing, []
+    return list(missing) + list(existing), [a.get("name") for a in missing]

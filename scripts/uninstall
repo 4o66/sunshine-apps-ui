@@ -2,10 +2,10 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Remove the app manager for the current user, tile included.
 #
-# The tile goes first, while the importer is still there to do it properly --
-# through its --mutate contract, so apps.json keeps its structure and its
-# ownership markers stay consistent. Deleting our files first would leave a tile
-# pointing at a command that no longer exists.
+# The tile goes first, while the engine is still installed to do it properly --
+# through the same path everything else uses, so apps.json keeps its structure
+# and its ownership markers stay consistent. Deleting our files first would
+# leave a tile pointing at a command that no longer exists.
 #
 #   scripts/uninstall
 #   scripts/uninstall --keep-state     # keep the queue and preferences
@@ -36,49 +36,38 @@ DEST="$PREFIX/share/sunshine-apps-ui"
 LINK="$PREFIX/bin/sunshine-apps-ui"
 STATE="${XDG_STATE_HOME:-$HOME/.local/state}/sunshine-apps-ui"
 
-IMPORTER=""
-for candidate in "$HOME/.local/bin/sunshine-import" \
-                 "$HOME/.local/bin/bsm-test-import" \
-                 "$(command -v sunshine-import 2>/dev/null)"; do
-  if [[ -n "$candidate" && -x "$candidate" ]]; then IMPORTER="$candidate"; break; fi
-done
-
 # Stop anything still running before removing what it is running from.
 pkill -u "$(id -u)" -f "sunshine_apps_ui --port" 2>/dev/null
 pkill -u "$(id -u)" -f -- "--user-data-dir=.*sunshine-apps-ui/browser-profile" 2>/dev/null
 
 if (( ! KEEP_TILE )); then
-  if [[ -z "$IMPORTER" ]]; then
-    echo "No sunshine-import found, so the tile cannot be removed cleanly." >&2
-    echo "Remove it from Sunshine's web UI, then re-run with --keep-tile." >&2
-    exit 1
+  # Remove the tile before the files: the other order leaves a tile pointing at
+  # a command that is gone. Found by its ownership marker, not by name, because
+  # renaming it is allowed.
+  if [[ -d "$DEST/src" ]]; then
+    PYTHONPATH="$DEST/src" python3 - <<'PY'
+import sys
+from sunshine_apps_ui.core import api
+
+conf = api.config_dir()
+found = [a for a in api.state(conf)["apps"]
+         if a.get("source") == "launcher" and a.get("id") == "apps-ui"]
+if not found:
+    print("No tile to remove; it is not in apps.json.")
+    sys.exit(0)
+entry = found[0]
+ok, message, _ = api.mutate(
+    conf, [{"op": "delete", "index": entry["index"], "name": entry["name"]}])
+print(message if ok else f"Could not remove the tile: {message}")
+sys.exit(0 if ok else 1)
+PY
+    if (( $? != 0 )); then
+      echo "Could not remove the tile; leaving the files in place." >&2
+      exit 1
+    fi
+  else
+    echo "Nothing installed at $DEST, so there is no tile to remove." >&2
   fi
-  # Find it by its ownership marker, not by name: renaming the tile is allowed,
-  # so the name is not what identifies it.
-  OPS=$("$IMPORTER" --state --json 2>/dev/null | python3 -c '
-import json, sys
-try:
-    apps = json.load(sys.stdin).get("apps") or []
-except json.JSONDecodeError:
-    sys.exit(2)
-for app in apps:
-    if app.get("source") == "launcher" and app.get("id") == "apps-ui":
-        json.dump({"ops": [{"op": "delete", "index": app.get("index"),
-                            "name": app.get("name")}]}, sys.stdout)
-        sys.exit(0)
-sys.exit(1)
-')
-  case $? in
-    0) if printf '%s' "$OPS" | "$IMPORTER" --mutate --json --reload >/dev/null; then
-         echo "Removed the tile from Sunshine."
-       else
-         echo "Could not remove the tile; leaving the files in place." >&2
-         exit 1
-       fi ;;
-    1) echo "No tile to remove; it is not in apps.json." ;;
-    *) echo "Could not read the app list; leaving the files in place." >&2
-       exit 1 ;;
-  esac
 fi
 
 rm -f "$LINK"
@@ -92,4 +81,4 @@ else
   echo "Removed $STATE"
 fi
 
-echo "Done. bazzite-sunshine-manager itself is untouched."
+echo "Done. Sunshine, and everything in apps.json that was not ours, is untouched."

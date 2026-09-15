@@ -101,9 +101,10 @@ class StopPreviousTest(unittest.TestCase):
     def test_nothing_left_over_is_not_an_error(self):
         self.assertEqual(self._run_prologue().returncode, 0)
 
-    def test_it_refuses_to_run_without_an_importer(self):
+    def test_it_no_longer_needs_a_separate_importer(self):
+        """The engine is part of this program now."""
         os.unlink(os.path.join(self.home, ".local", "bin", "sunshine-import"))
-        self.assertNotEqual(self._run_prologue().returncode, 0)
+        self.assertEqual(self._run_prologue().returncode, 0)
 
 
 class LauncherShapeTest(unittest.TestCase):
@@ -171,15 +172,21 @@ class InstallScriptTest(unittest.TestCase):
 
     def test_putting_the_tile_back_does_not_become_a_library_scan(self):
         """Restoring one tile should not import every game found since."""
-        self.assertIn("--no-steam --no-heroic --reload", self.install_text)
+        self.assertIn("IMPORT_STEAM=0 IMPORT_HEROIC=0", self.install_text)
 
     def test_install_never_prunes(self):
         """A restore that removed entries would be a very unwelcome surprise."""
-        self.assertNotIn("--remove-uninstalled", self.code(self.install_text))
+        self.assertNotIn("REMOVE_UNINSTALLED", self.code(self.install_text))
 
-    def test_uninstall_removes_the_tile_through_the_importer(self):
+    def test_install_refuses_while_the_original_importer_is_present(self):
+        """It rewrites apps.json wholesale, so the two cannot both be installed."""
+        code = self.code(self.install_text)
+        self.assertIn("destructive_installs", code)
+        self.assertIn("exit 1", code)
+
+    def test_uninstall_removes_the_tile_through_the_engine(self):
         """Editing apps.json directly would lose the marker and tombstone rules."""
-        self.assertIn("--mutate", self.uninstall_text)
+        self.assertIn("api.mutate", self.uninstall_text)
 
     def test_uninstall_finds_the_tile_by_marker_not_by_name(self):
         """Renaming the tile is allowed, so the name identifies nothing."""
@@ -188,16 +195,15 @@ class InstallScriptTest(unittest.TestCase):
 
     def test_uninstall_removes_the_tile_before_the_files(self):
         """The other order leaves a tile pointing at a command that is gone."""
-        self.assertLess(self.uninstall_text.index("--mutate"),
+        self.assertLess(self.uninstall_text.index("api.mutate"),
                         self.uninstall_text.index('rm -rf "${DEST'))
 
     def test_uninstall_keeps_going_only_if_the_tile_really_went(self):
         self.assertIn("leaving the files in place", self.uninstall_text)
 
-    def test_uninstall_leaves_the_importer_alone(self):
-        """It is a separate project and may be managing other things."""
-        self.assertIn("bazzite-sunshine-manager itself is untouched",
-                      self.uninstall_text)
+    def test_uninstall_leaves_everything_that_is_not_ours(self):
+        """Removing this tool is not a reason to disturb the rest of apps.json."""
+        self.assertIn("is untouched", self.uninstall_text)
 
     def test_neither_needs_root(self):
         for text in (self.install_text, self.uninstall_text):

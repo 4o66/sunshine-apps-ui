@@ -22,13 +22,6 @@ LOG="${XDG_RUNTIME_DIR:-/tmp}/sunshine-apps-ui.log"
 # stop_previous below has to end the last browser before starting this one.
 PROFILE="$STATE/browser-profile"
 
-for candidate in "$HOME/.local/bin/sunshine-import" "$HOME/.local/bin/bsm-test-import"; do
-  [[ -x "$candidate" ]] && IMPORTER="$candidate" && break
-done
-if [[ -z "${IMPORTER:-}" ]]; then
-  echo "No sunshine-import found" >&2; exit 1
-fi
-
 # The browser, identified by the one thing unique to it: the profile it was
 # started with. Not the `flatpak run` wrapper's pid -- a signal there does not
 # reach the browser inside the sandbox, which is how a window outlives the
@@ -66,8 +59,8 @@ mkdir -p "$PROFILE"
 
 export BSM_UI_VIA_SUNSHINE=1
 
-PYTHONPATH="$UI_DIR/src" python3 -m sunshine_apps_ui \
-  --port 0 --importer "$IMPORTER" > "$LOG" 2>&1 &
+# The engine is part of this program now; there is no second one to find.
+PYTHONPATH="$UI_DIR/src" python3 -m sunshine_apps_ui --port 0 > "$LOG" 2>&1 &
 SERVER=$!
 
 BROWSER_PID=""

@@ -16,9 +16,9 @@ from urllib.parse import parse_qs, urlencode, urlsplit
 
 from . import __version__, security
 from . import artwork, state
-from .importer import (ImporterError, art_choose, art_search, backup_diff,
-                       browse, check_auth, get_state, list_backups, mutate,
-                       run_plan, save_auth)
+from .engine import (EngineError, art_choose, art_search, backup_diff, browse,
+                     check_auth, get_state, list_backups, mutate, run_plan,
+                     save_auth)
 from .render import (LOCK_NOTE, app_page, applied_page, artwork_page,
                      backups_page, confirm_page, connect_page, error_page,
                      explain_page, grid_page, hidden_page, is_protected, page,
@@ -38,8 +38,8 @@ class PlanHandler(BaseHTTPRequestHandler):
 
     # Set by serve().
     token: str = ""
-    importer_path: str = ""
-    importer_args: List[str] = []
+    conf_dir: str = ""
+    importer_opts: Dict[str, Any] = {}
     port: int = 0
     via_sunshine: bool = False
 
@@ -82,8 +82,8 @@ class PlanHandler(BaseHTTPRequestHandler):
         if parts.path == "/art":
             wanted = (query.get("p") or [""])[0]
             try:
-                current = get_state(self.importer_path, use_cache=True)
-            except ImporterError:
+                current = get_state(self.conf_dir, use_cache=True)
+            except EngineError:
                 self._send(404, error_page("Not found.", token=self.token))
                 return
             found = artwork.read(wanted,
@@ -106,8 +106,8 @@ class PlanHandler(BaseHTTPRequestHandler):
 
         if parts.path in ("/", "/index.html"):
             try:
-                current = get_state(self.importer_path)
-            except ImporterError as e:
+                current = get_state(self.conf_dir)
+            except EngineError as e:
                 self._send(500, error_page("Could not read the app list.",
                                            str(e), token=self.token))
                 return
@@ -117,10 +117,10 @@ class PlanHandler(BaseHTTPRequestHandler):
                 # rather than holding them aside to be applied by a second,
                 # invisible route. Everything that will happen is now one list.
                 try:
-                    doc, _ = run_plan(self.importer_path, self.importer_args)
+                    doc, _ = run_plan(self.conf_dir, self.importer_opts)
                     staged = state.stage_plan(doc.get("plan", {}) or {})
                     log.info("scan staged %d change(s)", staged)
-                except ImporterError as e:
+                except EngineError as e:
                     log.warning("scan failed: %s", e)
             auth_ok, auth_message = self._auth_state()
             # A credential problem is one thing; Sunshine failing for another
@@ -135,10 +135,10 @@ class PlanHandler(BaseHTTPRequestHandler):
                              if op.get("op") == "rollback"), None)
             if rollback:
                 try:
-                    restore = backup_diff(self.importer_path,
+                    restore = backup_diff(self.conf_dir,
                                           str(rollback.get("backup", "")))
                     restore["qid"] = rollback.get("qid", "")
-                except ImporterError as e:
+                except EngineError as e:
                     log.warning("could not preview the restore: %s", e)
                     restore = {"backup": str(rollback.get("backup", "")),
                                "qid": rollback.get("qid", ""),
@@ -182,8 +182,8 @@ class PlanHandler(BaseHTTPRequestHandler):
             if "hidden" in query:
                 wanted = (query.get("hidden") or [""])[0]
                 try:
-                    current = get_state(self.importer_path, use_cache=True)
-                except ImporterError as e:
+                    current = get_state(self.conf_dir, use_cache=True)
+                except EngineError as e:
                     self._send(500, error_page("Could not read the app list.",
                                                str(e), token=self.token))
                     return
@@ -253,8 +253,8 @@ class PlanHandler(BaseHTTPRequestHandler):
             where = (query.get("path") or [""])[0] or os.path.expanduser("~")
             error = ""
             try:
-                listing = browse(self.importer_path, where, browsable[field])
-            except ImporterError as e:
+                listing = browse(self.conf_dir, where, browsable[field])
+            except EngineError as e:
                 error, listing = str(e), {"path": where, "parent": "", "entries": []}
             self._send(200, picker_page(listing, self.token, key=key, field=field,
                                         label=label, error=error,
@@ -273,8 +273,8 @@ class PlanHandler(BaseHTTPRequestHandler):
                 return
             error, copies = "", []
             try:
-                copies = list_backups(self.importer_path)
-            except ImporterError as e:
+                copies = list_backups(self.conf_dir)
+            except EngineError as e:
                 error = str(e)
             self._send(200, backups_page(copies, self.token, error=error))
             return
@@ -286,8 +286,8 @@ class PlanHandler(BaseHTTPRequestHandler):
             chosen = (query.get("choose") or [""])[0]
             if chosen:
                 try:
-                    picked = art_choose(self.importer_path, chosen, name)
-                except ImporterError as e:
+                    picked = art_choose(self.conf_dir, chosen, name)
+                except EngineError as e:
                     self._send(500, error_page("Could not save that artwork.",
                                                str(e), token=self.token))
                     return
@@ -304,9 +304,9 @@ class PlanHandler(BaseHTTPRequestHandler):
                 source = ident = ""
             error, doc = "", {"candidates": [], "notes": []}
             try:
-                doc = art_search(self.importer_path, name=searched,
+                doc = art_search(self.conf_dir, name=searched,
                                  source=source, ident=ident)
-            except ImporterError as e:
+            except EngineError as e:
                 error = str(e)
             self._send(200, artwork_page(
                 doc.get("candidates") or [], self.token, key=key,
@@ -336,8 +336,8 @@ class PlanHandler(BaseHTTPRequestHandler):
 
         if parts.path == "/apply":
             try:
-                doc, _ = run_plan(self.importer_path, self.importer_args)
-            except ImporterError as e:
+                doc, _ = run_plan(self.conf_dir, self.importer_opts)
+            except EngineError as e:
                 self._send(500, error_page("Could not work out what would change.",
                                            str(e), token=self.token))
                 return
@@ -350,8 +350,8 @@ class PlanHandler(BaseHTTPRequestHandler):
             return
 
         try:
-            doc, importer_log = run_plan(self.importer_path, self.importer_args)
-        except ImporterError as e:
+            doc, importer_log = run_plan(self.conf_dir, self.importer_opts)
+        except EngineError as e:
             log.error("plan failed: %s", e)
             self._send(500, error_page("The importer could not produce a plan.",
                                        str(e), token=self.token))
@@ -396,8 +396,8 @@ class PlanHandler(BaseHTTPRequestHandler):
         except ValueError:
             return None
         try:
-            current = get_state(self.importer_path, use_cache=True)
-        except ImporterError:
+            current = get_state(self.conf_dir, use_cache=True)
+        except EngineError:
             return None
         for app in current.get("apps") or []:
             if app.get("index") == index:
@@ -434,8 +434,8 @@ class PlanHandler(BaseHTTPRequestHandler):
         if index in (None, ""):
             return False
         try:
-            current = get_state(self.importer_path, use_cache=True)
-        except ImporterError:
+            current = get_state(self.conf_dir, use_cache=True)
+        except EngineError:
             # Refuse rather than allow: not being able to tell is not a reason
             # to permit the one change that cannot be undone from here.
             return True
@@ -465,8 +465,8 @@ class PlanHandler(BaseHTTPRequestHandler):
             source, ident = str(marker.get("source") or ""), str(marker.get("id") or "")
         elif key.startswith("index:"):
             try:
-                current = get_state(self.importer_path, use_cache=True)
-            except ImporterError:
+                current = get_state(self.conf_dir, use_cache=True)
+            except EngineError:
                 current = {}
             for app in current.get("apps") or []:
                 if str(app.get("index")) == key[6:]:
@@ -525,7 +525,7 @@ class PlanHandler(BaseHTTPRequestHandler):
 
     def _auth_state(self):
         try:
-            return check_auth(self.importer_path)
+            return check_auth(self.conf_dir)
         except Exception as e:                       # noqa: BLE001 - shown, not raised
             log.warning("credential check failed: %s", e)
             return False, "Could not check the stored credentials."
@@ -695,8 +695,8 @@ class PlanHandler(BaseHTTPRequestHandler):
                 self._redirect("/")
                 return
             try:
-                ok, message = mutate(self.importer_path, pending, reload=True)
-            except ImporterError as e:
+                ok, message = mutate(self.conf_dir, pending, reload=True)
+            except EngineError as e:
                 ok, message = False, str(e)
             if ok:
                 state.clear_queue()
@@ -718,7 +718,7 @@ class PlanHandler(BaseHTTPRequestHandler):
         password = (fields.get("password") or [""])[0]
 
         try:
-            ok, message = save_auth(self.importer_path, username, password)
+            ok, message = save_auth(self.conf_dir, username, password)
         except Exception as e:                       # noqa: BLE001 - shown, not raised
             ok, message = False, str(e)
         # The password is not logged, not echoed back, and not kept.
@@ -735,13 +735,14 @@ class PlanHandler(BaseHTTPRequestHandler):
         self.end_headers()
 
 
-def serve(token: str, importer_path: str, importer_args: Optional[List[str]] = None,
-          port: int = 0) -> ThreadingHTTPServer:
+def serve(token: str, conf_dir: str,
+           importer_opts: Optional[Dict[str, Any]] = None,
+           port: int = 0) -> ThreadingHTTPServer:
     """Bind and return a server. The address is always loopback, by design."""
     handler = type("BoundPlanHandler", (PlanHandler,), {
         "token": token,
-        "importer_path": importer_path,
-        "importer_args": list(importer_args or []),
+        "conf_dir": conf_dir,
+        "importer_opts": dict(importer_opts or {}),
         # Set by our launcher, which only ever runs inside a streamed session.
         "via_sunshine": os.getenv("BSM_UI_VIA_SUNSHINE", "") == "1",
     })

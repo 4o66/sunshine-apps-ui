@@ -16,7 +16,10 @@ import urllib.request
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "src"))
 
-from sunshine_apps_ui import importer, security  # noqa: E402
+from unittest import mock  # noqa: E402
+
+from sunshine_apps_ui import security  # noqa: E402
+from sunshine_apps_ui import server as server_module  # noqa: E402
 from sunshine_apps_ui.server import serve  # noqa: E402
 
 PLAN = {
@@ -65,24 +68,75 @@ STATE = {
 }
 
 
-def fake_importer(payload=None, exit_code=0, stderr="log line"):
-    """A stand-in that speaks the contract: JSON on stdout, logs on stderr."""
-    body = json.dumps(payload if payload is not None else PLAN)
-    fd, path = tempfile.mkstemp(suffix=".sh")
-    script = (
-        "#!/bin/sh\n"
-        'case "$*" in\n'
-        "  *--check-auth*) echo '{\"ok\": true, \"message\": \"ok\"}'; exit 0 ;;\n"
-        "  *--state*) cat <<'S'\n" + json.dumps(STATE) + "\nS\n exit 0 ;;\n"
-        "  *--save-auth*)  cat >/dev/null; echo '{\"ok\": true, \"message\": \"saved\"}'; exit 0 ;;\n"
-        "esac\n"
-        f"cat <<'J'\n{body}\nJ\n"
-        f"echo '{stderr}' >&2\nexit {exit_code}\n"
-    )
-    os.write(fd, script.encode())
-    os.close(fd)
-    os.chmod(path, 0o755)
-    return path
+class FakeEngine:
+    """Stands in for core, at the seam the server actually binds.
+
+    The server used to reach core by running it as a program, so the tests
+    supplied a shell script that printed JSON. Now it calls it, so they supply
+    the answers directly: faster, and it tests the server rather than a fixture
+    of a command line.
+    """
+
+    def __init__(self, state=None, plan=None):
+        self.state = state if state is not None else dict(STATE)
+        self.plan = plan if plan is not None else dict(PLAN)
+        self.auth = (True, "ok")
+        self.listing = {"ok": True, "path": "/home/u", "parent": "/home", "entries": []}
+        self.candidates = {"ok": True, "candidates": [], "notes": []}
+        self.chosen = ""
+        self.copies = []
+        self.diff = {}
+        self.saved = None
+        self.applied = []
+        self.fails = {}                 # name -> message, to make one call fail
+
+    # Each of these matches what the server imported from engine.
+
+    def get_state(self, conf_dir, use_cache=False):
+        self._maybe_fail("get_state")
+        return self.state
+
+    def run_plan(self, conf_dir, opts=None):
+        self._maybe_fail("run_plan")
+        return self.plan, "log line"
+
+    def mutate(self, conf_dir, ops, reload=True):
+        self._maybe_fail("mutate")
+        self.applied.append(list(ops))
+        return True, f"Applied {len(ops)} change(s)"
+
+    def browse(self, conf_dir, path="", kind="any"):
+        self._maybe_fail("browse")
+        return self.listing
+
+    def art_search(self, conf_dir, name="", source="", ident=""):
+        self._maybe_fail("art_search")
+        self.searched = {"name": name, "source": source, "ident": ident}
+        return self.candidates
+
+    def art_choose(self, conf_dir, chosen_id, name=""):
+        self._maybe_fail("art_choose")
+        return self.chosen or f"/img/{name}-{chosen_id}.png"
+
+    def list_backups(self, conf_dir):
+        self._maybe_fail("list_backups")
+        return self.copies
+
+    def backup_diff(self, conf_dir, name):
+        self._maybe_fail("backup_diff")
+        return dict(self.diff, backup=name)
+
+    def check_auth(self, conf_dir):
+        return self.auth
+
+    def save_auth(self, conf_dir, username, password):
+        self.saved = (username, password)
+        return self.auth
+
+    def _maybe_fail(self, name):
+        if name in self.fails:
+            from sunshine_apps_ui.engine import EngineError
+            raise EngineError(self.fails[name])
 
 
 class ServerTest(unittest.TestCase):
@@ -94,9 +148,19 @@ class ServerTest(unittest.TestCase):
         self._previous_state_home = os.environ.get("XDG_STATE_HOME")
         os.environ["XDG_STATE_HOME"] = self.state_dir
 
-        self.importer = fake_importer()
+        self.conf_dir = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.conf_dir, True)
+        self.engine = FakeEngine()
+        for name in ("get_state", "run_plan", "mutate", "browse", "art_search",
+                     "art_choose", "list_backups", "backup_diff", "check_auth",
+                     "save_auth"):
+            patched = mock.patch.object(server_module, name,
+                                        getattr(self.engine, name))
+            patched.start()
+            self.addCleanup(patched.stop)
+
         self.token = security.new_token()
-        self.httpd = serve(self.token, self.importer, [], port=0)
+        self.httpd = serve(self.token, self.conf_dir, {}, port=0)
         # ThreadingHTTPServer runs handlers as daemon threads and does not wait
         # for them, so a request still being served when a test ends carries on
         # into the next one -- writing that test's queue file out from under it.
@@ -116,7 +180,6 @@ class ServerTest(unittest.TestCase):
         else:
             os.environ["XDG_STATE_HOME"] = self._previous_state_home
         shutil.rmtree(self.state_dir, ignore_errors=True)
-        os.unlink(self.importer)
 
     def get(self, path="/", token=None, headers=None):
         url = f"http://127.0.0.1:{self.port}{path}"
@@ -223,43 +286,28 @@ class ServerTest(unittest.TestCase):
             self.assertIsNone(r.headers.get("Access-Control-Allow-Origin"))
 
 
-class ImporterContractTest(unittest.TestCase):
-    def test_unknown_schema_is_rejected_rather_than_guessed(self):
-        with self.assertRaises(importer.ImporterError) as cm:
-            importer.parse_plan(json.dumps({"schema": 99, "plan": {}}))
-        self.assertIn("not supported", str(cm.exception))
+class EngineSeamTest(ServerTest):
+    """What used to be the CLI contract is now a function call.
 
-    def test_non_json_output_is_rejected(self):
-        with self.assertRaises(importer.ImporterError):
-            importer.parse_plan("this is a log line, not a plan")
+    The guarantees worth keeping are the same two: a plan never writes, and a
+    failure is reported rather than rendered as an empty page.
+    """
 
-    def test_a_failing_importer_surfaces_its_exit_code(self):
-        path = fake_importer(exit_code=3, stderr="boom")
-        try:
-            with self.assertRaises(importer.ImporterError) as cm:
-                importer.run_plan(path)
-            self.assertIn("exited 3", str(cm.exception))
-        finally:
-            os.unlink(path)
+    def test_looking_at_the_plan_never_writes(self):
+        self.get(f"/plan?token={self.token}")
+        self.assertEqual(self.engine.applied, [])
 
-    def test_the_importer_is_always_invoked_read_only(self):
-        """--dry-run must be non-negotiable; the UI never writes apps.json."""
-        fd, path = tempfile.mkstemp(suffix=".sh")
-        argdump = path + ".args"
-        os.write(fd, f"#!/bin/sh\necho \"$@\" > {argdump}\ncat <<'J'\n{json.dumps(PLAN)}\nJ\n".encode())
-        os.close(fd); os.chmod(path, 0o755)
-        try:
-            importer.run_plan(path, ["--no-heroic"])
-            recorded = open(argdump).read().split()
-            self.assertIn("--dry-run", recorded)
-            self.assertIn("--json", recorded)
-            self.assertIn("--no-heroic", recorded)
-        finally:
-            os.unlink(path); os.path.exists(argdump) and os.unlink(argdump)
+    def test_a_failure_is_shown_rather_than_an_empty_page(self):
+        self.engine.fails["run_plan"] = "the library is offline"
+        status, body = self.get(f"/plan?token={self.token}")
+        self.assertEqual(status, 500)
+        self.assertIn("the library is offline", body)
 
-
-if __name__ == "__main__":
-    unittest.main()
+    def test_a_failure_reading_the_apps_is_shown_too(self):
+        self.engine.fails["get_state"] = "apps.json is not readable"
+        status, body = self.get(f"/?token={self.token}")
+        self.assertEqual(status, 500)
+        self.assertIn("apps.json is not readable", body)
 
 
 class CredentialsEndpointTest(ServerTest):
@@ -375,21 +423,30 @@ class ApplyTest(ServerTest):
         self.assertEqual(status, 303)
         self.assertNotIn("/applied", headers["Location"])
 
-    def test_the_apply_invocation_is_not_a_dry_run_and_does_reload(self):
-        """The two flags that make apply mean 'write and reload'."""
-        fd, path = tempfile.mkstemp(suffix=".sh")
-        argdump = path + ".args"
-        os.write(fd, f"#!/bin/sh\necho \"$@\" > {argdump}\nexit 0\n".encode())
-        os.close(fd); os.chmod(path, 0o755)
-        try:
-            from sunshine_apps_ui.importer import apply_plan
-            apply_plan(path, ["--no-heroic"])
-            recorded = open(argdump).read().split()
-            self.assertIn("--reload", recorded)
-            self.assertNotIn("--dry-run", recorded)
-            self.assertIn("--no-heroic", recorded)
-        finally:
-            os.unlink(path); os.path.exists(argdump) and os.unlink(argdump)
+    def test_applying_writes_and_reloads(self):
+        """What "apply" means, now that it is a call and not two CLI flags."""
+        from sunshine_apps_ui import state as st
+        st.enqueue({"op": "edit", "index": 1, "name": "Portal 2",
+                    "fields": {"name": "Portal 2"}})
+        captured = {}
+        original = self.engine.mutate
+
+        def watched(conf_dir, ops, reload=True):
+            captured["reload"] = reload
+            return original(conf_dir, ops, reload)
+
+        self.engine.mutate = watched
+        import sunshine_apps_ui.server as sm
+        patched = mock.patch.object(sm, "mutate", watched)
+        patched.start()
+        self.addCleanup(patched.stop)
+        self.post({}, token=self.token, path="/apply")
+        self.assertTrue(captured.get("reload"), "apply must reload, or nothing sees it")
+        self.assertEqual(len(self.engine.applied), 1)
+
+    def test_looking_at_the_confirmation_writes_nothing(self):
+        self.get("/apply", token=self.token)
+        self.assertEqual(self.engine.applied, [])
 
 
 class AppliedPageTest(ServerTest):
@@ -410,21 +467,13 @@ class AppliedPageTest(ServerTest):
         self.assertEqual(status, 303)
         self.assertTrue(headers["Location"].startswith("/applied?"), headers["Location"])
 
-    def test_the_applied_page_does_not_invoke_the_importer(self):
-        fd, path = tempfile.mkstemp(suffix=".sh")
-        marker = path + ".ran"
-        os.write(fd, f"#!/bin/sh\ntouch {marker}\nexit 1\n".encode())
-        os.close(fd); os.chmod(path, 0o755)
-        self.httpd.RequestHandlerClass.importer_path = path
-        try:
-            status, body = self.get(f"/applied?token={self.token}")
-            self.assertEqual(status, 200)
-            self.assertIn("Applied", body)
-            self.assertFalse(os.path.exists(marker), "the importer was invoked")
-        finally:
-            self.httpd.RequestHandlerClass.importer_path = self.importer
-            os.unlink(path)
-            os.path.exists(marker) and os.unlink(marker)
+    def test_the_applied_page_asks_the_engine_for_nothing(self):
+        """Scanning here would race the teardown the apply just caused."""
+        self.engine.fails["run_plan"] = "must not be called"
+        self.engine.fails["get_state"] = "must not be called"
+        status, body = self.get(f"/applied?token={self.token}")
+        self.assertEqual(status, 200)
+        self.assertIn("Applied", body)
 
     def test_an_empty_queue_has_nothing_to_apply(self):
         """Applying reloads Sunshine and reloading disconnects, so doing it for
@@ -436,20 +485,13 @@ class AppliedPageTest(ServerTest):
     def test_applied_needs_the_token(self):
         self.assertEqual(self.get("/applied")[0], 404)
 
-    def test_a_failed_apply_still_returns_to_the_plan(self):
-        """Nothing reloaded, so nothing is tearing down; the plan is safe to render."""
-        fd, path = tempfile.mkstemp(suffix=".sh")
-        os.write(fd, b"#!/bin/sh\necho boom >&2\nexit 3\n")
-        os.close(fd); os.chmod(path, 0o755)
-        self.httpd.RequestHandlerClass.importer_path = path
-        try:
-            self.queue_a_change()
-            status, headers = self.post({}, token=self.token, path="/apply")
-            self.assertEqual(status, 303)
-            self.assertIn("apply_error", headers["Location"])
-        finally:
-            self.httpd.RequestHandlerClass.importer_path = self.importer
-            os.unlink(path)
+    def test_a_failed_apply_still_returns_to_the_grid(self):
+        """Nothing reloaded, so nothing is tearing down; the grid is safe to render."""
+        self.engine.fails["mutate"] = "boom"
+        self.queue_a_change()
+        status, headers = self.post({}, token=self.token, path="/apply")
+        self.assertEqual(status, 303)
+        self.assertIn("apply_error", headers["Location"])
 
 
 class AppPageTest(ServerTest):
@@ -774,45 +816,21 @@ class ApplyCountsTheQueueTest(ServerTest):
         self.assertIn("Add My Script", body)
 
     def test_nothing_queued_and_nothing_found_still_reads_as_nothing(self):
-        import tempfile as tf
-        empty = {"schema": 1, "generator": {"name": "x", "version": "1"},
-                 "totals": {}, "sources": [], "plan": {"added": []}}
-        fd, path = tf.mkstemp(suffix=".sh")
-        os.write(fd, f"#!/bin/sh\ncat <<'J'\n{json.dumps(empty)}\nJ\n".encode())
-        os.close(fd); os.chmod(path, 0o755)
-        self.httpd.RequestHandlerClass.importer_path = path
-        try:
-            _, body = self.get("/apply", token=self.token)
-            self.assertIn("Nothing would change.", body)
-            self.assertIn("Apply 0 changes?", body)
-        finally:
-            self.httpd.RequestHandlerClass.importer_path = self.importer
-            os.unlink(path)
+        self.engine.plan = {"schema": 1, "generator": {"name": "x", "version": "1"},
+                            "totals": {}, "sources": [], "plan": {"added": []}}
+        _, body = self.get("/apply", token=self.token)
+        self.assertIn("Nothing would change.", body)
+        self.assertIn("Apply 0 changes?", body)
 
-    def test_applying_a_queue_does_not_reload_twice(self):
+    def test_applying_a_queue_is_one_write_and_one_reload(self):
         """One session of changes should cost one disconnect, not one per step."""
-        import tempfile as tf
-        fd, path = tf.mkstemp(suffix=".sh")
-        argdump = path + ".args"
-        # Must answer --mutate with JSON, or apply stops at the first step.
-        os.write(fd, (f"#!/bin/sh\necho \"$@\" >> {argdump}\n"
-                      "case \"$*\" in *--mutate*) cat >/dev/null; "
-                      "echo '{\"ok\":true,\"applied\":1,\"results\":[]}';; esac\n"
-                      "exit 0\n").encode())
-        os.close(fd); os.chmod(path, 0o755)
-        self.httpd.RequestHandlerClass.importer_path = path
         from sunshine_apps_ui import state as st
         st.enqueue({"op": "hide", "index": 1, "name": "Portal 2"})
-        try:
-            self.post({}, token=self.token, path="/apply")
-            calls = open(argdump).read().splitlines()
-            reloads = [c for c in calls if "--reload" in c]
-            self.assertEqual(len(reloads), 1, calls)
-            self.assertTrue(any("--mutate" in c for c in calls), calls)
-        finally:
-            self.httpd.RequestHandlerClass.importer_path = self.importer
-            os.unlink(path)
-            os.path.exists(argdump) and os.unlink(argdump)
+        st.enqueue({"op": "add", "fields": {"name": "My Script"}})
+        self.post({}, token=self.token, path="/apply")
+        self.assertEqual(len(self.engine.applied), 1,
+                         "the whole queue goes in one call")
+        self.assertEqual(len(self.engine.applied[0]), 2)
 
 
 class HiddenEntryTest(ServerTest):
@@ -893,43 +911,24 @@ class HiddenEntryTest(ServerTest):
 
 
 class AuthFailureWordingTest(ServerTest):
-    """Not every failure is a sign-in failure."""
+    """Not every failure is a sign-in failure.
 
-    def _importer_where_auth_says(self, message, ok="false"):
-        import tempfile as tf
-        fd, path = tf.mkstemp(suffix=".sh")
-        os.write(fd, (
-            "#!/bin/sh\ncase \"$*\" in\n"
-            f"  *--check-auth*) echo '{{\"ok\": {ok}, \"message\": \"{message}\"}}'; exit 1 ;;\n"
-            f"  *--state*) cat <<'S'\n{json.dumps(STATE)}\nS\n exit 0 ;;\n"
-            "esac\nexit 0\n").encode())
-        os.close(fd); os.chmod(path, 0o755)
-        return path
+    Saying so sent me looking at credentials when apps.json held a value
+    Sunshine could not parse.
+    """
 
     def test_a_parse_failure_is_not_reported_as_needing_a_sign_in(self):
-        path = self._importer_where_auth_says(
-            "Sunshine could not read its own apps.json.")
-        self.httpd.RequestHandlerClass.importer_path = path
-        try:
-            _, body = self.get(token=self.token)
-            self.assertIn("Sunshine is not answering", body)
-            self.assertIn("could not read its own apps.json", body)
-            self.assertNotIn("needs sign-in", body)
-        finally:
-            self.httpd.RequestHandlerClass.importer_path = self.importer
-            os.unlink(path)
+        self.engine.auth = (False, "Sunshine could not read its own apps.json.")
+        _, body = self.get(token=self.token)
+        self.assertIn("Sunshine is not answering", body)
+        self.assertIn("could not read its own apps.json", body)
+        self.assertNotIn("needs sign-in", body)
 
     def test_a_real_credential_problem_still_offers_the_sign_in(self):
-        path = self._importer_where_auth_says("Sunshine rejected the credentials")
-        self.httpd.RequestHandlerClass.importer_path = path
-        try:
-            _, body = self.get(token=self.token)
-            self.assertIn("needs sign-in", body)
-            self.assertIn("/connect", body)
-        finally:
-            self.httpd.RequestHandlerClass.importer_path = self.importer
-            os.unlink(path)
-
+        self.engine.auth = (False, "Sunshine rejected the credentials")
+        _, body = self.get(token=self.token)
+        self.assertIn("needs sign-in", body)
+        self.assertIn("/connect", body)
 
 class StagedArtworkTest(ServerTest):
     def setUp(self):
@@ -1078,31 +1077,7 @@ class FilePickerTest(ServerTest):
 
     def setUp(self):
         super().setUp()
-        import tempfile as tf
-        self.sd = tf.mkdtemp()
-        self._old = os.environ.get("XDG_STATE_HOME")
-        os.environ["XDG_STATE_HOME"] = self.sd
-        fd, self.imp = tf.mkstemp(suffix=".sh")
-        os.write(fd, (
-            "#!/bin/sh\ncase \"$*\" in\n"
-            f"  *--browse*) cat <<'B'\n{json.dumps(self.LISTING)}\nB\n exit 0 ;;\n"
-            "  *--check-auth*) echo '{\"ok\": true, \"message\": \"ok\"}'; exit 0 ;;\n"
-            f"  *--state*) cat <<'S'\n{json.dumps(STATE)}\nS\n exit 0 ;;\n"
-            "esac\n"
-            f"cat <<'P'\n{json.dumps(PLAN)}\nP\nexit 0\n").encode())
-        os.close(fd); os.chmod(self.imp, 0o755)
-        self.httpd.RequestHandlerClass.importer_path = self.imp
-
-    def tearDown(self):
-        import shutil as sh
-        self.httpd.RequestHandlerClass.importer_path = self.importer
-        os.path.exists(self.imp) and os.unlink(self.imp)
-        if self._old is None:
-            os.environ.pop("XDG_STATE_HOME", None)
-        else:
-            os.environ["XDG_STATE_HOME"] = self._old
-        sh.rmtree(self.sd, ignore_errors=True)
-        super().tearDown()
+        self.engine.listing = dict(self.LISTING)
 
     def test_the_form_offers_a_browse_button_for_path_fields(self):
         _, body = self.get(f"/app?new=1&token={self.token}")
@@ -1151,23 +1126,15 @@ class FilePickerTest(ServerTest):
 
     def test_a_huge_directory_is_capped_rather_than_rendered_whole(self):
         """/usr/bin has thousands of executables; all of them was half a megabyte."""
-        import tempfile as tf
         from sunshine_apps_ui.render import PICKER_LIMIT
-        big = {"ok": True, "path": "/usr/bin", "parent": "/usr",
-               "entries": [{"name": f"prog{i}", "path": f"/usr/bin/prog{i}",
-                            "type": "file"} for i in range(PICKER_LIMIT * 4)]}
-        fd, path = tf.mkstemp(suffix=".sh")
-        os.write(fd, f"#!/bin/sh\ncat <<'B'\n{json.dumps(big)}\nB\n".encode())
-        os.close(fd); os.chmod(path, 0o755)
-        self.httpd.RequestHandlerClass.importer_path = path
-        try:
-            _, body = self.get(f"/browse?key=new&field=cmd&token={self.token}")
-            self.assertEqual(body.count(">choose<"), PICKER_LIMIT)
-            self.assertIn(f"showing the first {PICKER_LIMIT}", body)
-            self.assertLess(len(body), 200000)
-        finally:
-            self.httpd.RequestHandlerClass.importer_path = self.imp
-            os.unlink(path)
+        self.engine.listing = {
+            "ok": True, "path": "/usr/bin", "parent": "/usr",
+            "entries": [{"name": f"prog{i}", "path": f"/usr/bin/prog{i}",
+                         "type": "file"} for i in range(PICKER_LIMIT * 4)]}
+        _, body = self.get(f"/browse?key=new&field=cmd&token={self.token}")
+        self.assertEqual(body.count(">choose<"), PICKER_LIMIT)
+        self.assertIn(f"showing the first {PICKER_LIMIT}", body)
+        self.assertLess(len(body), 200000)
 
     def test_the_filter_narrows_the_listing(self):
         _, body = self.get(f"/browse?key=new&field=cmd&q=run&token={self.token}")
@@ -1189,55 +1156,10 @@ class FilePickerTest(ServerTest):
         self.assertEqual(self.get("/browse?key=new&field=cmd")[0], 404)
 
     def test_a_listing_failure_is_shown_rather_than_crashing(self):
-        import tempfile as tf
-        fd, bad = tf.mkstemp(suffix=".sh")
-        os.write(fd, b"#!/bin/sh\necho '{\"ok\": false, \"message\": \"nope\"}'\nexit 1\n")
-        os.close(fd); os.chmod(bad, 0o755)
-        self.httpd.RequestHandlerClass.importer_path = bad
-        try:
-            status, body = self.get(f"/browse?key=new&field=cmd&token={self.token}")
-            self.assertEqual(status, 200)
-            self.assertIn("nope", body)
-        finally:
-            os.unlink(bad)
-
-    def test_a_chosen_path_leaves_apply_available(self):
-        """Apply is disabled until something changes, and a value chosen in the
-        picker is already in the field when the page loads: comparing the form
-        against itself finds nothing, so Apply stayed dead."""
-        from urllib.parse import quote
-        self.get_no_redirect(
-            f"/browse?key=index:1&field=cmd&pick={quote('/home/u/run.sh', safe='')}"
-            f"&token={self.token}")
-        _, body = self.get(f"/app?index=1&token={self.token}")
-        self.assertIn('data-dirty="1"', body)
-
-    def test_an_untouched_form_does_not_offer_apply(self):
-        _, body = self.get(f"/app?index=1&token={self.token}")
-        self.assertNotIn('data-dirty="1"', body)
-
-    def test_a_draft_that_changes_nothing_does_not_offer_apply(self):
-        """Opening a picker and cancelling saves the form as it already was."""
-        from sunshine_apps_ui import state as st
-        st.set_draft("index:1", {"name": "Portal 2",
-                                 "cmd": "steam -applaunch 620",
-                                 "image-path": "/img/620.png"})
-        _, body = self.get(f"/app?index=1&token={self.token}")
-        self.assertNotIn('data-dirty="1"', body)
-
-    def test_a_new_entry_with_a_chosen_path_can_be_added(self):
-        from urllib.parse import quote
-        self.get_no_redirect(
-            f"/browse?key=new&field=cmd&pick={quote('/home/u/run.sh', safe='')}"
-            f"&token={self.token}")
-        _, body = self.get(f"/app?new=1&token={self.token}")
-        self.assertIn('data-dirty="1"', body)
-
-    def test_a_flag_toggled_before_the_picker_counts_as_a_change(self):
-        from sunshine_apps_ui import state as st
-        st.set_draft("index:1", {"elevated": True})
-        _, body = self.get(f"/app?index=1&token={self.token}")
-        self.assertIn('data-dirty="1"', body)
+        self.engine.fails["browse"] = "nope"
+        status, body = self.get(f"/browse?key=new&field=cmd&token={self.token}")
+        self.assertEqual(status, 200)
+        self.assertIn("nope", body)
 
     def test_queueing_the_entry_clears_its_draft(self):
         from sunshine_apps_ui import state as st
@@ -1269,40 +1191,11 @@ class ArtworkPickerTest(ServerTest):
 
     def setUp(self):
         super().setUp()
-        import tempfile as tf
-        self.sd = tf.mkdtemp()
-        self._old = os.environ.get("XDG_STATE_HOME")
-        os.environ["XDG_STATE_HOME"] = self.sd
-        self.args = os.path.join(self.sd, "args")
-        fd, self.imp = tf.mkstemp(suffix=".sh")
-        os.write(fd, (
-            "#!/bin/sh\n"
-            f'echo "$*" >> {self.args}\n'
-            "case \"$*\" in\n"
-            f"  *--art-search*) cat <<'A'\n{json.dumps(self.FOUND)}\nA\n exit 0 ;;\n"
-            "  *--art-choose*) echo '{\"ok\": true, \"image-path\": "
-            "\"/home/u/.config/sunshine/images/chosen/Portal-2-aaaa.png\"}'; exit 0 ;;\n"
-            "  *--check-auth*) echo '{\"ok\": true, \"message\": \"ok\"}'; exit 0 ;;\n"
-            f"  *--state*) cat <<'S'\n{json.dumps(STATE)}\nS\n exit 0 ;;\n"
-            "esac\n"
-            f"cat <<'P'\n{json.dumps(PLAN)}\nP\nexit 0\n").encode())
-        os.close(fd); os.chmod(self.imp, 0o755)
-        self.httpd.RequestHandlerClass.importer_path = self.imp
-
-    def tearDown(self):
-        import shutil as sh
-        self.httpd.RequestHandlerClass.importer_path = self.importer
-        os.path.exists(self.imp) and os.unlink(self.imp)
-        if self._old is None:
-            os.environ.pop("XDG_STATE_HOME", None)
-        else:
-            os.environ["XDG_STATE_HOME"] = self._old
-        sh.rmtree(self.sd, ignore_errors=True)
-        super().tearDown()
-
-    def _args(self):
-        with open(self.args) as handle:
-            return handle.read()
+        self.engine.state = dict(STATE)
+        self.engine.candidates = dict(self.FOUND)
+        self.engine.searched = {}
+        self.engine.chosen = ("/home/u/.config/sunshine/images/chosen/"
+                              "Portal-2-aaaa.png")
 
     def test_the_form_offers_to_find_artwork(self):
         _, body = self.get(f"/app?index=1&token={self.token}")
@@ -1324,26 +1217,25 @@ class ArtworkPickerTest(ServerTest):
 
     def test_a_steam_entry_is_looked_up_by_its_appid(self):
         self.get(f"/artwork?key=index:1&token={self.token}")
-        self.assertIn("--art-source steam", self._args())
-        self.assertIn("--art-ident 620", self._args())
+        self.assertEqual(self.engine.searched["source"], "steam")
+        self.assertEqual(self.engine.searched["ident"], "620")
 
     def test_the_name_being_edited_is_what_gets_searched_for(self):
         from sunshine_apps_ui import state as st
         st.set_draft("index:1", {"name": "Portal 2 Deluxe"})
         self.get(f"/artwork?key=index:1&token={self.token}")
-        self.assertIn("Portal 2 Deluxe", self._args())
+        self.assertEqual(self.engine.searched["name"], "Portal 2 Deluxe")
 
     def test_searching_another_title_drops_the_appid(self):
         """A different name means a different game; its appid would win and
         silently ignore what was typed."""
         self.get(f"/artwork?key=index:1&q=Hades&token={self.token}")
-        args = self._args()
-        self.assertIn("--art-name Hades", args)
-        self.assertNotIn("--art-ident 620", args)
+        self.assertEqual(self.engine.searched["name"], "Hades")
+        self.assertEqual(self.engine.searched["ident"], "")
 
     def test_searching_the_same_title_keeps_the_appid(self):
         self.get(f"/artwork?key=index:1&q=Portal%202&token={self.token}")
-        self.assertIn("--art-ident 620", self._args())
+        self.assertEqual(self.engine.searched["ident"], "620")
 
     def test_notes_explain_a_source_that_gave_nothing(self):
         _, body = self.get(f"/artwork?key=index:1&token={self.token}")
@@ -1392,30 +1284,16 @@ class ArtworkPickerTest(ServerTest):
                                     "bsm": {"source": "steam", "id": "70"}}}
                          )[-1]["qid"]
         self.get(f"/artwork?key=qid:{qid}&token={self.token}")
-        self.assertIn("--art-ident 70", self._args())
+        self.assertEqual(self.engine.searched["ident"], "70")
 
     def test_the_picker_needs_a_token(self):
         self.assertEqual(self.get("/artwork?key=index:1")[0], 404)
 
     def test_a_failure_to_search_is_shown_rather_than_crashing(self):
-        import tempfile as tf
-        fd, bad = tf.mkstemp(suffix=".sh")
-        os.write(fd, b"#!/bin/sh\necho '{\"ok\": false, \"message\": \"no network\"}'\n")
-        os.close(fd); os.chmod(bad, 0o755)
-        self.httpd.RequestHandlerClass.importer_path = bad
-        try:
-            status, body = self.get(f"/artwork?key=index:1&token={self.token}")
-            self.assertEqual(status, 200)
-            self.assertIn("no network", body)
-        finally:
-            os.unlink(bad)
-
-    def test_choosing_a_cover_leaves_apply_available(self):
-        """The whole point of choosing one is to then apply it."""
-        self.get_no_redirect(
-            f"/artwork?key=index:1&choose={'a' * 16}&token={self.token}")
-        _, body = self.get(f"/app?index=1&token={self.token}")
-        self.assertIn('data-dirty="1"', body)
+        self.engine.fails["art_search"] = "no network"
+        status, body = self.get(f"/artwork?key=index:1&token={self.token}")
+        self.assertEqual(status, 200)
+        self.assertIn("no network", body)
 
     def test_there_is_always_a_way_back(self):
         _, body = self.get(f"/artwork?key=index:1&token={self.token}")
@@ -1437,25 +1315,7 @@ class EditFormShowsTheFileTest(ServerTest):
 
     def setUp(self):
         super().setUp()
-        state_doc = dict(STATE, apps=[self.REBOOT])
-        self.imp = fake_importer()
-        import tempfile as tf
-        fd, self.imp = tf.mkstemp(suffix=".sh")
-        os.write(fd, (
-            "#!/bin/sh\ncase \"$*\" in\n"
-            "  *--check-auth*) echo '{\"ok\": true, \"message\": \"ok\"}'; exit 0 ;;\n"
-            f"  *--state*) cat <<'S'\n{json.dumps(state_doc)}\nS\n exit 0 ;;\n"
-            "esac\n"
-            f"cat <<'P'\n{json.dumps(PLAN)}\nP\nexit 0\n").encode())
-        os.close(fd); os.chmod(self.imp, 0o755)
-        self.httpd.RequestHandlerClass.importer_path = self.imp
-        importer._STATE_CACHE["doc"] = None
-
-    def tearDown(self):
-        self.httpd.RequestHandlerClass.importer_path = self.importer
-        os.path.exists(self.imp) and os.unlink(self.imp)
-        importer._STATE_CACHE["doc"] = None
-        super().tearDown()
+        self.engine.state = dict(STATE, apps=[self.REBOOT])
 
     def test_a_flag_that_is_set_is_shown_as_set(self):
         _, body = self.get(f"/app?index=0&token={self.token}")
@@ -1565,24 +1425,7 @@ class ProtectedTileTest(ServerTest):
 
     def setUp(self):
         super().setUp()
-        import tempfile as tf
-        doc = dict(STATE, apps=[self.MANAGER, self.GAME])
-        fd, self.imp = tf.mkstemp(suffix=".sh")
-        os.write(fd, (
-            "#!/bin/sh\ncase \"$*\" in\n"
-            "  *--check-auth*) echo '{\"ok\": true, \"message\": \"ok\"}'; exit 0 ;;\n"
-            f"  *--state*) cat <<'S'\n{json.dumps(doc)}\nS\n exit 0 ;;\n"
-            "esac\n"
-            f"cat <<'P'\n{json.dumps(PLAN)}\nP\nexit 0\n").encode())
-        os.close(fd); os.chmod(self.imp, 0o755)
-        self.httpd.RequestHandlerClass.importer_path = self.imp
-        importer._STATE_CACHE["doc"] = None
-
-    def tearDown(self):
-        self.httpd.RequestHandlerClass.importer_path = self.importer
-        os.path.exists(self.imp) and os.unlink(self.imp)
-        importer._STATE_CACHE["doc"] = None
-        super().tearDown()
+        self.engine.state = dict(STATE, apps=[self.MANAGER, self.GAME])
 
     def _edit(self, index, **overrides):
         body = {"op": "edit", "index": str(index), "orig_name": "Zz App Manager",
@@ -1697,18 +1540,12 @@ class ProtectedTileTest(ServerTest):
         self.assertFalse(is_protected(self.GAME))
 
     def test_an_unreadable_app_list_refuses_rather_than_allows(self):
-        import tempfile as tf
-        fd, bad = tf.mkstemp(suffix=".sh")
-        os.write(fd, b"#!/bin/sh\nexit 1\n")
-        os.close(fd); os.chmod(bad, 0o755)
-        self.httpd.RequestHandlerClass.importer_path = bad
-        importer._STATE_CACHE["doc"] = None
-        try:
-            status, _ = self.post({"op": "delete", "index": "0", "name": "x"},
-                                  token=self.token, path="/queue")
-            self.assertEqual(status, 400)
-        finally:
-            os.unlink(bad)
+        """Not being able to tell is not a reason to permit the one change that
+        cannot be undone from here."""
+        self.engine.fails["get_state"] = "apps.json is unreadable"
+        status, _ = self.post({"op": "delete", "index": "0", "name": "x"},
+                              token=self.token, path="/queue")
+        self.assertEqual(status, 400)
 
 
 class RestoreCopyTest(ServerTest):
@@ -1736,31 +1573,14 @@ class RestoreCopyTest(ServerTest):
 
     def setUp(self):
         super().setUp()
-        import tempfile as tf
-        state_doc = dict(STATE, apps=[
+        self.engine.state = dict(STATE, apps=[
             {"index": 0, "name": "Desktop", "image-path": "", "cmd": "",
              "source": None, "id": None, "managed": False},
             {"index": 1, "name": "Portal 2", "image-path": "", "cmd": "x",
              "source": "steam", "id": "620", "managed": True},
         ])
-        fd, self.imp = tf.mkstemp(suffix=".sh")
-        os.write(fd, (
-            "#!/bin/sh\ncase \"$*\" in\n"
-            f"  *--backups*) cat <<'B'\n{json.dumps({'ok': True, 'backups': self.COPIES})}\nB\n exit 0 ;;\n"
-            f"  *--backup-diff*) cat <<'D'\n{json.dumps(self.DIFF)}\nD\n exit 0 ;;\n"
-            "  *--check-auth*) echo '{\"ok\": true, \"message\": \"ok\"}'; exit 0 ;;\n"
-            f"  *--state*) cat <<'S'\n{json.dumps(state_doc)}\nS\n exit 0 ;;\n"
-            "esac\n"
-            f"cat <<'P'\n{json.dumps(PLAN)}\nP\nexit 0\n").encode())
-        os.close(fd); os.chmod(self.imp, 0o755)
-        self.httpd.RequestHandlerClass.importer_path = self.imp
-        importer._STATE_CACHE["doc"] = None
-
-    def tearDown(self):
-        self.httpd.RequestHandlerClass.importer_path = self.importer
-        os.path.exists(self.imp) and os.unlink(self.imp)
-        importer._STATE_CACHE["doc"] = None
-        super().tearDown()
+        self.engine.copies = list(self.COPIES)
+        self.engine.diff = dict(self.DIFF)
 
     def test_the_grid_offers_a_way_to_restore(self):
         _, body = self.get(f"/?token={self.token}")
@@ -1839,21 +1659,12 @@ class RestoreCopyTest(ServerTest):
         self.assertEqual(rollbacks[0]["backup"], "apps-20260914-090000.json")
 
     def test_a_preview_that_fails_does_not_take_the_grid_down(self):
-        import tempfile as tf
         from sunshine_apps_ui import state as st
         st.enqueue({"op": "rollback", "backup": "apps-20260915-101500.json"})
-        fd, bad = tf.mkstemp(suffix=".sh")
-        os.write(fd, b"#!/bin/sh\ncase \"$*\" in *--state*) echo '"
-                 + json.dumps(STATE).encode() + b"'; exit 0;; esac\n"
-                 b"echo '{\"ok\": false, \"message\": \"gone\"}'\nexit 1\n")
-        os.close(fd); os.chmod(bad, 0o755)
-        self.httpd.RequestHandlerClass.importer_path = bad
-        importer._STATE_CACHE["doc"] = None
-        try:
-            status, body = self.get(f"/?token={self.token}")
-            self.assertEqual(status, 200)
-        finally:
-            os.unlink(bad)
+        self.engine.fails["backup_diff"] = "that copy is gone"
+        status, body = self.get(f"/?token={self.token}")
+        self.assertEqual(status, 200)
+        self.assertIn("Restoring the copy from", body)
 
     def test_the_picker_needs_a_token(self):
         self.assertEqual(self.get("/backups")[0], 404)

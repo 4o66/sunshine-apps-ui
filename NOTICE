@@ -1,0 +1,41 @@
+sunshine-apps-ui
+Copyright (C) 2026 4o66
+
+This program is free software: you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free Software
+Foundation, either version 3 of the License, or (at your option) any later
+version. See LICENSE.
+
+This program is distributed in the hope that it will be useful, but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+PARTICULAR PURPOSE. See the GNU General Public License for more details.
+
+
+Upstream
+--------
+
+The engine (src/sunshine_apps_ui/core) began as bazzite-sunshine-manager by
+wadiebs, by way of 4o66's fork of it, and was folded into this project rather
+than kept as a separate program alongside it. It is derived from
+
+    https://github.com/wadiebs/bazzite-sunshine-manager
+
+built on commit 4bedee5 (2026-04-19), which upstream calls version 2.0.
+
+That work is licensed under the MIT License, and its notice is preserved
+verbatim in LICENSE.upstream-MIT, exactly as upstream published it -- including
+its copyright line, which names no holder. Nothing here relicenses it: upstream's
+code remains available from upstream under MIT, and the MIT terms continue to
+apply to it.
+
+What is licensed under the GPL is this fork's own additions and the combined
+work they form. The MIT License permits that: it allows a derivative to be
+distributed under other terms provided its copyright and permission notice are
+retained, which is what LICENSE.upstream-MIT is for.
+
+One consequence, recorded so it is not rediscovered the hard way: patches from
+this fork can no longer be offered to upstream, because an MIT project cannot
+take GPL code without relicensing. Two pull requests were filed before this
+change (wadiebs/bazzite-sunshine-manager#34 and #35); those were offered to an
+MIT project and remain MIT. Anything sent upstream from here on would have to be
+offered separately under MIT.

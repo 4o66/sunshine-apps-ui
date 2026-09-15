@@ -1,6 +1,7 @@
 # sunshine-apps-ui
 
-Companion web UI for [bazzite-sunshine-manager](https://github.com/4o66/bazzite-sunshine-manager).
+Manage the applications Sunshine offers, from a page you can reach from the
+console, a phone, or the stream itself.
 
 **Status: a tile manager.** The grid shows what Sunshine currently offers, a
 scan stages what it found onto that same grid, and nothing reaches `apps.json`
@@ -8,27 +9,44 @@ until Apply.
 
 ## What this is
 
-The importer is a CLI. It scans Steam and Heroic libraries and reconciles the
-result into Sunshine's `apps.json`. This project is the front end for the part
-that benefits from being seen rather than logged: the tiles themselves.
+A tile manager for Sunshine's `apps.json`. It scans Steam and Heroic libraries,
+reconciles what it finds against what is already there, and shows the result as
+the grid of tiles Moonlight will display.
 
-Everything is driven from the grid. A tile can be edited, hidden, cloned or
-deleted; a scan marks what it found; new applications are added by hand. Each of
-those queues a change and shows it on the tile, so what is about to happen is
-visible in one place, and one Apply writes the file and asks Sunshine to re-read
-it. Paths are chosen with a file picker rather than typed, and cover art is
-chosen from what can actually be found for the game -- Steam's own library
-cache, Valve's CDN, and SteamGridDB -- rather than from a path to a PNG.
+Everything is driven from that grid. A tile can be edited, hidden, cloned or
+deleted; a scan marks what it found; new applications are added by hand; cover
+art is chosen from what can actually be found for the game -- Steam's own
+library cache, Valve's CDN, SteamGridDB -- rather than from a path to a PNG.
+Each of those queues a change and shows it on the tile, so what is about to
+happen is visible in one place, and one Apply writes the file and asks Sunshine
+to re-read it.
 
-It writes to `apps.json` only through the importer's `--mutate` contract: the
-rules about ownership markers, tombstones and Sunshine's own defaults live in
-one place, and this is not that place.
+A copy of `apps.json` is taken before every write, the last ten are kept, and
+any of them can be restored -- previewed on the grid first, like any other
+change.
 
-It is a separate repository on purpose. The two talk over a versioned JSON
-contract (`sunshine-import --dry-run --json`), never by importing each other's
-Python. That keeps release cadences independent, lets either side be rewritten
-in another language, and avoids depending on the importer's package layout,
-which currently claims the top-level names `common` and `importers`.
+### Two halves, one program
+
+The engine (`src/sunshine_apps_ui/core`) owns `apps.json`: the reconciler that
+decides what the tool owns and what you have changed by hand, the tombstones
+that keep a deleted app deleted, and the rules about Sunshine's own defaults.
+Nothing outside `core` writes that file.
+
+It began as a separate program, [bazzite-sunshine-manager] by wadiebs, spoken to
+over a CLI contract. The contract was worth having while there were two
+projects; with one it bought a subprocess per request and two of everything
+else. The boundary survives as a package rather than a process.
+
+[bazzite-sunshine-manager]: https://github.com/wadiebs/bazzite-sunshine-manager
+
+**The original cannot be installed alongside this.** It rewrites `apps.json`
+from scratch on every run, which removes everything it did not generate itself:
+Sunshine's own defaults, anything you added by hand, and every record of what
+you have hidden. `scripts/install` refuses while it is present, and offers to
+remove it. Sunshine's own web UI, by contrast, is safe to use -- it reads each
+app whole and writes the whole file back. The one thing to know is that
+deleting an app there is not recorded as a deletion, so the next scan offers it
+back.
 
 ## Why a web UI and not a desktop app
 
@@ -51,28 +69,41 @@ not the same as private, so it is not the only defence. See
 
 ## Running it
 
-    pip install -e .
+    scripts/install
+
+Everything lands under `~/.local` and nothing needs root -- both target systems
+have an operating system you do not install into. Then launch it from the
+Sunshine tile it creates, or directly:
+
     sunshine-apps-ui --open
-
-It finds `sunshine-import` on `PATH` (or takes `--importer PATH`) and asks it
-what is in `apps.json` now. Arguments after `--` are passed through to the
-importer when it scans:
-
-    sunshine-apps-ui -- --no-heroic
 
 The URL it prints carries a token generated for that run. Without it, every
 request is refused.
 
+Scanning without opening the interface, for scripts:
+
+    sunshine-apps-ui --scan                 # scan, write, and reload Sunshine
+    sunshine-apps-ui --scan --dry-run       # report what would change
+    sunshine-apps-ui --scan -- IMPORT_HEROIC=0
+
 ## Layout
 
     src/sunshine_apps_ui/
-      importer.py   runs sunshine-import and validates the plan schema
+      core/         the engine: everything that reads or writes apps.json
+        reconcile.py    what the tool owns, and what you changed by hand
+        mutate.py       applying queued changes, and restoring a copy
+        backups.py      copies taken before every write
+        sources/        where applications are discovered
+        api.py          the only surface the interface may use
+      engine.py     the seam: what the interface can ask of core
       security.py   token, Host and cross-site checks
       render.py     the pages
       server.py     the listener
       state.py      the queue of pending changes, and per-form drafts
       artwork.py    which images may be served, as an exact allowlist
+      legacy.py     finding the original importer, which cannot coexist
     docs/security.md  threat model and the decisions behind it
+    docs/backlog.md   decided, not built
 
 ## License
 
@@ -101,6 +132,6 @@ first removing the property this whole design rests on. GPLv3 also keeps the
 door open to code moving into [Sunshine](https://github.com/LizardByte/Sunshine)
 itself, which is GPLv3 and could not take AGPL code.
 
-It talks to
-[bazzite-sunshine-manager](https://github.com/4o66/bazzite-sunshine-manager)
-over a CLI contract rather than importing it, so the two remain separable.
+The engine is derived from MIT-licensed work by wadiebs. That notice is
+preserved verbatim in `LICENSE.upstream-MIT`, and `NOTICE` explains the
+arrangement.
