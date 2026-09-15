@@ -208,3 +208,44 @@ class InstallScriptTest(unittest.TestCase):
     def test_neither_needs_root(self):
         for text in (self.install_text, self.uninstall_text):
             self.assertNotIn("sudo", text)
+
+
+class LauncherArgumentsTest(unittest.TestCase):
+    """Bare means "open a window"; anything else means "run the program".
+
+    The installer tells people to run `sunshine-apps-ui --scan`, and that name
+    is the kiosk launcher. Before this, the flag was ignored and a browser
+    opened instead -- found on a VM, not here.
+    """
+
+    def setUp(self):
+        self.home = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.home, True)
+        # A stand-in for the module, so nothing real is started.
+        self.ui = os.path.join(self.home, "share", "sunshine-apps-ui")
+        os.makedirs(os.path.join(self.ui, "src", "sunshine_apps_ui"))
+        with open(os.path.join(self.ui, "src", "sunshine_apps_ui",
+                               "__init__.py"), "w"):
+            pass
+        with open(os.path.join(self.ui, "src", "sunshine_apps_ui",
+                               "__main__.py"), "w") as handle:
+            handle.write("import sys\nprint('ran with', sys.argv[1:])\n")
+        self.env = dict(os.environ, HOME=self.home, BSM_UI_DIR=self.ui)
+
+    def _run(self, *args):
+        return subprocess.run(["bash", LAUNCHER, *args], env=self.env,
+                              capture_output=True, text=True, timeout=60)
+
+    def test_an_argument_runs_the_program_rather_than_opening_a_window(self):
+        result = self._run("--scan", "--dry-run")
+        self.assertIn("ran with ['--scan', '--dry-run']", result.stdout)
+
+    def test_help_reaches_the_program_too(self):
+        self.assertIn("ran with ['--help']", self._run("--help").stdout)
+
+    def test_the_bare_form_is_still_a_launch(self):
+        """It must not fall through to the module and exit immediately."""
+        with open(LAUNCHER, encoding="utf-8") as handle:
+            text = handle.read()
+        launch = text[text.index('if [[ $# -gt 0 ]]'):]
+        self.assertIn("flatpak run", launch)

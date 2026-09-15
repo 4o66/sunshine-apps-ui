@@ -10,6 +10,13 @@
 set -uo pipefail
 
 UI_DIR="${BSM_UI_DIR:-$HOME/.local/share/sunshine-apps-ui}"
+
+# Given any argument, this is not a launch: it is the program being run
+# directly, as `sunshine-apps-ui --scan` or `--help`. Only the bare form opens a
+# window, which is the form Sunshine's tile uses.
+if [[ $# -gt 0 ]]; then
+  exec env PYTHONPATH="$UI_DIR/src" python3 -m sunshine_apps_ui "$@"
+fi
 STATE="${XDG_STATE_HOME:-$HOME/.local/state}/sunshine-apps-ui"
 LOG="${XDG_RUNTIME_DIR:-/tmp}/sunshine-apps-ui.log"
 # Chrome keys its single-instance lock on the profile directory, so giving this
