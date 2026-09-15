@@ -57,6 +57,101 @@ The reconciler, tombstones, the mutate contract, the plan document, the whole
 web UI, and the artwork sources. That is most of the value, and it is already
 stdlib-only Python. This is a port of the edges, not a rewrite.
 
+### Windows, and what has been settled about it
+
+**Decided 2026-09-15.** Windows is the largest Sunshine population -- about 70%
+of downloads -- and the real port. What follows is decided; what is still open
+is at the end.
+
+#### The thing that shapes everything else
+
+Sunshine's `appdata()` on Windows is not per-user AppData. It is the directory
+holding `Sunshine.exe`::
+
+    GetModuleFileNameW(nullptr, sunshine_path, _countof(sunshine_path));
+    return std::filesystem::path{sunshine_path}.remove_filename() / L"config"sv;
+
+So `apps.json` lives in `C:\Program Files\Sunshine\config`, and
+`SunshineService` runs as LocalSystem, launching `Sunshine.exe` into the user's
+session with a duplicated SYSTEM token. Sunshine writes that file as an
+elevated process; a program run by the user cannot.
+
+Per-user install under a user-writable prefix -- the model this project rests
+on everywhere else -- does not transfer.
+
+#### What was chosen
+
+**Run elevated, launched by Sunshine.** An app entry with `"elevated": true`
+gets the administrator token with no UAC prompt: Sunshine is already SYSTEM, so
+it calls `WTSQueryUserToken` for the console session and, for an admin with UAC
+enabled, swaps in the linked elevated token.
+
+Rejected: a separate privileged service with an unprivileged interface talking
+to it. It is the textbook answer and it costs IPC, a second thing to install
+and uninstall, and a privileged surface that exists permanently rather than
+only while the tile is open.
+
+**Two silent degradations to handle explicitly**, because both fail quietly:
+
+- A **non-admin account gets no elevation and no error**. Sunshine logs
+  "Sunshine will retain the same access level as the current user and will not
+  elevate it" and launches us unprivileged anyway. We would fail at the write
+  with nothing on screen to say why.
+- **It only works when Sunshine is running as the service.** Started by hand --
+  common when troubleshooting -- `WTSQueryUserToken` fails from a non-SYSTEM
+  process and there is nothing to elevate with.
+
+Check our own token at startup and say so on the page. Discovering this at the
+write is the wrong end.
+
+**The cost, which belongs in docs/security.md when this is built:** the HTTP
+server would run elevated. Loopback binding and the per-session token stop
+being defence in depth and become the only thing between a flaw and rights we
+do not otherwise have. That argument is currently written assuming an
+unprivileged server, and it will need revisiting rather than copying.
+
+**Install as a standard Windows application**, registered in Add/Remove
+Programs. Sunshine packages itself with CPack and NSIS; mirroring that is the
+obvious precedent and settles the "no ~/.local convention" problem.
+
+**One codebase.** So the shell layer -- install, uninstall, the two credential
+scripts, the kiosk launcher -- becomes Python, since bash is not there. More
+work now and less forever, and it removes the pgrep/pkill/flatpak assumptions
+from every platform at once rather than adding a second set for Windows.
+
+#### Still open
+
+- **Shipping a Python interpreter.** Windows users will not have one. PyInstaller
+  or equivalent, which makes the launcher an .exe and adds perhaps 15 MB.
+- **Credential file permissions.** Four places check `st_mode & 0o077` and
+  create files mode 600. Windows has no equivalent; this needs a real ACL check
+  or an honest statement that there is not one. It is security-relevant, so it
+  should not quietly become a no-op.
+- **The artwork allowlist matches paths as exact strings.** Correct on POSIX,
+  wrong on Windows, where `C:\x\y.png`, `c:/x/y.png` and `C:\X\Y.PNG` are one
+  file. Loosening it carelessly weakens the allowlist, which is the whole
+  mechanism.
+- Steam and Heroic library paths; `cmd` as a Windows command line; and `Zz
+  Reboot`, which runs `systemctl reboot`.
+
+#### Worth knowing
+
+`POST /api/config` rewrites `sunshine.conf`, and `file_apps` is a setting -- so
+`apps.json` can be relocated through the API without touching the filesystem.
+Not needed if we run elevated, but it is the escape hatch if elevation turns
+out to be unacceptable.
+
+`POST /api/covers/upload` writes into `appdata()/covers/`. Sunshine will store
+cover art for us, elevated, on request -- so the artwork picker has a path that
+needs no file access at all.
+
+There is **no API that writes the `meta` block**. All 25 endpoints were
+enumerated: `/api/apps` POST replaces one app, DELETE removes one. The `bsm`
+markers ride inside each entry and survive, but the managed list and the
+tombstones have no API path. Any design that avoids writing the file directly
+has to put them somewhere else, and they then stop travelling with the file and
+stop being in the backups.
+
 ### Open questions
 
 - **Which platform second?** SteamOS is the one already promised and the
