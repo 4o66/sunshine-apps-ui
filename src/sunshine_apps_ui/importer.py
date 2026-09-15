@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Running the importer and reading its plan document.
 
 The only supported interface between the two projects is the CLI contract:

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Draw the poster Sunshine shows for this manager's own tile.
 
 Committed as a script rather than only as a PNG so the image can be redrawn

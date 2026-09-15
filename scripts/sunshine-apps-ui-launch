@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: GPL-3.0-or-later
 # Launch the apps-import UI and a kiosk browser for it, then clean up.
 #
 # Install to ~/.local/bin/sunshine-apps-ui. The importer's launchers module

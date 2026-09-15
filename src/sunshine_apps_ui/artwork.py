@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Serving the artwork that apps.json refers to.
 
 Only paths that actually appear in the current apps.json or its tombstones are

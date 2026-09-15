@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 // The one thing on these pages that needs scripting: Apply stays disabled
 // until a field actually changes, so it cannot queue a no-op change.
 (function () {

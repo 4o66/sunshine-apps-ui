@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """The launcher's half of "one session at a time".
 
 This is shell, not Python, and it earned a test the hard way: a relaunch left

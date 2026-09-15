@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Rendering the plan document as a page.
 
 Server-rendered on purpose: no fetch, no token in JavaScript, and every control

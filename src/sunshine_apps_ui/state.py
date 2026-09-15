@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Queued changes and preferences, kept per user outside the config.
 
 Changes are queued rather than written as you make them, so a session of edits

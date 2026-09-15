@@ -1,7 +1,10 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """The local HTTP server.
 
-Read-only: it runs the importer with --dry-run and shows the resulting plan.
-Nothing here writes to apps.json.
+It renders what is in apps.json, queues changes to it, and applies them through
+the importer's --mutate contract. It never writes apps.json itself: the rules
+about ownership markers, tombstones and Sunshine's own defaults live beside the
+reconciler, and one implementation of them is enough.
 """
 
 import logging

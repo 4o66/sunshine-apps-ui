@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Tests for the change queue and the explain-once preferences."""
 import os
 import shutil

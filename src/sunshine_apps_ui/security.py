@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Request checks.
 
 Binding to 127.0.0.1 stops remote hosts and nothing else. Two things still

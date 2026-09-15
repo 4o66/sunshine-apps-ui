@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Tests for the request checks. Loopback binding is not the only defence."""
 import os
 import sys

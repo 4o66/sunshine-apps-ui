@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Start the UI, print its URL, and stop when you close it."""
 
 import argparse

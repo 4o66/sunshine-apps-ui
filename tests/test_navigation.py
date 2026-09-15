@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Every page must offer a way onward.
 
 This exists because a page shipped with no links at all: the "already queued to

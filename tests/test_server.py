@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """End-to-end tests against a real server on a loopback port."""
 import json
 import os

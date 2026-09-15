@@ -76,5 +76,31 @@ request is refused.
 
 ## License
 
-MIT. The CLI boundary means there is no derivative-work entanglement with the
-parent project.
+GPL-3.0-or-later.
+
+    sunshine-apps-ui, a tile manager for Sunshine.
+    Copyright (C) 2026 4o66
+
+    This program is free software: you can redistribute it and/or modify it
+    under the terms of the GNU General Public License as published by the Free
+    Software Foundation, either version 3 of the License, or (at your option)
+    any later version.
+
+    This program is distributed in the hope that it will be useful, but WITHOUT
+    ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+    FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
+    more details.
+
+    You should have received a copy of the GNU General Public License along
+    with this program. If not, see <https://www.gnu.org/licenses/>.
+
+GPL rather than AGPL deliberately. The network clause is what separates them,
+and it could barely apply here: the listener is hardcoded to `127.0.0.1` and
+there is no option to change it, so hosting a modified copy as a service means
+first removing the property this whole design rests on. GPLv3 also keeps the
+door open to code moving into [Sunshine](https://github.com/LizardByte/Sunshine)
+itself, which is GPLv3 and could not take AGPL code.
+
+It talks to
+[bazzite-sunshine-manager](https://github.com/4o66/bazzite-sunshine-manager)
+over a CLI contract rather than importing it, so the two remain separable.

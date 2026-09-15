@@ -8,6 +8,12 @@ version = "0.1.0"
 description = "Companion web UI for bazzite-sunshine-manager. Reviews and applies Sunshine apps.json import plans."
 readme = "README.md"
 license = { file = "LICENSE" }
+# GPL-3.0-or-later: the FSF's own recommendation, and strictly the more useful
+# of the two -- code offered "or later" can still be used as plain v3 by a
+# project that pins v3, while the reverse is not true.
+classifiers = [
+  "License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)",
+]
 requires-python = ">=3.9"
 # Intentionally zero runtime dependencies: stdlib http.server only.
 # Target systems are immutable (Bazzite rpm-ostree, SteamOS), where

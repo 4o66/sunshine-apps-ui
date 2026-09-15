@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: GPL-3.0-or-later
 # Install the app manager for the current user.
 #
 # Everything lands under ~/.local, and nothing needs root. That is deliberate

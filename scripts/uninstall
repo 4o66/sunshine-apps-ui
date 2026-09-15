@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: GPL-3.0-or-later
 # Remove the app manager for the current user, tile included.
 #
 # The tile goes first, while the importer is still there to do it properly --
