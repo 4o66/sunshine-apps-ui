@@ -1,7 +1,7 @@
 # sunshine-apps-ui
 
-Manage the applications Sunshine offers, from a page you can reach from the
-console, a phone, or the stream itself.
+Manage the applications Sunshine offers, from a page you reach through
+Moonlight or at the console.
 
 **Status: a tile manager.** The grid shows what Sunshine currently offers, a
 scan stages what it found onto that same grid, and nothing reaches `apps.json`
@@ -56,16 +56,16 @@ Two reasons, and the second is the real one.
 immutable base is a foot-gun. This has no runtime dependencies at all: stdlib
 `http.server` and nothing else.
 
-**It has to render inside the stream.** The point of the Sunshine tile is that
-you reach this from the couch, through Moonlight, on a television -- so it draws
-in whatever session Sunshine is streaming, at ten feet, with a gamepad mapped to
-arrows and Enter. That is true whatever the machine at the other end is running.
-A browser in `--app` mode gets there with no toolkit; a terminal UI would still
-need a window in that session and is miserable with a thumbstick.
+**It has to render inside the session Sunshine is streaming.** There are two
+ways to reach this and they are the same place: through Moonlight, from the
+couch, on a television at ten feet with a gamepad mapped to arrows and Enter;
+or sitting at the machine itself. Either way the page is drawn on the host, by
+the host. A browser in `--app` mode gets there with no toolkit; a terminal UI
+would still need a window in that session and is miserable with a thumbstick.
 
-It is also reachable from a laptop, though only through an SSH tunnel: the
-listener is hardcoded to `127.0.0.1` and there is no option to change it. See
-[docs/security.md](docs/security.md).
+Which is why the listener binds `127.0.0.1` and why that costs nothing. It only
+ever has to be reachable from the machine it runs on, because both ways of
+using it put you on that machine. See [docs/security.md](docs/security.md).
 
 ## Security
 

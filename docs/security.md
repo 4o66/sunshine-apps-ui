@@ -9,6 +9,13 @@ import is a remote-code-execution surface; the one-line mistake of setting
 knob removes the mistake. Sunshine itself models this with
 `origin_web_ui_allowed = pc`.
 
+**Nothing is given up by it**, which is what makes the decision easy to hold.
+There are two ways to use this and both are local to the host: through Moonlight,
+where the page is drawn in the session Sunshine is streaming, or at the console,
+where it is drawn on the machine in front of you. In both the browser is on the
+same machine as the server. A remote binding would not enable a use we have; it
+would only add a way to be wrong.
+
 The **port** is configurable. The address is not.
 
 ## Loopback is not the same as private
