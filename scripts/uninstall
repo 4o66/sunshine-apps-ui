@@ -1,100 +1,18 @@
-#!/usr/bin/env bash
+#!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-or-later
-# Remove the app manager for the current user, tile included.
-#
-# The tile goes first, while the engine is still installed to do it properly --
-# through the same path everything else uses, so apps.json keeps its structure
-# and its ownership markers stay consistent. Deleting our files first would
-# leave a tile pointing at a command that no longer exists.
-#
-#   scripts/uninstall
-#   scripts/uninstall --keep-state     # keep the queue and preferences
-#   scripts/uninstall --keep-tile      # leave apps.json alone
-#   scripts/uninstall --purge-backups  # also delete the kept copies of apps.json
-#
-# The kept copies of apps.json survive by default. They are copies of your
-# configuration, not of this program, and an uninstall is a moment you might
-# want one back.
-#
-set -uo pipefail
+"""Run "--uninstall" against this checkout, before anything is installed.
 
-PREFIX="${PREFIX:-$HOME/.local}"
-KEEP_STATE=0
-KEEP_TILE=0
-PURGE_BACKUPS=0
+A wrapper rather than a program: everything it would do lives in the package,
+so that the same code runs here, from the installed copy, and on a platform
+with no shell at all.
+"""
 
-usage() {
-  sed -n '2,14p' "$0" | sed 's/^# \{0,1\}//' >&2
-  exit 1
-}
-
-while (( "$#" )); do
-  case "$1" in
-    --prefix)      PREFIX="${2:-}"; shift 2 ;;
-    --keep-state)  KEEP_STATE=1; shift ;;
-    --keep-tile)   KEEP_TILE=1; shift ;;
-    --purge-backups) PURGE_BACKUPS=1; shift ;;
-    -h|--help)     usage ;;
-    *) echo "Unknown option: $1" >&2; usage ;;
-  esac
-done
-
-DEST="$PREFIX/share/sunshine-apps-ui"
-LINK="$PREFIX/bin/sunshine-apps-ui"
-STATE="${XDG_STATE_HOME:-$HOME/.local/state}/sunshine-apps-ui"
-BACKUPS="$STATE/backups"
-
-# Stop anything still running before removing what it is running from.
-pkill -u "$(id -u)" -f "sunshine_apps_ui --port" 2>/dev/null
-pkill -u "$(id -u)" -f -- "--user-data-dir=.*sunshine-apps-ui/browser-profile" 2>/dev/null
-
-if (( ! KEEP_TILE )); then
-  # Remove the tile before the files: the other order leaves a tile pointing at
-  # a command that is gone. Found by its ownership marker, not by name, because
-  # renaming it is allowed.
-  if [[ -d "$DEST/src" ]]; then
-    PYTHONPATH="$DEST/src" python3 - <<'PY'
+import os
 import sys
-from sunshine_apps_ui.core import api
 
-conf = api.config_dir()
-found = [a for a in api.state(conf)["apps"]
-         if a.get("source") == "launcher" and a.get("id") == "apps-ui"]
-if not found:
-    print("No tile to remove; it is not in apps.json.")
-    sys.exit(0)
-entry = found[0]
-ok, message, _ = api.mutate(
-    conf, [{"op": "delete", "index": entry["index"], "name": entry["name"]}])
-print(message if ok else f"Could not remove the tile: {message}")
-sys.exit(0 if ok else 1)
-PY
-    if (( $? != 0 )); then
-      echo "Could not remove the tile; leaving the files in place." >&2
-      exit 1
-    fi
-  else
-    echo "Nothing installed at $DEST, so there is no tile to remove." >&2
-  fi
-fi
+sys.path.insert(0, os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "src"))
 
-rm -f "$LINK"
-rm -rf "${DEST:?}"
-echo "Removed $DEST"
+from sunshine_apps_ui.__main__ import main  # noqa: E402
 
-if (( KEEP_STATE )); then
-  echo "Kept $STATE"
-elif (( PURGE_BACKUPS )); then
-  rm -rf "${STATE:?}"
-  echo "Removed $STATE, kept copies included"
-else
-  # Everything under state except the copies, which are copies of your
-  # configuration rather than of this program.
-  find "$STATE" -mindepth 1 -maxdepth 1 ! -name backups -exec rm -rf {} + 2>/dev/null
-  if [[ -d "$BACKUPS" ]]; then
-    echo "Kept $BACKUPS ($(ls -1 "$BACKUPS" 2>/dev/null | wc -l) copies of apps.json)"
-    echo "  Remove them with --purge-backups, or by hand."
-  fi
-fi
-
-echo "Done. Sunshine, and everything in apps.json that was not ours, is untouched."
+raise SystemExit(main(["--uninstall"] + sys.argv[1:]))

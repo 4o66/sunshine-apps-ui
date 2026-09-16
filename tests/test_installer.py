@@ -1,0 +1,247 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+"""Installing and removing this, without root and without a shell.
+
+The install and uninstall scripts were bash. What they guaranteed is what is
+tested here: the tile goes before the files, the copies of apps.json survive,
+nothing needs root, and the original importer is refused rather than warned
+about.
+"""
+
+import os
+import shutil
+import sys
+import tempfile
+import unittest
+from unittest import mock
+
+sys.path.insert(0, os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "src"))
+
+from sunshine_apps_ui import installer  # noqa: E402
+
+
+class InstallTest(unittest.TestCase):
+    def setUp(self):
+        self.prefix = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.prefix, True)
+        nothing = mock.patch.object(installer.legacy, "destructive_installs",
+                                    return_value=[])
+        nothing.start()
+        self.addCleanup(nothing.stop)
+
+    def test_it_installs_where_it_was_asked_to(self):
+        ok, _ = installer.install(self.prefix)
+        self.assertTrue(ok)
+        self.assertTrue(os.path.isdir(
+            os.path.join(self.prefix, "share", "sunshine-apps-ui", "src")))
+
+    def test_the_command_it_leaves_behind_runs_the_installed_copy(self):
+        installer.install(self.prefix)
+        command = os.path.join(self.prefix, "bin", "sunshine-apps-ui")
+        self.assertTrue(os.access(command, os.X_OK))
+        with open(command, encoding="utf-8") as handle:
+            text = handle.read()
+        self.assertIn(os.path.join(self.prefix, "share", "sunshine-apps-ui", "src"),
+                      text)
+
+    def test_tests_are_not_installed(self):
+        """What is needed to run it. Tests and git history are not."""
+        installer.install(self.prefix)
+        self.assertFalse(os.path.exists(
+            os.path.join(self.prefix, "share", "sunshine-apps-ui", "tests")))
+
+    def test_the_upstream_notice_travels_with_the_code_it_covers(self):
+        installer.install(self.prefix)
+        for name in ("LICENSE", "LICENSE.upstream-MIT", "NOTICE"):
+            self.assertTrue(os.path.exists(
+                os.path.join(self.prefix, "share", "sunshine-apps-ui", name)), name)
+
+    def test_installing_twice_replaces_rather_than_accumulates(self):
+        installer.install(self.prefix)
+        stray = os.path.join(self.prefix, "share", "sunshine-apps-ui", "src",
+                             "stray.py")
+        open(stray, "w").close()
+        installer.install(self.prefix)
+        self.assertFalse(os.path.exists(stray))
+
+    def test_nothing_needs_root(self):
+        ok, messages = installer.install(self.prefix)
+        self.assertTrue(ok)
+        for line in messages:
+            self.assertNotIn("sudo", line.lower())
+
+
+class RefusingTheOriginalTest(unittest.TestCase):
+    """It rewrites apps.json wholesale, so the two cannot both be installed."""
+
+    def setUp(self):
+        self.prefix = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.prefix, True)
+        self.found = [{"root": "/home/u/.config/sunshine/helper",
+                       "command": "/home/u/.config/sunshine/helper/x.sh",
+                       "kind": "original", "destructive": True}]
+        patched = mock.patch.object(installer.legacy, "destructive_installs",
+                                    return_value=self.found)
+        patched.start()
+        self.addCleanup(patched.stop)
+        plan = mock.patch.object(installer.legacy, "removal_plan",
+                                 return_value=["/home/u/.config/sunshine/helper"])
+        plan.start()
+        self.addCleanup(plan.stop)
+
+    def test_saying_no_installs_nothing(self):
+        ok, messages = installer.install(self.prefix, confirm=lambda text: False)
+        self.assertFalse(ok)
+        self.assertFalse(os.path.exists(os.path.join(self.prefix, "bin")))
+        self.assertTrue(any("Nothing was installed" in m for m in messages))
+
+    def test_what_would_be_removed_is_shown_before_asking(self):
+        shown = {}
+        installer.install(self.prefix,
+                          confirm=lambda text: shown.setdefault("text", text) and False)
+        self.assertIn("would remove:", shown["text"])
+        self.assertIn("rewrites apps.json from scratch", shown["text"])
+
+    def test_sunshines_own_web_ui_is_not_accused_along_with_it(self):
+        shown = {}
+        installer.install(self.prefix,
+                          confirm=lambda text: shown.setdefault("text", text) and False)
+        self.assertIn("safe to use", shown["text"])
+
+    def test_saying_yes_removes_it_and_installs(self):
+        with mock.patch.object(installer, "_remove", return_value=True) as removed:
+            ok, _ = installer.install(self.prefix, confirm=lambda text: True)
+        self.assertTrue(ok)
+        self.assertTrue(any("helper" in str(call) for call in removed.mock_calls))
+
+
+class UninstallTest(unittest.TestCase):
+    def setUp(self):
+        self.prefix = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.prefix, True)
+        self.state = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.state, True)
+        env = mock.patch.dict(os.environ, {"XDG_STATE_HOME": self.state})
+        env.start()
+        self.addCleanup(env.stop)
+        quiet = mock.patch("sunshine_apps_ui.launcher.stop_previous")
+        quiet.start()
+        self.addCleanup(quiet.stop)
+        nothing = mock.patch.object(installer.legacy, "destructive_installs",
+                                    return_value=[])
+        nothing.start()
+        self.addCleanup(nothing.stop)
+        self.backups = os.path.join(self.state, "sunshine-apps-ui", "backups")
+        os.makedirs(self.backups)
+        open(os.path.join(self.backups, "apps-20260915-101500.json"), "w").close()
+        os.makedirs(os.path.join(self.state, "sunshine-apps-ui"), exist_ok=True)
+        with open(os.path.join(self.state, "sunshine-apps-ui", "queue.json"), "w") as h:
+            h.write("[]")
+
+    def _installed(self):
+        installer.install(self.prefix)
+
+    def test_the_tile_goes_before_the_files(self):
+        """The other order leaves a tile pointing at a command that is gone."""
+        order = []
+        with mock.patch.object(installer, "_remove_tile",
+                               side_effect=lambda: (order.append("tile"), (True, "ok"))[1]), \
+             mock.patch.object(installer, "_remove",
+                               side_effect=lambda p: order.append("files") or True):
+            installer.uninstall(self.prefix)
+        self.assertEqual(order[0], "tile")
+
+    def test_a_tile_that_will_not_go_stops_the_uninstall(self):
+        self._installed()
+        with mock.patch.object(installer, "_remove_tile",
+                               return_value=(False, "could not")):
+            ok, messages = installer.uninstall(self.prefix)
+        self.assertFalse(ok)
+        self.assertTrue(os.path.isdir(
+            os.path.join(self.prefix, "share", "sunshine-apps-ui")))
+        self.assertTrue(any("Leaving the files in place" in m for m in messages))
+
+    def test_the_copies_of_apps_json_are_kept(self):
+        """They are copies of your configuration, not of this program."""
+        self._installed()
+        with mock.patch.object(installer, "_remove_tile", return_value=(True, "ok")):
+            ok, messages = installer.uninstall(self.prefix)
+        self.assertTrue(ok)
+        self.assertTrue(os.path.exists(
+            os.path.join(self.backups, "apps-20260915-101500.json")))
+        self.assertTrue(any("Kept" in m and "backups" in m for m in messages))
+
+    def test_the_rest_of_the_state_does_go(self):
+        self._installed()
+        with mock.patch.object(installer, "_remove_tile", return_value=(True, "ok")):
+            installer.uninstall(self.prefix)
+        self.assertFalse(os.path.exists(
+            os.path.join(self.state, "sunshine-apps-ui", "queue.json")))
+
+    def test_purging_takes_the_copies_too_for_someone_who_means_it(self):
+        self._installed()
+        with mock.patch.object(installer, "_remove_tile", return_value=(True, "ok")):
+            installer.uninstall(self.prefix, purge_backups=True)
+        self.assertFalse(os.path.exists(self.backups))
+
+    def test_keeping_state_keeps_everything(self):
+        self._installed()
+        with mock.patch.object(installer, "_remove_tile", return_value=(True, "ok")):
+            installer.uninstall(self.prefix, keep_state=True)
+        self.assertTrue(os.path.exists(
+            os.path.join(self.state, "sunshine-apps-ui", "queue.json")))
+
+    def test_keeping_the_tile_leaves_apps_json_alone(self):
+        self._installed()
+        with mock.patch.object(installer, "_remove_tile") as tile:
+            installer.uninstall(self.prefix, keep_tile=True)
+        self.assertFalse(tile.called)
+
+    def test_the_files_and_the_command_are_removed(self):
+        self._installed()
+        with mock.patch.object(installer, "_remove_tile", return_value=(True, "ok")):
+            installer.uninstall(self.prefix)
+        self.assertFalse(os.path.exists(
+            os.path.join(self.prefix, "share", "sunshine-apps-ui")))
+        self.assertFalse(os.path.exists(
+            os.path.join(self.prefix, "bin", "sunshine-apps-ui")))
+
+    def test_it_says_what_it_did_not_touch(self):
+        self._installed()
+        with mock.patch.object(installer, "_remove_tile", return_value=(True, "ok")):
+            _, messages = installer.uninstall(self.prefix)
+        self.assertTrue(any("is untouched" in m for m in messages))
+
+
+class TileRemovalTest(unittest.TestCase):
+    """The tile is found by its ownership marker, because renaming it is allowed."""
+
+    def test_it_is_found_by_marker_not_by_name(self):
+        state = {"apps": [{"index": 0, "name": "Renamed By Someone",
+                           "source": "launcher", "id": "apps-ui"}]}
+        with mock.patch("sunshine_apps_ui.core.api.config_dir", return_value="/c"), \
+             mock.patch("sunshine_apps_ui.core.api.state", return_value=state), \
+             mock.patch("sunshine_apps_ui.core.api.mutate",
+                        return_value=(True, "Applied 1 change(s)", [])) as mutate:
+            ok, _ = installer._remove_tile()
+        self.assertTrue(ok)
+        self.assertEqual(mutate.call_args[0][1][0]["name"], "Renamed By Someone")
+
+    def test_no_tile_is_not_a_failure(self):
+        with mock.patch("sunshine_apps_ui.core.api.config_dir", return_value="/c"), \
+             mock.patch("sunshine_apps_ui.core.api.state", return_value={"apps": []}):
+            ok, message = installer._remove_tile()
+        self.assertTrue(ok)
+        self.assertIn("No tile to remove", message)
+
+    def test_an_unreadable_app_list_is_a_failure_rather_than_a_shrug(self):
+        with mock.patch("sunshine_apps_ui.core.api.config_dir", return_value="/c"), \
+             mock.patch("sunshine_apps_ui.core.api.state",
+                        side_effect=OSError("apps.json is gone")):
+            ok, message = installer._remove_tile()
+        self.assertFalse(ok)
+        self.assertIn("apps.json is gone", message)
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -40,16 +40,19 @@ Worth being precise, because most of the code is not:
   `%ProgramFiles%\Sunshine\config` (a machine-wide location, not a per-user
   one); macOS uses `~/.config/sunshine` under Homebrew but `/Applications` for
   the app bundle.
-- **The launcher script.** `sunshine-apps-ui-launch` is bash, uses `pkill`,
-  `pgrep` and `flatpak run`, and assumes a Chrome flatpak. None of that exists
-  on Windows.
+- **The launcher.** ~~bash, `pkill`, `pgrep`, `flatpak run`~~ -- **done
+  2026-09-15.** It is Python now (`launcher.py`), for exactly this reason: one
+  description of a careful piece of behaviour rather than two that drift. What
+  remains platform-specific is named and in one place there, and Windows still
+  needs a job object in place of `pgrep` and a de-elevated child.
 - **Steam and Heroic discovery.** Library paths and the `steam -applaunch`
   command differ per platform; the Steam library cache layout does not.
 - **File modes.** The mode-600 checks on the credentials and SteamGridDB key
   files are POSIX. Windows needs an ACL check or an honest admission that it
   does not have one.
-- **`install` / `uninstall`.** Per-user under `~/.local` is right for Linux and
-  macOS. Windows has no equivalent convention worth pretending about.
+- **`install` / `uninstall`.** Python now, not bash. Per-user under `~/.local`
+  is right for Linux and macOS; Windows has no equivalent convention worth
+  pretending about, and gets an installer of its own.
 
 ### What is not tied to the platform
 

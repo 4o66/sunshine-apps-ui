@@ -1,45 +1,18 @@
-#!/usr/bin/env bash
+#!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-or-later
-# Capture a SteamGridDB API key for the artwork picker.
-#
-# Run this from your own terminal. Get a key from
-# https://www.steamgriddb.com/profile/preferences/api -- it is free, and it is
-# what makes community artwork available for games Steam has no cover for.
-#
-# The key is read without echo and handed to the manager on stdin. Never as an
-# argument: argv is visible in ps and lands in shell history, which is exactly
-# what this script exists to avoid. It is checked against the API before being
-# stored, so a bad paste fails here rather than looking, weeks later, like
-# SteamGridDB simply having no artwork for anything.
-set -uo pipefail
+"""Run "--save-sgdb-key" against this checkout, before anything is installed.
 
-MANAGER="${MANAGER:-$HOME/.local/bin/sunshine-apps-ui}"
-if [[ ! -x "$MANAGER" ]]; then
-  MANAGER="$(command -v sunshine-apps-ui 2>/dev/null || true)"
-fi
-if [[ -z "$MANAGER" ]]; then
-  echo "sunshine-apps-ui is not installed; run scripts/install first." >&2
-  exit 1
-fi
+A wrapper rather than a program: everything it would do lives in the package,
+so that the same code runs here, from the installed copy, and on a platform
+with no shell at all.
+"""
 
-printf 'SteamGridDB API key: '
-IFS= read -rs SGDB_KEY
-printf '\n'
+import os
+import sys
 
-if [[ -z "$SGDB_KEY" ]]; then
-  echo "No key given; nothing written." >&2
-  exit 1
-fi
+sys.path.insert(0, os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "src"))
 
-# The last line is the verdict; anything before it is progress.
-OUTPUT=$(printf '%s\n' "$SGDB_KEY" | "$MANAGER" --save-sgdb-key 2>&1 >/dev/null)
-status=$?
-unset SGDB_KEY
+from sunshine_apps_ui.__main__ import main  # noqa: E402
 
-if (( status != 0 )); then
-  echo "${OUTPUT##*$'\n'}" >&2
-  echo "Nothing was written." >&2
-  exit 1
-fi
-echo "${OUTPUT##*$'\n'}"
-echo "Nothing was echoed and no value appears in your shell history."
+raise SystemExit(main(["--save-sgdb-key"] + sys.argv[1:]))

@@ -39,6 +39,9 @@ def main(argv=None) -> int:
     parser.add_argument("--conf-dir", default="",
                         help="Sunshine's config directory "
                              "(default: found automatically)")
+    parser.add_argument("--serve", action="store_true",
+                        help="run the interface and print its URL, without "
+                             "opening a window (the bare command opens one)")
     parser.add_argument("--open", action="store_true", help="open a browser at the URL")
     parser.add_argument("--scan", action="store_true",
                         help="scan for applications and write apps.json, without "
@@ -47,6 +50,27 @@ def main(argv=None) -> int:
                         help="with --scan, report what would change and write nothing")
     parser.add_argument("--no-reload", action="store_true",
                         help="with --scan, do not ask Sunshine to re-read the file")
+    parser.add_argument("--install", action="store_true",
+                        help="install this for the current user")
+    parser.add_argument("--uninstall", action="store_true",
+                        help="remove this, and its tile, for the current user")
+    parser.add_argument("--prefix", default="",
+                        help="with --install or --uninstall, where to put it "
+                             "(default: ~/.local)")
+    parser.add_argument("--keep-state", action="store_true",
+                        help="with --uninstall, keep the queue and preferences")
+    parser.add_argument("--keep-tile", action="store_true",
+                        help="with --uninstall, leave apps.json alone")
+    parser.add_argument("--purge-backups", action="store_true",
+                        help="with --uninstall, also delete the kept copies of "
+                             "apps.json. They are kept by default.")
+    parser.add_argument("--put-the-tile-back-because-i-deleted-it",
+                        dest="restore_tile", action="store_true",
+                        help="with --install, rebuild the launcher tiles so the "
+                             "manager's own tile comes back")
+    parser.add_argument("--save-credentials", action="store_true",
+                        help="read Sunshine's web UI login from the terminal, "
+                             "verify it, and store it mode 600")
     parser.add_argument("--save-sgdb-key", action="store_true",
                         help="read a SteamGridDB key on stdin, check it against "
                              "the API, and store it mode 600. Never as an "
@@ -55,6 +79,13 @@ def main(argv=None) -> int:
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     parser.add_argument("importer_args", nargs="*",
                         help="scan options as NAME=VALUE, e.g. -- IMPORT_HEROIC=0")
+    # No arguments at all means "open the interface as a window", which is what
+    # Sunshine's tile runs. Anything else is the program being used directly.
+    raw = sys.argv[1:] if argv is None else list(argv)
+    if not raw:
+        from .launcher import launch
+        return launch()
+
     args = parser.parse_args(argv)
 
     logging.basicConfig(
@@ -63,7 +94,11 @@ def main(argv=None) -> int:
     )
 
     conf_dir = args.conf_dir or config_dir()
-    if not os.path.isdir(conf_dir):
+    # Installing is the one thing that can sensibly happen before Sunshine has
+    # ever run: there is nothing to manage yet, and refusing would mean telling
+    # people to install in a particular order for no reason.
+    needs_config = not (args.install or args.uninstall)
+    if needs_config and not os.path.isdir(conf_dir):
         print(f"error: no Sunshine config directory at {conf_dir}", file=sys.stderr)
         return 2
 
@@ -74,6 +109,36 @@ def main(argv=None) -> int:
             print(f"error: scan options are NAME=VALUE, not {pair!r}", file=sys.stderr)
             return 2
         options[name] = value
+
+    if args.install or args.uninstall:
+        from .installer import install, uninstall
+        prefix = args.prefix or None
+        if args.install:
+            def confirm(text: str) -> bool:
+                print(text, file=sys.stderr)
+                answer = input("Remove it? Only its own files; apps.json is "
+                               "not touched. [y/N] ").strip().lower()
+                return answer in ("y", "yes")
+
+            ok, messages = install(prefix, confirm=confirm)
+        else:
+            ok, messages = uninstall(prefix, keep_state=args.keep_state,
+                                     keep_tile=args.keep_tile,
+                                     purge_backups=args.purge_backups)
+        for line in messages:
+            print(line, file=sys.stderr)
+        if ok and args.install and args.restore_tile:
+            # Only the launcher entries. The library importers are off so that
+            # putting one tile back does not turn into a full scan and a pile
+            # of unrelated changes.
+            print("\nRebuilding the launcher tiles...", file=sys.stderr)
+            return _scan(conf_dir, {"IMPORT_STEAM": "0", "IMPORT_HEROIC": "0"},
+                         dry_run=False, reload=True)
+        return 0 if ok else 1
+
+    if args.save_credentials:
+        from .credentials import main as capture
+        return capture("sunshine", conf_dir)
 
     if args.save_sgdb_key:
         from .core import api

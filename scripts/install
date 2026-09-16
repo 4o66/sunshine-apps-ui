@@ -1,137 +1,18 @@
-#!/usr/bin/env bash
+#!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-or-later
-# Install the app manager for the current user.
-#
-# Everything lands under ~/.local, and nothing needs root. That is deliberate
-# rather than modest: both machines this targets have an operating system you do
-# not install into. Bazzite is rpm-ostree, where /usr is read-only and anything
-# layered there has to survive every rebase; SteamOS resets /usr wholesale on
-# update. ~/.local survives both, and an uninstall is then a matter of deleting
-# files rather than unpicking a package.
-#
-#   scripts/install
-#   scripts/install --put-the-tile-back-because-i-deleted-it
-#
-set -uo pipefail
+"""Run "--install" against this checkout, before anything is installed.
 
-PREFIX="${PREFIX:-$HOME/.local}"
-RESTORE_TILE=0
+A wrapper rather than a program: everything it would do lives in the package,
+so that the same code runs here, from the installed copy, and on a platform
+with no shell at all.
+"""
 
-usage() {
-  sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//' >&2
-  exit 1
-}
+import os
+import sys
 
-while (( "$#" )); do
-  case "$1" in
-    --prefix) PREFIX="${2:-}"; shift 2 ;;
-    --put-the-tile-back-because-i-deleted-it|--restore-tile)
-                 RESTORE_TILE=1; shift ;;
-    -h|--help)   usage ;;
-    *) echo "Unknown option: $1" >&2; usage ;;
-  esac
-done
+sys.path.insert(0, os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "src"))
 
-SRC="$(cd -P "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-DEST="$PREFIX/share/sunshine-apps-ui"
-BIN="$PREFIX/bin"
-LINK="$BIN/sunshine-apps-ui"
+from sunshine_apps_ui.__main__ import main  # noqa: E402
 
-if ! command -v python3 >/dev/null 2>&1; then
-  echo "python3 is required and was not found." >&2
-  exit 1
-fi
-
-echo "Installing from $SRC"
-mkdir -p "$DEST" "$BIN"
-
-# Copy only what is needed to run. Tests, git history and build files are not.
-for item in src assets scripts docs README.md LICENSE; do
-  [[ -e "$SRC/$item" ]] || continue
-  rm -rf "${DEST:?}/$item"
-  cp -R "$SRC/$item" "$DEST/$item"
-done
-find "$DEST" -name '__pycache__' -type d -prune -exec rm -rf {} + 2>/dev/null
-
-chmod +x "$DEST/scripts/sunshine-apps-ui-launch"
-ln -sfn "$DEST/scripts/sunshine-apps-ui-launch" "$LINK"
-
-echo "Installed to $DEST"
-echo "Launcher    $LINK"
-
-case ":$PATH:" in
-  *":$BIN:"*) ;;
-  *) echo
-     echo "Note: $BIN is not on your PATH. The Sunshine tile still works -- it"
-     echo "runs the launcher by its full path -- but you cannot type the command."
-     ;;
-esac
-
-# The original importer rewrites apps.json from scratch on every run, which
-# removes everything it did not generate itself. It cannot be left installed
-# beside this, so this is a refusal and not a warning.
-OLD=$(PYTHONPATH="$DEST/src" python3 - <<'PY'
-import json
-from sunshine_apps_ui import legacy
-print(json.dumps(legacy.destructive_installs()))
-PY
-)
-if [[ "$OLD" != "[]" && -n "$OLD" ]]; then
-  echo
-  echo "The original bazzite-sunshine-manager is still installed:"
-  PYTHONPATH="$DEST/src" python3 - "$OLD" <<'PY'
-import json, sys
-from sunshine_apps_ui import legacy
-for install in json.loads(sys.argv[1]):
-    print(f"  {install['root']}")
-    for path in legacy.removal_plan(install):
-        print(f"    would remove: {path}")
-print()
-print(legacy.REWRITES_EVERYTHING)
-print()
-print(legacy.SUNSHINE_WEB_UI)
-PY
-  echo
-  read -r -p "Remove it? Only its own files; apps.json is not touched. [y/N] " answer
-  if [[ "${answer,,}" == "y" || "${answer,,}" == "yes" ]]; then
-    PYTHONPATH="$DEST/src" python3 - "$OLD" <<'PY'
-import json, shutil, sys, os
-from sunshine_apps_ui import legacy
-for install in json.loads(sys.argv[1]):
-    for path in legacy.removal_plan(install):
-        try:
-            if os.path.islink(path) or os.path.isfile(path):
-                os.remove(path)
-            else:
-                shutil.rmtree(path)
-            print(f"  removed {path}")
-        except OSError as e:
-            print(f"  could not remove {path}: {e}")
-PY
-  else
-    echo "Left in place. Do not run it: it will undo what this manages." >&2
-    echo "Nothing else was installed." >&2
-    exit 1
-  fi
-fi
-
-if (( RESTORE_TILE )); then
-  echo
-  echo "Rebuilding the launcher tiles so the manager's own tile comes back..."
-  # Only the launcher entries. Steam and Heroic are switched off so that putting
-  # one tile back does not turn into a full library scan and a pile of unrelated
-  # changes. Nothing is pruned: that needs a separate option, not passed here.
-  PYTHONPATH="$DEST/src" python3 -m sunshine_apps_ui --scan -- \
-    IMPORT_STEAM=0 IMPORT_HEROIC=0
-  status=$?
-  if (( status != 0 )); then
-    echo "The scan exited $status; the tile may not have been restored." >&2
-    exit "$status"
-  fi
-  echo "Done. It appears in Moonlight within about 30 seconds."
-else
-  echo
-  echo "The tile appears the next time a scan runs. To do that now:"
-  echo "  $LINK --scan"
-  echo "or re-run this with --put-the-tile-back-because-i-deleted-it"
-fi
+raise SystemExit(main(["--install"] + sys.argv[1:]))

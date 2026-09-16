@@ -73,21 +73,23 @@ not the same as private, so it is not the only defence. See
 
 Everything lands under `~/.local` and nothing needs root -- both target systems
 have an operating system you do not install into. Then launch it from the
-Sunshine tile it creates, or directly:
+Sunshine tile it creates, or by running the command with no arguments, which is
+what that tile does:
 
-    sunshine-apps-ui --open
+    sunshine-apps-ui
 
 The URL it prints carries a token generated for that run. Without it, every
 request is refused.
 
-Credentials, when you want them. Both read the secret without echo and hand it
-over on stdin, never as an argument:
+Credentials, when you want them. Both read the secret from the terminal without
+echoing it, and neither ever takes one as an argument:
 
-    scripts/set-sunshine-credentials    # Sunshine's web UI login, for reloads
-    scripts/set-sgdb-key                # SteamGridDB, for community artwork
+    sunshine-apps-ui --save-credentials   # Sunshine's web UI login, for reloads
+    sunshine-apps-ui --save-sgdb-key      # SteamGridDB, for community artwork
 
 Scanning without opening the interface, for scripts:
 
+    sunshine-apps-ui --serve                # the interface, without a window
     sunshine-apps-ui --scan                 # scan, write, and reload Sunshine
     sunshine-apps-ui --scan --dry-run       # report what would change
     sunshine-apps-ui --scan -- IMPORT_HEROIC=0
@@ -108,6 +110,9 @@ Scanning without opening the interface, for scripts:
       state.py      the queue of pending changes, and per-form drafts
       artwork.py    which images may be served, as an exact allowlist
       legacy.py     finding the original importer, which cannot coexist
+      launcher.py   opening the interface as a window, and taking it down
+      installer.py  putting it in place, and removing it again
+      credentials.py  asking for a secret without it reaching argv
     docs/security.md  threat model and the decisions behind it
     docs/backlog.md   decided, not built
 
