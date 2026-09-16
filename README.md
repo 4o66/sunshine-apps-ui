@@ -25,6 +25,31 @@ A copy of `apps.json` is taken before every write, the last ten are kept, and
 any of them can be restored -- previewed on the grid first, like any other
 change.
 
+### Why not just the importer it grew out of
+
+Not because it imports everything -- it does not. It has a default blacklist
+(Proton, SteamVR, soundtracks, demos, dedicated servers) and you can add your
+own games by app id or by regular expression, in a file or an environment
+variable. Excluding a game is possible there.
+
+It is *where* and *when* that does not fit. A blacklist is something you declare
+in advance, in a config file, about games you are not looking at -- you cannot
+sit in front of the grid on your television and say "not that one". And every
+run rewrites `apps.json` from scratch, so a decision made anywhere else does not
+survive: delete a tile in Sunshine's own web UI and the next run puts it back,
+edit a field by hand and the next run overwrites it, and Sunshine's own default
+entries are removed outright.
+
+That is the mismatch, for how I use Moonlight. The decisions I make are about
+particular games, and I make them after seeing them. Some do not play well over
+a stream. Some I would not choose to play that way even when they do. Some I
+would rather not have on a television in the living room at all. And often I
+just want a handful of my library there rather than the whole thing.
+
+So the hiding has to be remembered, which a tool that rewrites the file every
+run cannot do. The tombstones, the ownership markers and the queue all exist
+for that one reason.
+
 ### Two halves, one program
 
 The engine (`src/sunshine_apps_ui/core`) owns `apps.json`: the reconciler that

@@ -223,6 +223,13 @@ reaching for it risks shutting Sunshine down with no way back. Check the token
 at startup, so this is discovered before someone queues a dozen changes rather
 than after.
 
+#### When Windows lands, say so in the README
+
+There is a second reason this diverged from the importer it grew out of, and it
+is deliberately not written down yet: that one targeted Bazzite alone, and this
+was meant to be worth having on Windows too. That is a claim about what this
+does, so it goes in when Windows actually works -- not while it is a plan.
+
 #### Still open
 
 - **Shipping a Python interpreter.** Windows users will not have one. PyInstaller
