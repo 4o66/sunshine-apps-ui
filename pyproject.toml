@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "sunshine-apps-ui"
 version = "0.1.0"
-description = "Companion web UI for bazzite-sunshine-manager. Reviews and applies Sunshine apps.json import plans."
+description = "Manage the applications Sunshine offers: a tile manager for apps.json, reached through Moonlight or at the console. Keeps the edits you make by hand, remembers what you deleted, and binds 127.0.0.1 only."
 readme = "README.md"
 license = { file = "LICENSE" }
 # GPL-3.0-or-later: the FSF's own recommendation, and strictly the more useful

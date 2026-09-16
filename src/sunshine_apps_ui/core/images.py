@@ -256,7 +256,7 @@ def sgdb_search_by_name(game_name: str, images_dir: str, filename: str, api_key:
         search_url = f"https://www.steamgriddb.com/api/v2/search/autocomplete/{encoded_name}"
         
         # First, search for the game
-        req = urllib.request.Request(search_url, headers={"Authorization": f"Bearer {api_key}", "User-Agent": "bazzite-sunshine-manager/2.0"})
+        req = urllib.request.Request(search_url, headers={"Authorization": f"Bearer {api_key}", "User-Agent": "sunshine-apps-ui/0.1.0"})
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             search_data = json.load(resp).get("data", [])
         
@@ -289,7 +289,7 @@ def sgdb_search_by_name(game_name: str, images_dir: str, filename: str, api_key:
                 # Try with portrait dimensions first, then without filter
                 for params in ["?dimensions=600x900", "?dimensions=600x900&nsfw=true", "?dimensions=600x900&nsfw=any", "", "?nsfw=true", "?nsfw=any"]:
                     url = f"https://www.steamgriddb.com/api/v2/{endpoint}/{game_id}{params}"
-                    req = urllib.request.Request(url, headers={"Authorization": f"Bearer {api_key}", "User-Agent": "bazzite-sunshine-manager/2.0"})
+                    req = urllib.request.Request(url, headers={"Authorization": f"Bearer {api_key}", "User-Agent": "sunshine-apps-ui/0.1.0"})
                     with urllib.request.urlopen(req, timeout=timeout) as resp:
                         grid_data = json.load(resp)
                     

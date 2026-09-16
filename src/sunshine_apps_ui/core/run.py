@@ -30,6 +30,14 @@ UPSTREAM_VERSION = "2.0"
 FORK_VERSION = "0.1.0"
 UPSTREAM = "wadiebs/bazzite-sunshine-manager 2.0 (4bedee5, 2026-04-19)"
 
+# What we stamp into apps.json, and every name this file has been written under.
+# Reading must accept the old ones: an apps.json written before the two projects
+# were folded together says the old name, and it is still ours -- forgetting that
+# would make us treat our own entries as somebody else's and leave them alone
+# forever.
+GENERATED_BY = "sunshine-apps-ui"
+GENERATED_BY_ANY = (GENERATED_BY, "bazzite-sunshine-manager")
+
 
 def _flag(opts: Dict[str, Any], name: str, default: bool) -> bool:
     value = opts.get(name)
@@ -77,7 +85,7 @@ def execute(conf_dir: str, opts: Optional[Dict[str, Any]] = None,
     meta = payload.get("meta")
     adopt_by_name = (
         isinstance(meta, dict)
-        and meta.get("generated-by") == "bazzite-sunshine-manager"
+        and meta.get("generated-by") in GENERATED_BY_ANY
         and not any(isinstance(a, dict) and MARKER in a for a in existing_apps)
     )
     if adopt_by_name:
@@ -214,7 +222,7 @@ def execute(conf_dir: str, opts: Optional[Dict[str, Any]] = None,
         if key not in ("env", "apps", "meta"):
             out[key] = value
     out["meta"] = {
-        "generated-by": "bazzite-sunshine-manager",
+        "generated-by": GENERATED_BY,
         "enabled-importers": enabled_importers,
         "managed": plan.get("managed", []),
         "removed": plan.get("tombstones", []),
