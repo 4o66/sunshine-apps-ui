@@ -5,3 +5,6 @@ build/
 dist/
 .venv/
 venv/
+
+# Written at install time, describing one install rather than the source.
+src/sunshine_apps_ui/_build.py

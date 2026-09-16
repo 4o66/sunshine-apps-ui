@@ -172,3 +172,25 @@ class RestorePreviewTest(unittest.TestCase):
         html = self._html(plain)
         self.assertIn("Satisfactory 1.2 (command)", html)
         self.assertNotIn("&rarr;", html)
+
+
+class ItSaysWhichBuildTest(unittest.TestCase):
+    """Which build is on screen, so a screenshot answers the question.
+
+    In both places on purpose: the navbar is what a photograph of a television
+    catches, and the window title is what a task switcher shows.
+    """
+
+    def test_every_page_shows_the_version_in_the_bar(self):
+        for name, html in pages().items():
+            with self.subTest(page=name):
+                self.assertIn(render.version_display(), html)
+
+    def test_every_page_carries_it_in_the_title_too(self):
+        for name, html in pages().items():
+            with self.subTest(page=name):
+                title = re.search(r"<title>(.*?)</title>", html, re.S).group(1)
+                self.assertIn(render.version_display(), title)
+
+    def test_a_development_build_is_marked_as_one(self):
+        self.assertIn("dev", render.version_display())

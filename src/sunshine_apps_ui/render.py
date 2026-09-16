@@ -11,10 +11,16 @@ from urllib.parse import quote
 from typing import Any, Dict, List, Optional
 
 from . import __version__
+from .version import display as version_display
 
 # What this is called, in one place. It is not an importer any more -- importing
 # is one of the things it does -- and the tile it is launched from says the same.
 PRODUCT = "App Manager"
+
+
+def _version_chip() -> str:
+    """Which build this is, in the bar, where a screenshot will catch it."""
+    return f'<span class="ver">{_e(version_display())}</span>'
 
 
 def _title(part: str = "") -> str:
@@ -24,7 +30,8 @@ def _title(part: str = "") -> str:
     switcher show. The program comes first because that is what someone is
     looking for there.
     """
-    return f"{PRODUCT} \u2014 {part}" if part else PRODUCT
+    name = f"{PRODUCT} {version_display()}"
+    return f"{name} \u2014 {part}" if part else name
 
 
 # What each bucket means to someone looking at their own app list, in the order
@@ -87,7 +94,9 @@ display:flex;align-items:baseline;gap:.6rem;flex-wrap:wrap}
 .navbar .brand{color:var(--navbar-text);font-weight:700;font-size:1.3rem;letter-spacing:-.01em}
 .navbar .sep{color:var(--navbar-text-muted)}
 .navbar .where{color:var(--navbar-text-muted);font-weight:500}
-.navbar .ro{margin-left:auto;color:var(--navbar-text-muted);font-size:.82rem;
+.navbar .ver{margin-left:auto;color:var(--navbar-text-muted);font-size:.78rem;
+font-family:var(--mono);letter-spacing:.01em}
+.navbar .ro{margin-left:.6rem;color:var(--navbar-text-muted);font-size:.82rem;
 border:1px solid var(--navbar-text-muted);border-radius:999px;padding:2px 10px}
 
 .wrap{max-width:1100px;margin:0 auto;padding:1.5rem 1rem 4rem}
@@ -151,7 +160,7 @@ button:focus-visible{outline:3px solid var(--accent);outline-offset:3px}
 .note{color:var(--text-muted);font-size:.85rem;margin-top:1.75rem;
 border-top:1px solid var(--border);padding-top:.9rem}
 @media(max-width:520px){.wrap{padding:1rem .75rem 3rem}li{flex-direction:column;gap:.15rem}
-.navbar .ro{margin-left:0;width:100%}}
+.navbar .ver{margin-left:0}}
 """
 
 
@@ -302,7 +311,7 @@ def confirm_page(doc: Dict[str, Any], token: str, via_sunshine: bool = False,
 <title>{_title('Apply changes')}</title><style>{_CSS}</style></head>
 <body>
 <div class="navbar"><span class="brand">Sunshine</span><span class="sep">/</span>
-<span class="where">app manager</span></div>
+<span class="where">app manager</span>{_version_chip()}</div>
 <div class="wrap">
 <h1>Apply {changing} change{'' if changing == 1 else 's'}?</h1>
 <section>{_queued_list(pending)
@@ -332,7 +341,7 @@ def applied_page(token: str, via_sunshine: bool = False) -> str:
 <title>{_title('Applied')}</title><style>{_CSS}</style></head>
 <body>
 <div class="navbar"><span class="brand">Sunshine</span><span class="sep">/</span>
-<span class="where">app manager</span></div>
+<span class="where">app manager</span>{_version_chip()}</div>
 <div class="wrap">
 <h1>Applied</h1>
 <section class="ok"><p class="why">apps.json was written. {_e(detail)}</p></section>
@@ -391,7 +400,7 @@ def page(doc: Dict[str, Any], log: str = "", token: str = "",
 <title>{_title()}</title><style>{_CSS}</style></head>
 <body>
 <div class="navbar"><span class="brand">Sunshine</span><span class="sep">/</span>
-<span class="where">app manager</span><span class="ro">read-only preview</span></div>
+<span class="where">app manager</span>{_version_chip()}<span class="ro">read-only preview</span></div>
 <div class="wrap">
 <h1>{_e(summary)}</h1>
 <p class="sub"><code>{_e(doc.get("apps_json", ""))}</code></p>
@@ -420,7 +429,7 @@ def error_page(message: str, detail: str = "", token: str = "",
 <title>{_title()}</title><style>{_CSS}</style></head>
 <body>
 <div class="navbar"><span class="brand">Sunshine</span><span class="sep">/</span>
-<span class="where">app manager</span></div>
+<span class="where">app manager</span>{_version_chip()}</div>
 <div class="wrap">
 <section class="err"><h2>{_e(title)}</h2>
 <p class="why">{_e(message)}</p>{extra}</section>
@@ -503,7 +512,7 @@ def backups_page(copies: List[Dict[str, Any]], token: str,
 <style>{_CSS}{_BACKUPS_CSS}</style></head>
 <body>
 <div class="navbar"><span class="brand">Sunshine</span><span class="sep">/</span>
-<span class="where">app manager</span></div>
+<span class="where">app manager</span>{_version_chip()}</div>
 <div class="wrap">
 <h1>Restore a copy</h1>
 <p class="sub">A copy of apps.json is taken before anything is written to it.
@@ -607,7 +616,7 @@ def connect_page(token: str, message: str = "", username: str = "") -> str:
 <title>{_title('Connect to Sunshine')}</title><style>{_CSS}</style></head>
 <body>
 <div class="navbar"><span class="brand">Sunshine</span><span class="sep">/</span>
-<span class="where">app manager</span></div>
+<span class="where">app manager</span>{_version_chip()}</div>
 <div class="wrap">
 {credentials_form(token, message, username)}
 <div class="actions"><a class="btn sec" href="/?token={_e(token)}">Back</a></div>
@@ -831,7 +840,7 @@ def grid_page(state: Dict[str, Any], token: str, *, new_ids: Optional[set] = Non
 <title>{_title()}</title><style>{_CSS}{_GRID_CSS}</style></head>
 <body>
 <div class="navbar"><span class="brand">Sunshine</span><span class="sep">/</span>
-<span class="where">app manager</span></div>
+<span class="where">app manager</span>{_version_chip()}</div>
 <div class="wrap">
 <h1>{len(apps)} application{'' if len(apps) == 1 else 's'}</h1>
 <p class="sub"><code>{_e(state.get("apps_json", ""))}</code></p>
@@ -1008,7 +1017,7 @@ def picker_page(listing: Dict[str, Any], token: str, *, key: str, field: str,
 <style>{_CSS}{_APP_CSS}{_PICKER_CSS}</style></head>
 <body>
 <div class="navbar"><span class="brand">Sunshine</span><span class="sep">/</span>
-<span class="where">app manager</span></div>
+<span class="where">app manager</span>{_version_chip()}</div>
 <div class="wrap">
 <h1>Choose {_e(label)}</h1>
 {problem}
@@ -1071,7 +1080,7 @@ def hidden_page(entry: Dict[str, Any], token: str, queued: bool = False) -> str:
 <title>{_title(_e(name))}</title><style>{_CSS}{_APP_CSS}{_GRID_CSS}</style></head>
 <body>
 <div class="navbar"><span class="brand">Sunshine</span><span class="sep">/</span>
-<span class="where">app manager</span></div>
+<span class="where">app manager</span>{_version_chip()}</div>
 <div class="wrap">
 <h1>{_e(name)}</h1>
 <div class="preview">{art}<div class="meta">
@@ -1172,7 +1181,7 @@ def artwork_page(candidates: List[Dict[str, Any]], token: str, *, key: str,
 <style>{_CSS}{_APP_CSS}{_ARTWORK_CSS}</style></head>
 <body>
 <div class="navbar"><span class="brand">Sunshine</span><span class="sep">/</span>
-<span class="where">app manager</span></div>
+<span class="where">app manager</span>{_version_chip()}</div>
 <div class="wrap">
 <h1>Artwork for {_e(label)}</h1>
 {problem}{note_list}{find}
@@ -1306,7 +1315,7 @@ def app_page(entry: Dict[str, Any], token: str, *, is_new: bool = False,
 <style>{_CSS}{_APP_CSS}</style></head>
 <body>
 <div class="navbar"><span class="brand">Sunshine</span><span class="sep">/</span>
-<span class="where">app manager</span></div>
+<span class="where">app manager</span>{_version_chip()}</div>
 <div class="wrap">
 <h1>{_e(name or "New application")}</h1>
 {preview}{warn}
@@ -1345,7 +1354,7 @@ def explain_page(op: str, entry: Dict[str, Any], token: str) -> str:
 <title>{_title(_e(title))}</title><style>{_CSS}{_APP_CSS}</style></head>
 <body>
 <div class="navbar"><span class="brand">Sunshine</span><span class="sep">/</span>
-<span class="where">app manager</span></div>
+<span class="where">app manager</span>{_version_chip()}</div>
 <div class="wrap">
 <h1>{_e(title)}</h1>
 <section><p class="why"><b>{_e(name)}</b> &mdash; {_e(body)}</p></section>

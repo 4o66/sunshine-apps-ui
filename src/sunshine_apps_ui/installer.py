@@ -112,6 +112,11 @@ def install(prefix: Optional[str] = None, *,
         else:
             shutil.copy2(origin, target)
 
+    # An installed copy has no git to ask, so the answer is written down while
+    # the checkout that has one is still to hand. Without this every install
+    # would report build 0 and every bug report would be ambiguous.
+    _bake_build(os.path.join(where["install"], "src", "sunshine_apps_ui"))
+
     with open(where["command"], "w", encoding="utf-8") as handle:
         handle.write(_launcher_script(where["install"]))
     os.chmod(where["command"], 0o755)
@@ -126,6 +131,24 @@ def install(prefix: Optional[str] = None, *,
                         f"still works -- it runs the command by its full path -- "
                         f"but you cannot type it.")
     return True, messages
+
+
+def _bake_build(package_dir: str) -> None:
+    """Record which build was installed, for a copy that cannot work it out."""
+    from .version import details
+
+    found = details(refresh=True)
+    try:
+        with open(os.path.join(package_dir, "_build.py"), "w",
+                  encoding="utf-8") as handle:
+            handle.write(
+                "# SPDX-License-Identifier: GPL-3.0-or-later\n"
+                '"""Written at install time. Not in git: it describes one install."""\n'
+                f"BUILD = {found['build']!r}\n"
+                f"COMMIT = {found['commit']!r}\n"
+                f"DIRTY = {bool(found['dirty'])!r}\n")
+    except OSError:
+        pass                      # a missing build number is not worth failing over
 
 
 def uninstall(prefix: Optional[str] = None, *, keep_state: bool = False,

@@ -10,7 +10,10 @@ wadiebs' importer, talking over a CLI contract. They were folded together; the
 engine lives in core and still owns the file on its own. See NOTICE.
 """
 
-__version__ = "0.1.0"
+from .version import display as version_display  # noqa: E402
+from .version import version as _version
+
+__version__ = _version()
 
 # The plan document schema this version understands. Reject anything else rather
 # than guessing at a shape we have not seen.

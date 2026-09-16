@@ -22,6 +22,22 @@ Two things to remember when picking this up:
   GitHub noreply address. That audit is only good as of that date -- redo it
   before publishing rather than trusting this line.
 
+## A dev branch, when there is something to separate it from
+
+**Decided 2026-09-16. Not yet worth doing.**
+
+Development builds should eventually live on their own branch, with `main`
+carrying releases. Right now every build is a development build, so a second
+branch would separate nothing from nothing.
+
+One thing to settle when it happens, because the two decisions interact: the
+build number is `git rev-list --count HEAD`. That is monotonic along a single
+line of history, which is what makes it a usable build number at all -- but two
+branches at the same depth produce the *same* count for different commits. So
+the moment there are two branches, the build number either has to carry the
+branch or stop being the commit count. Until then, one line of history makes it
+unambiguous for free.
+
 ## Run everywhere Sunshine runs
 
 **Logged 2026-09-14. Not started.**
