@@ -1,50 +1,36 @@
 # Backlog
 
-Things decided but not built. Each says what it is, why it matters, and what is
-already known about the shape of it -- so picking one up does not start from a
-blank page.
+**Open work lives in GitHub issues**, not here:
+<https://github.com/4o66/sunshine-apps-ui/issues>. Moved there 2026-09-16, so
+that what is left to do has one home and a state.
+
+What stays in this file is the reasoning that outlives any one task: decisions
+already taken, things that were tried, and facts about Sunshine that were
+expensive to find out. Picking up an issue should not start from a blank page,
+so the issues carry their own argument; this is the context underneath them.
 
 ## Releasing 0.1
 
-**Held 2026-09-14. Ready but deliberately not cut.**
+**Held 2026-09-14. Ready but deliberately not cut.** Tracked in
+[#2](https://github.com/4o66/sunshine-apps-ui/issues/2).
 
-Both projects are versioned and could be released today -- `2.0+4o66.0.1.0` for
-the importer fork, `0.1.0` here. The decision was to wait, possibly until after
-the port below.
+How the version is decided, and who decides how big a bump is, is in
+`docs/releasing.md`.
 
-Two things to remember when picking this up:
+## A dev branch
 
-- **This repository is private and the importer fork is not.** Tagging the fork
-  is therefore already a public release, so either both go out or neither does.
-  A release naming a companion nobody can open is not a release.
-- **The history was audited on 2026-09-14** and holds no keys, tokens,
-  credentials, internal hostnames or addresses; the only commit identity is the
-  GitHub noreply address. That audit is only good as of that date -- redo it
-  before publishing rather than trusting this line.
-
-## A dev branch, when there is something to separate it from
-
-**Decided 2026-09-16. Not yet worth doing.**
-
-Development builds should eventually live on their own branch, with `main`
-carrying releases. Right now every build is a development build, so a second
-branch would separate nothing from nothing.
-
-One thing to settle when it happens, because the two decisions interact: the
-build number is `git rev-list --count HEAD`. That is monotonic along a single
-line of history, which is what makes it a usable build number at all -- but two
-branches at the same depth produce the *same* count for different commits. So
-the moment there are two branches, the build number either has to carry the
-branch or stop being the commit count. Until then, one line of history makes it
-unambiguous for free.
+**Decided 2026-09-16. Not yet worth doing.** Tracked in
+[#3](https://github.com/4o66/sunshine-apps-ui/issues/3).
 
 ## Run everywhere Sunshine runs
 
-**Logged 2026-09-14. Not started.**
+**Logged 2026-09-14.** The port is
+[#4](https://github.com/4o66/sunshine-apps-ui/issues/4); macOS is
+[#5](https://github.com/4o66/sunshine-apps-ui/issues/5) and Windows
+[#6](https://github.com/4o66/sunshine-apps-ui/issues/6).
 
 Today this targets Bazzite. Sunshine itself runs on Windows, macOS and every
 Linux distribution, and nothing about managing `apps.json` is Bazzite-specific.
-The tool should follow.
 
 **SteamOS was a target and is not one -- dropped 2026-09-15.** This installs
 where Sunshine is, which is the machine you stream *from*. A Legion Go S is a
@@ -63,42 +49,23 @@ feet, gamepad, gamescope" reasoning is about rendering **inside the stream**,
 not about the client's operating system, and it holds for a Bazzite host on
 its own.
 
-### What is actually tied to the platform
-
-Worth being precise, because most of the code is not:
-
-- **Config directory discovery.** `detect_sunshine_config_dir()` knows about
-  `~/.config/sunshine` and two Flatpak paths. Windows uses
-  `%ProgramFiles%\Sunshine\config` (a machine-wide location, not a per-user
-  one); macOS uses `~/.config/sunshine` under Homebrew but `/Applications` for
-  the app bundle.
-- **The launcher.** ~~bash, `pkill`, `pgrep`, `flatpak run`~~ -- **done
-  2026-09-15.** It is Python now (`launcher.py`), for exactly this reason: one
-  description of a careful piece of behaviour rather than two that drift. What
-  remains platform-specific is named and in one place there, and Windows still
-  needs a job object in place of `pgrep` and a de-elevated child.
-- **Steam and Heroic discovery.** Library paths and the `steam -applaunch`
-  command differ per platform; the Steam library cache layout does not.
-- **File modes.** The mode-600 checks on the credentials and SteamGridDB key
-  files are POSIX. Windows needs an ACL check or an honest admission that it
-  does not have one.
-- **`install` / `uninstall`.** Python now, not bash. Per-user under `~/.local`
-  is right for Linux and macOS; Windows has no equivalent convention worth
-  pretending about, and gets an installer of its own.
-
 ### What is not tied to the platform
 
 The reconciler, tombstones, the mutate contract, the plan document, the whole
 web UI, and the artwork sources. That is most of the value, and it is already
-stdlib-only Python. This is a port of the edges, not a rewrite.
+stdlib-only Python. This is a port of the edges, not a rewrite -- and the edges
+are enumerated in [#4](https://github.com/4o66/sunshine-apps-ui/issues/4).
 
-### Windows, and what has been settled about it
+## Windows, and what has been settled about it
 
-**Decided 2026-09-15.** Windows is the largest Sunshine population -- about 70%
-of downloads -- and the real port. What follows is decided; what is still open
-is at the end.
+**Decided 2026-09-15.** The work is
+[#6](https://github.com/4o66/sunshine-apps-ui/issues/6) and its sub-issues.
+What follows is why it is shaped that way.
 
-#### The thing that shapes everything else
+Windows is the largest Sunshine population -- about 70% of downloads -- and the
+real port.
+
+### The thing that shapes everything else
 
 Sunshine's `appdata()` on Windows is not per-user AppData. It is the directory
 holding `Sunshine.exe`::
@@ -114,7 +81,7 @@ elevated process; a program run by the user cannot.
 Per-user install under a user-writable prefix -- the model this project rests
 on everywhere else -- does not transfer.
 
-#### What was chosen
+### What was chosen
 
 **Run elevated, launched by Sunshine.** An app entry with `"elevated": true`
 gets the administrator token with no UAC prompt: Sunshine is already SYSTEM, so
@@ -146,69 +113,30 @@ started elevated, because everything it launches inherits that.
 **Which means we never need to detect the service.** One check of our own token
 at startup answers the only question that matters -- can I write this file --
 and covers both modes and every failure case without branching on how somebody
-installed Sunshine.
+installed Sunshine. That check is
+[#7](https://github.com/4o66/sunshine-apps-ui/issues/7), and it exists because
+both ways of not getting elevation fail *silently*.
 
 Do not require the non-service mode to obtain elevation. It would mean asking
 people to reconfigure their whole Sunshine install for our benefit, giving up
 autostart and session handling, and running every game as administrator to
 solve a problem that `"elevated": true` solves for one entry.
 
-**Two silent degradations to handle explicitly**, because both fail quietly:
-
-- A **non-admin account gets no elevation and no error**. Sunshine logs
-  "Sunshine will retain the same access level as the current user and will not
-  elevate it" and launches us unprivileged anyway. We would fail at the write
-  with nothing on screen to say why.
-- **It only works when Sunshine is running as the service.** Started by hand --
-  common when troubleshooting -- `WTSQueryUserToken` fails from a non-SYSTEM
-  process and there is nothing to elevate with.
-
-Check our own token at startup and say so on the page. Discovering this at the
-write is the wrong end.
-
-**The cost, which belongs in docs/security.md when this is built:** the HTTP
-server would run elevated. Loopback binding and the per-session token stop
-being defence in depth and become the only thing between a flaw and rights we
-do not otherwise have. That argument is currently written assuming an
-unprivileged server, and it will need revisiting rather than copying.
-
-**Install as a standard Windows application**, registered in Add/Remove
-Programs. Sunshine packages itself with CPack and NSIS; mirroring that is the
-obvious precedent and settles the "no ~/.local convention" problem.
-
 **One codebase.** So the shell layer -- install, uninstall, the two credential
 scripts, the kiosk launcher -- becomes Python, since bash is not there. More
 work now and less forever, and it removes the pgrep/pkill/flatpak assumptions
 from every platform at once rather than adding a second set for Windows.
 
-#### The browser must not inherit the elevation
+**The browser must not inherit the elevation.** A browser launched by an
+elevated process inherits its rights, and that is a far bigger surface than our
+server running elevated. De-elevating it is a requirement of the port, not a
+refinement: [#8](https://github.com/4o66/sunshine-apps-ui/issues/8).
 
-Availability is not the problem it is on Linux: Edge ships with Windows and is
-Chromium-based, so `--app=` and `--user-data-dir=` work. There is always a
-browser.
+**The cost of running elevated** belongs in `docs/security.md` when this is
+built, and that argument needs rewriting rather than copying:
+[#13](https://github.com/4o66/sunshine-apps-ui/issues/13).
 
-The problem is that a browser launched by an elevated process inherits its
-rights, and a browser running as administrator is a far bigger surface than our
-server running as administrator -- a general-purpose program with a JIT, a
-network stack and extensions, on the user's desktop. `--app` narrows what the
-window is *for*; it does not stop someone opening a normal window in an
-administrator browser.
-
-So **launch the browser de-elevated**: take the non-elevated linked token (or
-the shell's) and `CreateProcessWithTokenW`. Only the server holds the
-privilege. Treat this as a requirement of the port, not a refinement.
-
-The teardown needs rewriting too -- `pgrep`/`pkill` by profile path has no
-Windows equivalent -- and Sunshine shows the better answer. `sunshinesvc.cpp`
-puts its child in a **job object with kill-on-close**::
-
-    // Kill Sunshine.exe when the final job object handle is closed
-    job_limit_info.BasicLimitInformation.LimitFlags |= JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
-
-That is stronger than what we do on Linux: the OS guarantees the browser dies
-with us even if we are killed rather than exiting.
-
-#### Do not restart Sunshine. Reload it.
+### Do not restart Sunshine. Reload it.
 
 Elevation is not what decides whether a restart works. `POST /api/restart`
 needs only credentials, so an unelevated process can call it -- but what
@@ -235,33 +163,9 @@ and that needs credentials rather than elevation -- so it works unelevated.
 
 Which gives the summary worth keeping: **being unelevated does not break
 reloading, it breaks writing.** Restarting is not a workaround for that, and
-reaching for it risks shutting Sunshine down with no way back. Check the token
-at startup, so this is discovered before someone queues a dozen changes rather
-than after.
+reaching for it risks shutting Sunshine down with no way back.
 
-#### When Windows lands, say so in the README
-
-There is a second reason this diverged from the importer it grew out of, and it
-is deliberately not written down yet: that one targeted Bazzite alone, and this
-was meant to be worth having on Windows too. That is a claim about what this
-does, so it goes in when Windows actually works -- not while it is a plan.
-
-#### Still open
-
-- **Shipping a Python interpreter.** Windows users will not have one. PyInstaller
-  or equivalent, which makes the launcher an .exe and adds perhaps 15 MB.
-- **Credential file permissions.** Four places check `st_mode & 0o077` and
-  create files mode 600. Windows has no equivalent; this needs a real ACL check
-  or an honest statement that there is not one. It is security-relevant, so it
-  should not quietly become a no-op.
-- **The artwork allowlist matches paths as exact strings.** Correct on POSIX,
-  wrong on Windows, where `C:\x\y.png`, `c:/x/y.png` and `C:\X\Y.PNG` are one
-  file. Loosening it carelessly weakens the allowlist, which is the whole
-  mechanism.
-- Steam and Heroic library paths; `cmd` as a Windows command line; and `Zz
-  Reboot`, which runs `systemctl reboot`.
-
-#### Worth knowing
+### Worth knowing
 
 `POST /api/config` rewrites `sunshine.conf`, and `file_apps` is a setting -- so
 `apps.json` can be relocated through the API without touching the filesystem.
@@ -279,55 +183,11 @@ tombstones have no API path. Any design that avoids writing the file directly
 has to put them somewhere else, and they then stop travelling with the file and
 stop being in the backups.
 
-### Open questions
+## What generic Linux established
 
-- **Which platform second?** macOS is the smaller job and Windows the larger.
-  SteamOS was the obvious answer until it turned out not to be a host.
-- **How to launch the browser on Windows.** No flatpak, no `pkill`. Probably
-  `start` plus a job object, or give up on kiosk mode and open a normal tab.
-- **How to test it.** Everything platform-specific found so far was found on
-  real hardware, not in tests -- the library cache layout, the `/home` symlink,
-  the flatpak process tree. A Windows port without a Windows machine to try it
-  on would be guesswork.
-- **Does the importer stay a separate project?** Probably not. Upstream is
-  explicitly a Bazzite tool, and making the importer cross-platform means
-  reworking most of what is platform-specific in it -- which is most of what
-  this fork has not already replaced. The likely answer is to fold the fork
-  into this project directly and stop maintaining two.
-
-  That is a real decision with costs on both sides, so it is written down here
-  rather than assumed:
-
-  - **For folding in.** One repository, one version number, one test suite, one
-    install. The CLI contract exists to keep two projects honest about their
-    boundary; with one project it is overhead, and every change that spans both
-    -- which by now is most of them -- currently costs two commits, two
-    deploys and two test runs.
-  - **Against.** The contract is also what keeps `apps.json` rules in exactly
-    one place, and what would let either side be rewritten in another language.
-    Folding in means the discipline has to be kept by intent instead of by
-    construction.
-  - **What it costs upstream.** The fork stops being a fork: no more rebasing
-    onto wadiebs' commits, and the existing PRs become moot. Given upstream has
-    not replied to them, that is a smaller loss than it looks -- but it should
-    be a decision, not a drift. Attribution and the MIT licence stay either way,
-    and the merged project has to keep saying which upstream it came from.
-
-  If it is folded in, do it *before* the port rather than during: a port and a
-  merge at the same time means no known-good state to compare against.
-
-### Suggested order
-
-1. **Generic Linux -- done, 2026-09-15.** See below.
-2. macOS: paths and the browser launch; no Flatpak to worry about.
-3. Windows: the real port. Config discovery, the launcher, file permissions,
-   and an installer that suits the platform rather than imitating ours.
-
-### What generic Linux established
-
-Tested on throwaway VMs on the Unraid host, built from cloud images: Debian 13,
-Ubuntu 24.04, Fedora 43 and Arch, alongside Bazzite and macOS. Python 3.10,
-3.12, 3.13, 3.14. The full suite passes on all of them.
+**Done 2026-09-15.** Tested on throwaway VMs on the Unraid host, built from
+cloud images: Debian 13, Ubuntu 24.04, Fedora 43 and Arch, alongside Bazzite and
+macOS. Python 3.10, 3.12, 3.13, 3.14. The full suite passes on all of them.
 
 One note for whoever builds the next VM: Debian's genericcloud image will not
 boot under SeaBIOS. GRUB loads, fails to start the kernel, and loops in its
@@ -355,6 +215,6 @@ the engine:
   because the installed command is the launcher. Any argument now runs the
   program.
 
-Still untested anywhere: a desktop session. Cloud images have no display, so
+Still untested anywhere: **a desktop session.** Cloud images have no display, so
 the browser launch, gamescope and the tile itself are still only exercised on
-Bazzite.
+Bazzite. That gap is [#17](https://github.com/4o66/sunshine-apps-ui/issues/17).
