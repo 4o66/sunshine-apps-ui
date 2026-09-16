@@ -21,6 +21,13 @@ Each of those queues a change and shows it on the tile, so what is about to
 happen is visible in one place, and one Apply writes the file and asks Sunshine
 to re-read it.
 
+Hiding and deleting differ, and the difference outlives the click. A deletion
+is not recorded, so the next scan sees the application as new and offers it
+again. Hiding writes a tombstone, and every later scan obeys it -- which is the
+point, but it also means a hidden tile cannot come back by rescanning. The
+manager's own tile is the case where that bites: installing offers to unhide it
+rather than leaving you to wonder why reinstalling changed nothing.
+
 A copy of `apps.json` is taken before every write, the last ten are kept, and
 any of them can be restored -- previewed on the grid first, like any other
 change.

@@ -129,13 +129,18 @@ def main(argv=None) -> int:
         from .installer import install, uninstall
         prefix = args.prefix or None
         if args.install:
-            def confirm(text: str) -> bool:
-                print(text, file=sys.stderr)
-                answer = input("Remove it? Only its own files; apps.json is "
-                               "not touched. [y/N] ").strip().lower()
+            def confirm(text: str, question: str) -> bool:
+                if text:
+                    print(text, file=sys.stderr)
+                answer = input(f"{question} [y/N] ").strip().lower()
                 return answer in ("y", "yes")
 
-            ok, messages = install(prefix, confirm=confirm)
+            # No terminal, no questions. Passing the callback anyway would make
+            # input() raise halfway through an install; passing None lets each
+            # question say what it would have asked, which is the useful half
+            # of a prompt nobody is there to answer.
+            ok, messages = install(
+                prefix, confirm=confirm if sys.stdin.isatty() else None)
         else:
             ok, messages = uninstall(prefix, keep_state=args.keep_state,
                                      keep_tile=args.keep_tile,

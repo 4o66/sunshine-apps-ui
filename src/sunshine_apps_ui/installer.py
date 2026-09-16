@@ -86,7 +86,9 @@ def install(prefix: Optional[str] = None, *,
         messages.append(legacy.REWRITES_EVERYTHING)
         messages.append("")
         messages.append(legacy.SUNSHINE_WEB_UI)
-        if confirm is None or not confirm("\n".join(messages)):
+        if confirm is None or not confirm(
+                "\n".join(messages),
+                "Remove it? Only its own files; apps.json is not touched."):
             messages.append("")
             messages.append("Left in place. Do not run it: it will undo what this "
                             "manages. Nothing was installed.")
@@ -124,6 +126,8 @@ def install(prefix: Optional[str] = None, *,
     messages.append(f"Installed to {where['install']}")
     messages.append(f"Command     {where['command']}")
 
+    messages.extend(_offer_unhide_tile(confirm))
+
     on_path = [os.path.normpath(p) for p in os.getenv("PATH", "").split(os.pathsep)]
     if os.path.normpath(where["bin"]) not in on_path:
         messages.append("")
@@ -131,6 +135,75 @@ def install(prefix: Optional[str] = None, *,
                         f"still works -- it runs the command by its full path -- "
                         f"but you cannot type it.")
     return True, messages
+
+
+def _offer_unhide_tile(confirm=None) -> List[str]:
+    """Offer to bring back a tile that was hidden rather than merely deleted.
+
+    A deleted tile comes back on its own: nothing records the deletion, so the
+    next scan sees the launcher as new and adds it. A *hidden* one does not --
+    hiding writes a tombstone, and a tombstone is an instruction to keep
+    skipping it, which --put-the-tile-back-because-i-deleted-it obeys along
+    with everything else. So reinstalling to get the tile back quietly achieves
+    nothing, and the only clue is a tile that never reappears.
+
+    Asking is the point. The tombstone is a decision the user made, and an
+    installer that silently reversed it would be no better than one that
+    silently ignored it.
+    """
+    try:
+        from .core import api
+    except ImportError:                          # pragma: no cover - defensive
+        return []
+    try:
+        conf_dir = api.config_dir()
+        hidden = [t for t in api.state(conf_dir).get("hidden") or []
+                  if t.get("source") == "launcher" and t.get("id") == "apps-ui"]
+    except Exception:                            # noqa: BLE001 - not worth failing an install
+        return []
+    if not hidden:
+        return []
+
+    name = hidden[0].get("name") or "The manager's own tile"
+    question = (f"{name} is hidden, so scanning will keep skipping it. "
+                f"Put it back?")
+    if confirm is None:
+        # Non-interactive: say so rather than decide. Reversing a hide without
+        # being asked is exactly what the tombstone exists to prevent.
+        return ["", f"Note: {name} is hidden, so it will not come back on its "
+                    f"own -- not even with --put-the-tile-back-because-i-deleted-it. "
+                    f"Unhide it from the app list, or reinstall where you can "
+                    f"answer a prompt."]
+    if not confirm("", question):
+        return ["", f"Left hidden. {name} stays out of Sunshine until you "
+                    f"unhide it."]
+
+    try:
+        ok, message, _ = api.mutate(
+            conf_dir, [{"op": "restore", "selector": "launcher:apps-ui"}])
+    except Exception as e:                       # noqa: BLE001 - reported
+        return ["", f"Could not unhide {name}: {e}"]
+    if not ok:
+        return ["", f"Could not unhide {name}: {message}"]
+
+    # Hiding keeps the whole entry, so restoring puts the tile straight back.
+    # Suppressing -- refusing something a scan offered, before it ever existed
+    # in the file -- has no entry to put back, so clearing the tombstone only
+    # stops it being skipped. Saying "unhid" and leaving no tile would look
+    # exactly like the silent failure this was written to remove.
+    if _tile_is_present(api, conf_dir):
+        return ["", f"Unhid {name}."]
+    return ["", f"Unhid {name}, but there was no kept copy of it to put back. "
+                f"Run --install --put-the-tile-back-because-i-deleted-it to "
+                f"rebuild it; nothing is blocking it now."]
+
+
+def _tile_is_present(api, conf_dir: str) -> bool:
+    try:
+        return any(a.get("source") == "launcher" and a.get("id") == "apps-ui"
+                   for a in api.state(conf_dir).get("apps") or [])
+    except Exception:                            # noqa: BLE001 - defensive
+        return True                              # do not invent bad news
 
 
 def stamp_build(package_dir: str) -> bool:

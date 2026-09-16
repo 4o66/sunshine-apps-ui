@@ -90,7 +90,7 @@ class RefusingTheOriginalTest(unittest.TestCase):
         self.addCleanup(plan.stop)
 
     def test_saying_no_installs_nothing(self):
-        ok, messages = installer.install(self.prefix, confirm=lambda text: False)
+        ok, messages = installer.install(self.prefix, confirm=lambda text, question: False)
         self.assertFalse(ok)
         self.assertFalse(os.path.exists(os.path.join(self.prefix, "bin")))
         self.assertTrue(any("Nothing was installed" in m for m in messages))
@@ -98,19 +98,19 @@ class RefusingTheOriginalTest(unittest.TestCase):
     def test_what_would_be_removed_is_shown_before_asking(self):
         shown = {}
         installer.install(self.prefix,
-                          confirm=lambda text: shown.setdefault("text", text) and False)
+                          confirm=lambda text, question: shown.setdefault("text", text) and False)
         self.assertIn("would remove:", shown["text"])
         self.assertIn("rewrites apps.json from scratch", shown["text"])
 
     def test_sunshines_own_web_ui_is_not_accused_along_with_it(self):
         shown = {}
         installer.install(self.prefix,
-                          confirm=lambda text: shown.setdefault("text", text) and False)
+                          confirm=lambda text, question: shown.setdefault("text", text) and False)
         self.assertIn("safe to use", shown["text"])
 
     def test_saying_yes_removes_it_and_installs(self):
         with mock.patch.object(installer, "_remove", return_value=True) as removed:
-            ok, _ = installer.install(self.prefix, confirm=lambda text: True)
+            ok, _ = installer.install(self.prefix, confirm=lambda text, question: True)
         self.assertTrue(ok)
         self.assertTrue(any("helper" in str(call) for call in removed.mock_calls))
 
@@ -245,3 +245,128 @@ class TileRemovalTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class HiddenTileTest(unittest.TestCase):
+    """A hidden tile does not come back on its own, so installing offers.
+
+    Deleting the tile and hiding it look the same from Sunshine, but only one
+    of them is recorded. A deletion leaves nothing behind, so the next scan
+    treats the launcher as new and adds it; a hide writes a tombstone that
+    every later scan obeys. Reinstalling to get the tile back therefore works
+    in one case and silently does nothing in the other.
+    """
+
+    def setUp(self):
+        self.prefix = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.prefix, True)
+        nothing = mock.patch.object(installer.legacy, "destructive_installs",
+                                    return_value=[])
+        nothing.start()
+        self.addCleanup(nothing.stop)
+
+        from sunshine_apps_ui.core import api
+        self.api = api
+        self.conf = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.conf, True)
+        self.mutations = []
+
+        patches = [
+            mock.patch.object(api, "config_dir", return_value=self.conf),
+            mock.patch.object(api, "mutate", side_effect=self._mutate),
+        ]
+        for patch in patches:
+            patch.start()
+            self.addCleanup(patch.stop)
+
+    def _mutate(self, conf_dir, ops, reload=True):
+        self.mutations.extend(ops)
+        return True, "restored", []
+
+    def _hidden(self, *tombstones):
+        return mock.patch.object(self.api, "state",
+                                 return_value={"apps": [], "hidden": list(tombstones)})
+
+    TILE = {"name": "Z App Manager", "source": "launcher", "id": "apps-ui"}
+
+    def test_a_hidden_tile_is_offered_back(self):
+        asked = []
+        with self._hidden(self.TILE):
+            ok, messages = installer.install(
+                self.prefix,
+                confirm=lambda text, question: asked.append(question) or True)
+        self.assertTrue(ok)
+        self.assertEqual(
+            self.mutations,
+            [{"op": "restore", "selector": "launcher:apps-ui"}])
+        self.assertTrue(any("Z App Manager" in q for q in asked), asked)
+        self.assertTrue(any("Unhid" in m for m in messages), messages)
+
+    def test_saying_no_leaves_it_hidden(self):
+        """The tombstone is a decision. Installing does not overrule it."""
+        with self._hidden(self.TILE):
+            ok, messages = installer.install(
+                self.prefix, confirm=lambda text, question: False)
+        self.assertTrue(ok, "declining the offer must not fail the install")
+        self.assertEqual(self.mutations, [])
+        self.assertTrue(any("Left hidden" in m for m in messages), messages)
+
+    def test_nobody_to_ask_means_say_so_rather_than_decide(self):
+        with self._hidden(self.TILE):
+            ok, messages = installer.install(self.prefix, confirm=None)
+        self.assertTrue(ok)
+        self.assertEqual(self.mutations, [])
+        joined = "\n".join(messages)
+        self.assertIn("hidden", joined)
+        self.assertIn("--put-the-tile-back-because-i-deleted-it", joined,
+                      "the note should say why the obvious flag will not help")
+
+    def test_nothing_is_said_when_the_tile_is_not_hidden(self):
+        """Silence is the normal case; an install should not nag."""
+        with self._hidden():
+            ok, messages = installer.install(
+                self.prefix, confirm=lambda text, question: True)
+        self.assertTrue(ok)
+        self.assertEqual(self.mutations, [])
+        self.assertNotIn("hidden", "\n".join(messages))
+
+    def test_another_hidden_app_is_not_mistaken_for_the_tile(self):
+        with self._hidden({"name": "Portal", "source": "steam", "id": "400"}):
+            ok, messages = installer.install(
+                self.prefix, confirm=lambda text, question: True)
+        self.assertTrue(ok)
+        self.assertEqual(self.mutations, [],
+                         "only this manager's own tile is the installer's business")
+
+    def test_an_unreadable_config_does_not_fail_the_install(self):
+        with mock.patch.object(self.api, "state", side_effect=OSError("no")):
+            ok, _ = installer.install(
+                self.prefix, confirm=lambda text, question: True)
+        self.assertTrue(ok)
+
+    def test_a_suppressed_tile_says_the_tombstone_is_gone_not_that_it_is_back(self):
+        """Suppress keeps no entry, so clearing it unblocks rather than restores."""
+        states = [
+            {"apps": [], "hidden": [self.TILE]},   # before: hidden, no entry kept
+            {"apps": [], "hidden": []},            # after: unblocked, still no tile
+        ]
+        with mock.patch.object(self.api, "state", side_effect=states):
+            ok, messages = installer.install(
+                self.prefix, confirm=lambda text, question: True)
+        self.assertTrue(ok)
+        joined = "\n".join(messages)
+        self.assertIn("no kept copy", joined)
+        self.assertIn("--put-the-tile-back-because-i-deleted-it", joined)
+
+    def test_a_hidden_tile_that_comes_straight_back_says_so_plainly(self):
+        states = [
+            {"apps": [], "hidden": [self.TILE]},
+            {"apps": [dict(self.TILE)], "hidden": []},
+        ]
+        with mock.patch.object(self.api, "state", side_effect=states):
+            ok, messages = installer.install(
+                self.prefix, confirm=lambda text, question: True)
+        self.assertTrue(ok)
+        joined = "\n".join(messages)
+        self.assertIn("Unhid Z App Manager.", joined)
+        self.assertNotIn("no kept copy", joined)
