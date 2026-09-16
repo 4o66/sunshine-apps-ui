@@ -43,6 +43,18 @@ PROFILE_LEAF = os.path.join("sunshine-apps-ui", "browser-profile")
 # the other, and the point here is not to miss it.
 PROFILE_PATTERN = r"(--user-data-dir=|--profile )[^ ]*sunshine-apps-ui/browser-profile"
 
+# A server we started earlier, which a relaunch has to end. Written to match the
+# command SERVER_COMMAND builds and nothing else -- the launcher itself carries
+# no --port, so this cannot match the process doing the matching. There is a
+# test that these two agree, because they silently stopped agreeing once: adding
+# --serve to the command left the pattern matching nothing, and every relaunch
+# quietly left the previous server running.
+SERVER_PATTERN = r"sunshine_apps_ui .*--port"
+
+
+def server_command(port: str = "0") -> List[str]:
+    return [sys.executable, "-m", "sunshine_apps_ui", "--serve", "--port", port]
+
 # Flatpak first: on an immutable system it is the one that is really there, and
 # its network is the host's, so loopback means this machine.
 FLATPAK_BROWSERS = ("com.google.Chrome", "com.brave.Browser",
@@ -148,7 +160,7 @@ def stop_previous() -> None:
     launcher exits and takes down the server it just started, leaving every
     window dead.
     """
-    _end(_pgrep(r"sunshine_apps_ui --port"))
+    _end(_pgrep(SERVER_PATTERN))
     if not browsers():
         return
     _end(browsers())
@@ -242,11 +254,11 @@ def launch(argv: Optional[List[str]] = None) -> int:
     environment["BSM_UI_VIA_SUNSHINE"] = "1"
 
     with open(log_file, "w", encoding="utf-8") as handle:
-        server = subprocess.Popen(
-            [sys.executable, "-m", "sunshine_apps_ui", "--serve", "--port", "0"],
-            stdout=handle, stderr=subprocess.STDOUT, env=environment)
+        server = subprocess.Popen(server_command(), stdout=handle,
+                                  stderr=subprocess.STDOUT, env=environment)
 
     browser = None
+    ours: List[int] = []
     try:
         url = _read_url(log_file, server)
         if not url:
@@ -258,12 +270,14 @@ def launch(argv: Optional[List[str]] = None) -> int:
             return _no_browser(url, server)
         print(f"Opened with {how}", file=sys.stderr)
 
-        # Give the window a moment to exist before watching for it to go.
+        # Give the window a moment to exist before watching for it to go, and
+        # remember which processes are ours.
         deadline = time.monotonic() + APPEAR_TIMEOUT
         while time.monotonic() < deadline and not browsers():
             if browser.poll() is not None:
                 break
             time.sleep(0.5)
+        ours = browsers()
 
         # Stay until one of the two goes; the other is taken down below.
         #
@@ -276,7 +290,7 @@ def launch(argv: Optional[List[str]] = None) -> int:
             time.sleep(1)
         return 0
     finally:
-        _shut_down(server, browser)
+        _shut_down(server, browser, ours)
 
 
 def _no_browser(url: str, server: subprocess.Popen) -> int:
@@ -301,8 +315,16 @@ def _no_browser(url: str, server: subprocess.Popen) -> int:
 
 
 def _shut_down(server: subprocess.Popen,
-               browser: Optional[subprocess.Popen]) -> None:
-    """Take down whichever of the two is still up."""
+               browser: Optional[subprocess.Popen],
+               ours: Optional[Sequence[int]] = None) -> None:
+    """Take down whichever of the two is still up.
+
+    Only ever our own browser. Ending every process holding the profile would
+    reach one a successor has just started: a relaunch ends this session, and
+    this session's cleanup would then kill the window that replaced it. The
+    pids are recorded when our browser appears, so leaving does not disturb
+    whatever came after.
+    """
     if browser is not None and browser.poll() is None:
         try:
             browser.terminate()
@@ -310,7 +332,7 @@ def _shut_down(server: subprocess.Popen,
             pass
     # By profile as well, for the reason at the top: ending the launcher does
     # not end the browser it started.
-    _end(browsers())
+    _end(ours if ours is not None else browsers())
     if server.poll() is None:
         try:
             server.terminate()

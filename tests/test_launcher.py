@@ -85,7 +85,7 @@ class StopPreviousTest(unittest.TestCase):
              mock.patch.object(launcher, "_end") as ended, \
              mock.patch.object(launcher, "browsers", return_value=[]):
             launcher.stop_previous()
-        self.assertIn("sunshine_apps_ui --port", found.call_args[0][0])
+        self.assertEqual(found.call_args[0][0], launcher.SERVER_PATTERN)
         ended.assert_called_once_with([4242])
 
     def test_nothing_running_is_not_an_error(self):
@@ -249,3 +249,67 @@ class EntryPointTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ServerPatternTest(unittest.TestCase):
+    """The pattern that finds a previous server must match the one we start.
+
+    These stopped agreeing silently. Adding --serve to the command left the
+    pattern matching nothing, so every relaunch quietly left the previous
+    server running -- and the tests did not notice, because they tested the
+    pattern and the command separately.
+    """
+
+    def test_the_pattern_matches_the_command_we_actually_run(self):
+        import re
+        command_line = " ".join(launcher.server_command())
+        self.assertRegex(command_line, launcher.SERVER_PATTERN)
+
+    def test_it_matches_whatever_port_was_chosen(self):
+        for port in ("0", "47999", "8899"):
+            self.assertRegex(" ".join(launcher.server_command(port)),
+                             launcher.SERVER_PATTERN)
+
+    def test_it_does_not_match_the_launcher_doing_the_matching(self):
+        """The launcher carries no --port, and killing ourselves would be bad."""
+        import re
+        self.assertNotRegex("python3 -m sunshine_apps_ui",
+                            launcher.SERVER_PATTERN)
+
+    def test_it_does_not_match_an_unrelated_program(self):
+        import re
+        self.assertNotRegex("python3 -m something_else --port 0",
+                            launcher.SERVER_PATTERN)
+
+
+class LeavingDoesNotDisturbTheNextSessionTest(unittest.TestCase):
+    """A relaunch ends this session. This session's cleanup must not then kill
+    the window that replaced it.
+
+    Found by running the old shell version and the new one side by side on the
+    machine this actually runs on: the shell version won the race by being
+    slower, and the port lost it.
+    """
+
+    def test_only_our_own_browser_is_ended(self):
+        server = mock.Mock(poll=lambda: 0)
+        # 11 was ours. 22 belongs to whatever replaced us.
+        with mock.patch.object(launcher, "browsers", return_value=[11, 22]), \
+             mock.patch.object(launcher, "_end") as ended:
+            launcher._shut_down(server, None, ours=[11])
+        ended.assert_called_once_with([11])
+
+    def test_with_nothing_recorded_it_falls_back_to_what_is_there(self):
+        """The old behaviour, for a path that never got as far as a window."""
+        server = mock.Mock(poll=lambda: 0)
+        with mock.patch.object(launcher, "browsers", return_value=[33]), \
+             mock.patch.object(launcher, "_end") as ended:
+            launcher._shut_down(server, None)
+        ended.assert_called_once_with([33])
+
+    def test_a_session_that_started_no_browser_kills_nothing_elses(self):
+        server = mock.Mock(poll=lambda: 0)
+        with mock.patch.object(launcher, "browsers", return_value=[44]), \
+             mock.patch.object(launcher, "_end") as ended:
+            launcher._shut_down(server, None, ours=[])
+        ended.assert_called_once_with([])
