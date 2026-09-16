@@ -135,3 +135,60 @@ class InstalledCopyTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class StampingTest(unittest.TestCase):
+    """Packaging writes the build number down, and never writes it off.
+
+    Installing from a source tree with no git -- an unpacked tarball, say --
+    used to overwrite the number carried in that tarball with 0, which is the
+    exact ambiguity writing it down exists to prevent. Found by deploying a
+    tarball to the test machine and watching it report build 0.
+    """
+
+    def setUp(self):
+        from sunshine_apps_ui import installer
+        self.installer = installer
+        self.package = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.package, True)
+
+    def _write_existing(self, build="77"):
+        with open(os.path.join(self.package, "_build.py"), "w") as handle:
+            handle.write(f"BUILD = {build!r}\nCOMMIT = 'old'\nDIRTY = False\n")
+
+    def _read(self):
+        with open(os.path.join(self.package, "_build.py")) as handle:
+            return handle.read()
+
+    def test_a_checkout_writes_what_git_says(self):
+        with mock.patch.object(version, "_from_git",
+                               return_value={"build": "123", "commit": "abc",
+                                             "dirty": False}):
+            self.assertTrue(self.installer.stamp_build(self.package))
+        self.assertIn("'123'", self._read())
+        version.details(refresh=True)
+
+    def test_it_will_not_replace_a_known_build_with_an_unknown_one(self):
+        self._write_existing("77")
+        with mock.patch.object(version, "_from_git", return_value=None), \
+             mock.patch.object(version, "_from_baked", return_value=None):
+            self.assertFalse(self.installer.stamp_build(self.package))
+        self.assertIn("'77'", self._read())
+        version.details(refresh=True)
+
+    def test_but_it_will_write_one_where_there_is_none(self):
+        with mock.patch.object(version, "_from_git",
+                               return_value={"build": "9", "commit": "c",
+                                             "dirty": False}):
+            self.assertTrue(self.installer.stamp_build(self.package))
+        self.assertIn("'9'", self._read())
+        version.details(refresh=True)
+
+    def test_a_better_answer_does_replace_a_worse_one(self):
+        self._write_existing("0")
+        with mock.patch.object(version, "_from_git",
+                               return_value={"build": "42", "commit": "c",
+                                             "dirty": False}):
+            self.assertTrue(self.installer.stamp_build(self.package))
+        self.assertIn("'42'", self._read())
+        version.details(refresh=True)

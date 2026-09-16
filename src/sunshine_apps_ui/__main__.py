@@ -68,6 +68,10 @@ def main(argv=None) -> int:
                         dest="restore_tile", action="store_true",
                         help="with --install, rebuild the launcher tiles so the "
                              "manager's own tile comes back")
+    parser.add_argument("--stamp-build", action="store_true",
+                        help="write this checkout's build number into the source "
+                             "tree, so a copy made from it can still report which "
+                             "build it is")
     parser.add_argument("--save-credentials", action="store_true",
                         help="read Sunshine's web UI login from the terminal, "
                              "verify it, and store it mode 600")
@@ -109,6 +113,17 @@ def main(argv=None) -> int:
             print(f"error: scan options are NAME=VALUE, not {pair!r}", file=sys.stderr)
             return 2
         options[name] = value
+
+    if args.stamp_build:
+        from .installer import stamp_build
+        from .version import display
+        where = os.path.dirname(os.path.abspath(__file__))
+        if stamp_build(where):
+            print(f"Stamped {display()} into {where}", file=sys.stderr)
+            return 0
+        print("Nothing to stamp: no git here, and no build number already "
+              "written down.", file=sys.stderr)
+        return 1
 
     if args.install or args.uninstall:
         from .installer import install, uninstall

@@ -115,7 +115,7 @@ def install(prefix: Optional[str] = None, *,
     # An installed copy has no git to ask, so the answer is written down while
     # the checkout that has one is still to hand. Without this every install
     # would report build 0 and every bug report would be ambiguous.
-    _bake_build(os.path.join(where["install"], "src", "sunshine_apps_ui"))
+    stamp_build(os.path.join(where["install"], "src", "sunshine_apps_ui"))
 
     with open(where["command"], "w", encoding="utf-8") as handle:
         handle.write(_launcher_script(where["install"]))
@@ -133,22 +133,32 @@ def install(prefix: Optional[str] = None, *,
     return True, messages
 
 
-def _bake_build(package_dir: str) -> None:
-    """Record which build was installed, for a copy that cannot work it out."""
+def stamp_build(package_dir: str) -> bool:
+    """Write down which build this is, for a copy that cannot work it out.
+
+    Refuses to replace a known build number with an unknown one. Installing
+    from a source tree that has no git -- an unpacked tarball, say -- would
+    otherwise overwrite a number carried in that tarball with 0, which is the
+    exact ambiguity this exists to prevent.
+    """
     from .version import details
 
     found = details(refresh=True)
+    target = os.path.join(package_dir, "_build.py")
+    if found["build"] in ("", "0") and os.path.exists(target):
+        return False
     try:
-        with open(os.path.join(package_dir, "_build.py"), "w",
-                  encoding="utf-8") as handle:
+        with open(target, "w", encoding="utf-8") as handle:
             handle.write(
                 "# SPDX-License-Identifier: GPL-3.0-or-later\n"
-                '"""Written at install time. Not in git: it describes one install."""\n'
+                '"""Written when this was packaged or installed. Not in git:\n'
+                'it describes one copy, not the source it came from."""\n'
                 f"BUILD = {found['build']!r}\n"
                 f"COMMIT = {found['commit']!r}\n"
                 f"DIRTY = {bool(found['dirty'])!r}\n")
+        return True
     except OSError:
-        pass                      # a missing build number is not worth failing over
+        return False              # a missing build number is not worth failing over
 
 
 def uninstall(prefix: Optional[str] = None, *, keep_state: bool = False,
