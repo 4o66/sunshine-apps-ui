@@ -81,6 +81,28 @@ def _heroic_cmd(home: str) -> tuple[str, str]:
         return ("heroic", home)
     return ("", "")
 
+def _sunshine_is_flatpak(conf_dir: str) -> bool:
+    """Is Sunshine itself running from a Flatpak?
+
+    Told by where its configuration lives, which is the same thing config
+    discovery uses to find it.
+    """
+    return "/.var/app/" in conf_dir.replace(os.sep, "/")
+
+
+def _host(cmd: str, sandboxed: bool) -> str:
+    """Run *cmd* on the host, even when Sunshine is sandboxed.
+
+    A Flatpak sees its own filesystem, so a command naming a path outside it --
+    which is every command we generate -- simply is not there. Upstream says
+    the same: "the Flatpak of Sunshine requires commands to be prefixed with
+    flatpak-spawn --host".
+    """
+    if not cmd or not sandboxed or cmd.startswith("flatpak-spawn "):
+        return cmd
+    return f"flatpak-spawn --host {cmd}"
+
+
 def _apps_ui(home: str) -> tuple[str, str]:
     """Return (cmd, poster) for the companion UI if installed, else ('', '').
 
@@ -147,6 +169,11 @@ def import_launchers(home: str, conf_dir: str, images_dir: str, settings: Dict[s
 
     posters = _ensure_posters(images_dir)
     apps: List[Dict[str, Any]] = []
+    # Every command below names a path on the host. If Sunshine is sandboxed,
+    # none of them exist from where it is looking.
+    sandboxed = _sunshine_is_flatpak(conf_dir)
+    if sandboxed:
+        log("Sunshine is running from a Flatpak; commands will run on the host.")
 
     # 1) Desktop
     apps.append(tag({
@@ -166,7 +193,7 @@ def import_launchers(home: str, conf_dir: str, images_dir: str, settings: Dict[s
     if steam_cmd:
         apps.append(tag({
             "name": NAMES["steam"],
-            "cmd": steam_cmd,
+            "cmd": _host(steam_cmd, sandboxed),
             "working-dir": steam_wd or home,
             "image-path": posters["steam"],
             "detached": False,
@@ -183,7 +210,7 @@ def import_launchers(home: str, conf_dir: str, images_dir: str, settings: Dict[s
     if heroic_cmd:
         apps.append(tag({
             "name": NAMES["heroic"],
-            "cmd": heroic_cmd,
+            "cmd": _host(heroic_cmd, sandboxed),
             "working-dir": heroic_wd or home,
             "image-path": posters["heroic"],
             "detached": False,
@@ -200,7 +227,7 @@ def import_launchers(home: str, conf_dir: str, images_dir: str, settings: Dict[s
     if ui_cmd:
         apps.append(tag({
             "name": NAMES["apps-ui"],
-            "cmd": ui_cmd,
+            "cmd": _host(ui_cmd, sandboxed),
             "working-dir": home,
             "image-path": ui_poster,
             "detached": False,
@@ -217,7 +244,7 @@ def import_launchers(home: str, conf_dir: str, images_dir: str, settings: Dict[s
         "name": NAMES["reboot"],
         "auto-detach": True,
         "cmd": [],
-        "detached": ["systemctl reboot"],
+        "detached": [_host("systemctl reboot", sandboxed)],
         "image-path": posters["reboot"],
         **_common_fields(),
     }, "launcher", "reboot"))

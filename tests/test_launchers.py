@@ -88,3 +88,62 @@ class LauncherEntryTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SandboxedSunshineTest(LauncherEntryTest):
+    """When Sunshine itself is a Flatpak, every command we generate names a
+    path it cannot see.
+
+    Config discovery already knows about a Flatpak Sunshine -- it looks under
+    ~/.var/app for it -- so the tile it generates has to account for the same
+    thing. Upstream says it outright: the Flatpak of Sunshine requires commands
+    to be prefixed with flatpak-spawn --host.
+    """
+
+    def _flatpak_conf(self):
+        conf = os.path.join(self.home, ".var", "app",
+                            "dev.lizardbyte.app.Sunshine", "config", "sunshine")
+        os.makedirs(conf, exist_ok=True)
+        return conf
+
+    def _entries(self, conf_dir):
+        return import_launchers(self.home, conf_dir, self.images, {})
+
+    def test_it_notices_sunshine_is_sandboxed(self):
+        from sunshine_apps_ui.core.sources.launchers import _sunshine_is_flatpak
+        self.assertTrue(_sunshine_is_flatpak(self._flatpak_conf()))
+        self.assertFalse(_sunshine_is_flatpak(
+            os.path.join(self.home, ".config", "sunshine")))
+
+    def test_the_managers_own_tile_runs_on_the_host(self):
+        entry = next(a for a in self._entries(self._flatpak_conf())
+                     if a.get(MARKER, {}).get("id") == "apps-ui")
+        self.assertTrue(entry["cmd"].startswith("flatpak-spawn --host "),
+                        entry["cmd"])
+        self.assertIn(self.ui, entry["cmd"])
+
+    def test_reboot_runs_on_the_host_too(self):
+        entry = next(a for a in self._entries(self._flatpak_conf())
+                     if a.get(MARKER, {}).get("id") == "reboot")
+        self.assertEqual(entry["detached"],
+                         ["flatpak-spawn --host systemctl reboot"])
+
+    def test_a_native_sunshine_is_left_exactly_as_it_was(self):
+        conf = os.path.join(self.home, ".config", "sunshine")
+        os.makedirs(conf, exist_ok=True)
+        entry = next(a for a in self._entries(conf)
+                     if a.get(MARKER, {}).get("id") == "apps-ui")
+        self.assertEqual(entry["cmd"], self.ui)
+
+    def test_it_does_not_prefix_something_already_prefixed(self):
+        from sunshine_apps_ui.core.sources.launchers import _host
+        already = "flatpak-spawn --host steam"
+        self.assertEqual(_host(already, True), already)
+
+    def test_an_empty_command_stays_empty(self):
+        """The desktop entry has no command; a prefix alone would be nonsense."""
+        from sunshine_apps_ui.core.sources.launchers import _host
+        self.assertEqual(_host("", True), "")
+        entry = next(a for a in self._entries(self._flatpak_conf())
+                     if a.get(MARKER, {}).get("id") == "desktop")
+        self.assertEqual(entry["cmd"], "")
