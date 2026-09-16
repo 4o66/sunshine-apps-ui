@@ -50,16 +50,22 @@ back.
 
 ## Why a web UI and not a desktop app
 
-Both target systems are hostile to conventional desktop toolkits:
+Two reasons, and the second is the real one.
 
-- **Bazzite** (rpm-ostree) -- installing Qt/GTK Python bindings at runtime is a
-  foot-gun on an immutable base.
-- **SteamOS on a Legion Go S** -- runs a gamescope session where ordinary
-  windows are second-class, and input is a gamepad at 10-foot viewing distance.
+**Bazzite is rpm-ostree.** Installing Qt or GTK Python bindings at runtime on an
+immutable base is a foot-gun. This has no runtime dependencies at all: stdlib
+`http.server` and nothing else.
 
-A local page is reachable from the console, a phone, or a laptop; it survives
-gamescope; and it can be made gamepad-navigable with focus styling. It is also
-launchable as a Sunshine app itself, via a kiosk browser.
+**It has to render inside the stream.** The point of the Sunshine tile is that
+you reach this from the couch, through Moonlight, on a television -- so it draws
+in whatever session Sunshine is streaming, at ten feet, with a gamepad mapped to
+arrows and Enter. That is true whatever the machine at the other end is running.
+A browser in `--app` mode gets there with no toolkit; a terminal UI would still
+need a window in that session and is miserable with a thumbstick.
+
+It is also reachable from a laptop, though only through an SSH tunnel: the
+listener is hardcoded to `127.0.0.1` and there is no option to change it. See
+[docs/security.md](docs/security.md).
 
 ## Security
 

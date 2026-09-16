@@ -26,10 +26,26 @@ Two things to remember when picking this up:
 
 **Logged 2026-09-14. Not started.**
 
-Today this targets Bazzite, and a second target (a Legion Go S on SteamOS) is
-assumed but untested. Sunshine itself runs on Windows, macOS and every Linux
-distribution, and nothing about managing `apps.json` is Bazzite-specific. The
-tool should follow.
+Today this targets Bazzite. Sunshine itself runs on Windows, macOS and every
+Linux distribution, and nothing about managing `apps.json` is Bazzite-specific.
+The tool should follow.
+
+**SteamOS was a target and is not one -- dropped 2026-09-15.** This installs
+where Sunshine is, which is the machine you stream *from*. A Legion Go S is a
+Moonlight client: it streams *to*. SteamOS could host Sunshine -- it is
+Arch-based, and the Arch package, the AppImage and Flathub would all work --
+but there is no sign anyone does. Sunshine's repository does not mention
+SteamOS, the Steam Deck or the word "deck" anywhere: not in its documentation,
+its source, its README or its release automation, which publishes to Flathub,
+Homebrew, pacman and winget. Arch is also its smallest Linux target at 1.6% of
+downloads.
+
+Absence of evidence is not proof nobody does it, but there is no positive
+evidence and upstream plainly treats it as a non-target, so it is not worth the
+effort. What survived the removal is the argument it was carrying: the "ten
+feet, gamepad, gamescope" reasoning is about rendering **inside the stream**,
+not about the client's operating system, and it holds for a Bazzite host on
+its own.
 
 ### What is actually tied to the platform
 
@@ -242,9 +258,8 @@ stop being in the backups.
 
 ### Open questions
 
-- **Which platform second?** SteamOS is the one already promised and the
-  closest (same shell, same paths, gamescope instead of a normal session).
-  Windows is the largest Sunshine population and the most work.
+- **Which platform second?** macOS is the smaller job and Windows the larger.
+  SteamOS was the obvious answer until it turned out not to be a host.
 - **How to launch the browser on Windows.** No flatpak, no `pkill`. Probably
   `start` plus a job object, or give up on kiosk mode and open a normal tab.
 - **How to test it.** Everything platform-specific found so far was found on
@@ -281,9 +296,8 @@ stop being in the backups.
 ### Suggested order
 
 1. **Generic Linux -- done, 2026-09-15.** See below.
-2. SteamOS, on the Legion Go S. Mostly confirming what already works.
-3. macOS: paths and the browser launch; no Flatpak to worry about.
-4. Windows: the real port. Config discovery, the launcher, file permissions,
+2. macOS: paths and the browser launch; no Flatpak to worry about.
+3. Windows: the real port. Config discovery, the launcher, file permissions,
    and an installer that suits the platform rather than imitating ours.
 
 ### What generic Linux established

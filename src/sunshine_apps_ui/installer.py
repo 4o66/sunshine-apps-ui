@@ -2,11 +2,11 @@
 """Installing and removing this, for the current user.
 
 Everything lands under a per-user prefix and nothing needs root. That is
-deliberate rather than modest: both Linux systems this targets have an
-operating system you do not install into -- rpm-ostree makes /usr read-only and
-anything layered there must survive every rebase, and SteamOS resets /usr
-wholesale on update. A per-user prefix survives both, and uninstalling is
-deleting files rather than unpicking a package.
+deliberate rather than modest: Bazzite is rpm-ostree, so /usr is read-only and
+anything layered there has to survive every rebase. A per-user prefix survives
+that, and uninstalling is deleting files rather than unpicking a package. The
+same holds for any immutable system, which is most of where Sunshine gets
+installed from Flathub.
 
 Windows will not use this. It has no such convention, and the decision recorded
 in docs/backlog.md is to install as a normal Windows application instead.
