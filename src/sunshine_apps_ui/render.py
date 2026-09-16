@@ -428,6 +428,28 @@ def error_page(message: str, detail: str = "", token: str = "",
 </div></body></html>"""
 
 
+# Field names as they read on screen. "image-path" is what apps.json calls it;
+# nobody thinks of a cover that way.
+_FIELD_WORDS = {
+    "name": "name", "cmd": "command", "working-dir": "working directory",
+    "image-path": "artwork", "output": "output log",
+    "exit-timeout": "exit timeout", "elevated": "run elevated",
+    "auto-detach": "auto-detach", "wait-all": "wait for all processes",
+    "exclude-global-prep-cmd": "global prep commands",
+    "detached": "detached commands", "prep-cmd": "prep commands",
+}
+
+
+def _fields_in_words(fields: List[str]) -> str:
+    """Which fields differ, said plainly, with the rename spelled out separately."""
+    words = [_FIELD_WORDS.get(f, f) for f in fields if f != "name"]
+    if not words:
+        return ""
+    if len(words) == 1:
+        return words[0]
+    return ", ".join(words[:-1]) + " and " + words[-1]
+
+
 def _when(backup_name: str) -> str:
     """A kept copy's name, said the way a person would say it."""
     import time
@@ -656,15 +678,30 @@ def grid_page(state: Dict[str, Any], token: str, *, new_ids: Optional[set] = Non
     # is marked like a deletion, what would change like an edit, and what would
     # come back appears as a tile that is not there yet.
     if restore:
-        by_name = {}
+        by_name, by_key = {}, {}
         for position, entry in enumerate(apps):
             by_name.setdefault(entry.get("name"), position)
+            if entry.get("source"):
+                by_key.setdefault(f'{entry.get("source")}:{entry.get("id")}', position)
+
+        def find(item) -> Optional[int]:
+            """The tile an item refers to: by marker first, name second.
+
+            By marker because that is how the two versions of the file were
+            matched, and it survives a rename -- which is the case where
+            matching on the name is guaranteed to fail.
+            """
+            position = by_key.get(str(item.get("key") or ""))
+            if position is None:
+                position = by_name.get(item.get("name"))
+            return position
+
         for item in restore.get("going") or []:
-            position = by_name.get(item.get("name"))
+            position = find(item)
             if position is not None:
                 marks.setdefault(position, ("delete", False))
         for item in restore.get("changing") or []:
-            position = by_name.get(item.get("name"))
+            position = find(item)
             if position is not None:
                 marks.setdefault(position, ("edit", False))
         for item in restore.get("returning") or []:
@@ -721,11 +758,29 @@ def grid_page(state: Dict[str, Any], token: str, *, new_ids: Optional[set] = Non
                           ("going", "would be removed"),
                           ("changing", "would change")):
             items = restore.get(key) or []
-            if items:
+            if not items:
+                continue
+            if key == "changing":
+                # Saying that something changes without saying what leaves you
+                # to guess, and the interesting part is usually the rename.
+                said = []
+                for item in items[:6]:
+                    name = _e(str(item.get("name")))
+                    becomes = item.get("becomes")
+                    detail = _fields_in_words(item.get("fields") or [])
+                    if becomes:
+                        line = f"{name} &rarr; <b>{_e(str(becomes))}</b>"
+                        if detail:
+                            line += f" ({detail})"
+                    else:
+                        line = f"{name}{f' ({detail})' if detail else ''}"
+                    said.append(line)
+                names = "; ".join(said)
+            else:
                 names = ", ".join(_e(str(i.get("name"))) for i in items[:6])
-                if len(items) > 6:
-                    names += f" and {len(items) - 6} more"
-                counts.append(f"<li><b>{len(items)}</b> {word}: {names}</li>")
+            if len(items) > 6:
+                names += f" and {len(items) - 6} more"
+            counts.append(f"<li><b>{len(items)}</b> {word}: {names}</li>")
         hidden_change = ""
         if restore.get("hidden_now") != restore.get("hidden_then"):
             hidden_change = (f'<li>What you have hidden goes from '

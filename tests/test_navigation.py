@@ -127,3 +127,48 @@ class ItSaysWhatProgramThisIsTest(unittest.TestCase):
         title = re.search(r"<title>(.*?)</title>",
                           render.app_page(APP, "t"), re.S).group(1)
         self.assertTrue(title.startswith(render.PRODUCT), title)
+
+
+class RestorePreviewTest(unittest.TestCase):
+    """What a restore would do, said on the grid and marked on the tile."""
+
+    STATE = {"apps": [{"index": 0, "name": "Satisfactory 1.2", "source": "steam",
+                       "id": "526870", "image-path": "", "managed": True}],
+             "hidden": []}
+    RESTORE = {"backup": "apps-20260915-193715.json", "qid": "q1",
+               "returning": [{"name": "Portal: Revolution"}], "going": [],
+               "changing": [{"name": "Satisfactory 1.2", "becomes": "Satisfactory",
+                             "key": "steam:526870",
+                             "fields": ["name", "image-path"]}],
+               "hidden_now": 0, "hidden_then": 0}
+
+    def _html(self, restore=None):
+        return render.grid_page(
+            self.STATE, "t", pending=[{"op": "rollback", "backup": "x", "qid": "q1"}],
+            restore=restore if restore is not None else self.RESTORE)
+
+    def test_it_says_what_the_name_would_become(self):
+        self.assertIn("Satisfactory", self._html())
+        self.assertRegex(self._html(), r"Satisfactory 1\.2\s*&rarr;\s*<b>Satisfactory</b>")
+
+    def test_it_says_which_other_fields_change(self):
+        """"artwork", not "image-path": nobody thinks of a cover that way."""
+        self.assertIn("artwork", self._html())
+        self.assertNotIn("image-path", self._html())
+
+    def test_the_tile_itself_is_marked(self):
+        """It was not, because it was looked up by the name it would become."""
+        self.assertIn("pending", self._html())
+
+    def test_it_is_found_by_its_marker_not_its_name(self):
+        renamed = dict(self.RESTORE)
+        renamed["changing"] = [dict(self.RESTORE["changing"][0], name="Something Else")]
+        self.assertIn("pending", self._html(renamed))
+
+    def test_a_change_with_no_rename_reads_plainly(self):
+        plain = dict(self.RESTORE)
+        plain["changing"] = [{"name": "Satisfactory 1.2", "becomes": None,
+                              "key": "steam:526870", "fields": ["cmd"]}]
+        html = self._html(plain)
+        self.assertIn("Satisfactory 1.2 (command)", html)
+        self.assertNotIn("&rarr;", html)

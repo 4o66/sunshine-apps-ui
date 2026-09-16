@@ -255,10 +255,19 @@ def compare(current: Dict[str, Any], name: str) -> Dict[str, Any]:
     for k in then:
         if k in now and _fields(then[k]) != _fields(now[k]):
             fields = sorted(set(_fields(then[k])) | set(_fields(now[k])))
+            differing = [f for f in fields
+                         if _fields(now[k]).get(f) != _fields(then[k]).get(f)]
             changing.append({
-                "name": then[k].get("name"),
-                "fields": [f for f in fields
-                           if _fields(now[k]).get(f) != _fields(then[k]).get(f)],
+                # The name it has now, so a front end can find the tile. Naming
+                # it by what it would become makes it unfindable in exactly the
+                # case where the name is the thing that changes.
+                "name": now[k].get("name"),
+                "becomes": (then[k].get("name")
+                            if then[k].get("name") != now[k].get("name") else None),
+                # How the two entries were matched, which survives a rename
+                # where a name does not.
+                "key": k,
+                "fields": differing,
             })
 
     def meta_list(payload, key):

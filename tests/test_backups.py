@@ -271,3 +271,67 @@ class WhereCopiesLiveTest(unittest.TestCase):
     def test_an_override_is_still_honoured(self):
         with mock.patch.dict(os.environ, {"BSM_BACKUP_DIR": "/tmp/elsewhere"}):
             self.assertEqual(backups.backup_dir(), "/tmp/elsewhere")
+
+
+class WhatWouldChangeTest(unittest.TestCase):
+    """A restore has to say what it would change, and about which tile.
+
+    Naming the changed entry by what it *would become* makes it unfindable in
+    exactly the case where the name is the thing that changes -- which is how a
+    renamed game showed "1 would change" with no mark on any tile.
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        patched = mock.patch.dict(
+            os.environ, {"BSM_BACKUP_DIR": os.path.join(self.tmp.name, "data")})
+        patched.start()
+        self.addCleanup(patched.stop)
+        os.makedirs(backups.backup_dir(), exist_ok=True)
+
+    def _copy(self, apps, name="apps-20260915-193715.json"):
+        with open(os.path.join(backups.backup_dir(), name), "w") as handle:
+            json.dump({"apps": apps}, handle)
+        return name
+
+    MARKER = {"v": 1, "source": "steam", "id": "526870", "fields": {}}
+
+    def _marked(self, was, now):
+        """Both entries carry the marker, which is what ties them together."""
+        name = self._copy([dict(was, bsm=self.MARKER)])
+        return backups.compare({"apps": [dict(now, bsm=self.MARKER)]},
+                               name)["changing"][0]
+
+    def test_it_is_named_by_what_it_is_called_now(self):
+        """So the tile can be found before the change happens."""
+        item = self._marked({"name": "Satisfactory"}, {"name": "Satisfactory 1.2"})
+        self.assertEqual(item["name"], "Satisfactory 1.2")
+
+    def test_it_says_what_the_name_would_become(self):
+        item = self._marked({"name": "Satisfactory"}, {"name": "Satisfactory 1.2"})
+        self.assertEqual(item["becomes"], "Satisfactory")
+
+    def test_nothing_becomes_anything_when_the_name_is_unchanged(self):
+        item = self._marked({"name": "Hades", "cmd": "a"},
+                            {"name": "Hades", "cmd": "b"})
+        self.assertIsNone(item["becomes"])
+
+    def test_it_carries_how_the_two_were_matched(self):
+        """A marker survives a rename; a name does not."""
+        item = self._marked({"name": "Satisfactory"}, {"name": "Satisfactory 1.2"})
+        self.assertEqual(item["key"], "steam:526870")
+
+    def test_a_rename_with_no_marker_reads_as_two_entries(self):
+        """Honest rather than clever: nothing ties an unmarked entry to the
+        name it used to have, so it leaves and a different one arrives."""
+        name = self._copy([{"name": "Satisfactory"}])
+        result = backups.compare({"apps": [{"name": "Satisfactory 1.2"}]}, name)
+        self.assertEqual(result["changing"], [])
+        self.assertEqual([i["name"] for i in result["returning"]], ["Satisfactory"])
+        self.assertEqual([i["name"] for i in result["going"]], ["Satisfactory 1.2"])
+
+    def test_it_lists_which_fields_differ(self):
+        item = self._marked({"name": "A", "cmd": "old", "image-path": "/a.png"},
+                            {"name": "A", "cmd": "new", "image-path": "/b.png"})
+        self.assertEqual(sorted(item["fields"]), ["cmd", "image-path"])
