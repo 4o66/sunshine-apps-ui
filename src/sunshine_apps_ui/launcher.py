@@ -55,6 +55,31 @@ SERVER_PATTERN = r"sunshine_apps_ui .*--port"
 def server_command(port: str = "0") -> List[str]:
     return [sys.executable, "-m", "sunshine_apps_ui", "--serve", "--port", port]
 
+
+def package_path() -> str:
+    """The directory this package lives in, for a child process to import from.
+
+    The installed command puts the installed copy on sys.path and hands over --
+    but sys.path does not survive into a child, so a server started without
+    this says "No module named sunshine_apps_ui" and the launcher reports that
+    the interface did not start. The shell version set PYTHONPATH and this has
+    to as well.
+    """
+    return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+def server_environment(base: Optional[dict] = None) -> dict:
+    environment = dict(os.environ if base is None else base)
+    existing = environment.get("PYTHONPATH", "")
+    ours = package_path()
+    if ours not in existing.split(os.pathsep):
+        environment["PYTHONPATH"] = (f"{ours}{os.pathsep}{existing}" if existing
+                                     else ours)
+    # Says "you are being watched through a stream", which changes what the
+    # pages say about disconnecting.
+    environment["BSM_UI_VIA_SUNSHINE"] = "1"
+    return environment
+
 # Flatpak first: on an immutable system it is the one that is really there, and
 # its network is the host's, so loopback means this machine.
 FLATPAK_BROWSERS = ("com.google.Chrome", "com.brave.Browser",
@@ -248,10 +273,7 @@ def launch(argv: Optional[List[str]] = None) -> int:
     os.makedirs(profile, exist_ok=True)
     log_file = log_path()
 
-    environment = dict(os.environ)
-    # Says "you are being watched through a stream", which changes what the
-    # pages say about disconnecting.
-    environment["BSM_UI_VIA_SUNSHINE"] = "1"
+    environment = server_environment()
 
     with open(log_file, "w", encoding="utf-8") as handle:
         server = subprocess.Popen(server_command(), stdout=handle,

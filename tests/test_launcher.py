@@ -313,3 +313,58 @@ class LeavingDoesNotDisturbTheNextSessionTest(unittest.TestCase):
              mock.patch.object(launcher, "_end") as ended:
             launcher._shut_down(server, None, ours=[])
         ended.assert_called_once_with([])
+
+
+class ChildCanImportUsTest(unittest.TestCase):
+    """The server is a child process, and sys.path does not survive into one.
+
+    The installed command puts the installed copy on sys.path and hands over.
+    A server started without PYTHONPATH then answers "No module named
+    sunshine_apps_ui", and the launcher reports only that the interface did not
+    start -- which is true, and says nothing about why.
+
+    Found by installing it and running it for real. Every test passed, because
+    every test ran from a checkout with the path already set.
+    """
+
+    def test_the_child_is_told_where_to_import_us_from(self):
+        environment = launcher.server_environment({})
+        self.assertIn(launcher.package_path(),
+                      environment["PYTHONPATH"].split(os.pathsep))
+
+    def test_that_path_really_contains_the_package(self):
+        self.assertTrue(os.path.isdir(
+            os.path.join(launcher.package_path(), "sunshine_apps_ui")))
+
+    def test_an_existing_pythonpath_is_kept_rather_than_replaced(self):
+        environment = launcher.server_environment({"PYTHONPATH": "/somewhere/else"})
+        parts = environment["PYTHONPATH"].split(os.pathsep)
+        self.assertIn("/somewhere/else", parts)
+        self.assertIn(launcher.package_path(), parts)
+
+    def test_ours_comes_first(self):
+        environment = launcher.server_environment({"PYTHONPATH": "/somewhere/else"})
+        self.assertEqual(environment["PYTHONPATH"].split(os.pathsep)[0],
+                         launcher.package_path())
+
+    def test_it_is_not_added_twice(self):
+        once = launcher.server_environment({"PYTHONPATH": launcher.package_path()})
+        self.assertEqual(once["PYTHONPATH"].split(os.pathsep).count(
+            launcher.package_path()), 1)
+
+    def test_the_child_is_told_it_is_being_watched_through_a_stream(self):
+        self.assertEqual(
+            launcher.server_environment({})["BSM_UI_VIA_SUNSHINE"], "1")
+
+    def test_the_server_starts_from_a_bare_interpreter(self):
+        """The real check: spawn it the way the launcher does, with nothing
+        else on the path, and see whether it can import itself."""
+        import subprocess
+        result = subprocess.run(
+            launcher.server_command() + ["--help"],
+            env={"PATH": os.environ.get("PATH", ""),
+                 **{k: v for k, v in launcher.server_environment({}).items()
+                    if k in ("PYTHONPATH", "BSM_UI_VIA_SUNSHINE")}},
+            capture_output=True, text=True, timeout=60)
+        self.assertNotIn("No module named", result.stderr)
+        self.assertEqual(result.returncode, 0, result.stderr[:400])
