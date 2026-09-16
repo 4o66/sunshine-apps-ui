@@ -373,6 +373,13 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
 class ApplyTest(ServerTest):
     """Apply writes and reloads, behind a confirmation that says what happens."""
 
+    def setUp(self):
+        super().setUp()
+        # The confirmation shows the queue, so these need one. It used to show
+        # what a scan found as well, which is why they did not before.
+        from sunshine_apps_ui import state as st
+        st.enqueue({"op": "hide", "index": 1, "name": "Portal 2"})
+
     def test_get_apply_shows_a_confirmation_and_changes_nothing(self):
         status, body = self.get("/apply", token=self.token)
         self.assertEqual(status, 200)
@@ -382,8 +389,8 @@ class ApplyTest(ServerTest):
     def test_the_confirmation_lists_the_actual_changes(self):
         """Naming them beats asserting that some exist."""
         _, body = self.get("/apply", token=self.token)
-        self.assertIn("Will be added", body)
-        self.assertIn("Half-Life", body)
+        self.assertIn("Your changes", body)
+        self.assertIn("Hide Portal 2", body)
 
     def test_the_confirmation_states_the_disconnect(self):
         _, body = self.get("/apply", token=self.token)
@@ -419,6 +426,8 @@ class ApplyTest(ServerTest):
 
     def test_applying_nothing_just_returns_to_the_grid(self):
         """Apply means "apply the queue"; an empty queue has nothing to do."""
+        from sunshine_apps_ui import state as st
+        st.clear_queue()
         status, headers = self.post({}, token=self.token, path="/apply")
         self.assertEqual(status, 303)
         self.assertNotIn("/applied", headers["Location"])
@@ -797,14 +806,13 @@ class ApplyCountsTheQueueTest(ServerTest):
         super().tearDown()
 
     def test_the_confirmation_counts_queued_changes(self):
-        """The fixture importer also reports one addition, so this totals two."""
+        """The queue, and only the queue: that is what applying applies."""
         from sunshine_apps_ui import state as st
         _, before = self.get("/apply", token=self.token)
-        self.assertIn("Apply 1 change?", before)
+        self.assertIn("Apply 0 changes?", before)
         st.enqueue({"op": "hide", "index": 1, "name": "Portal 2"})
         _, after = self.get("/apply", token=self.token)
-        self.assertIn("Apply 2 changes?", after)
-        self.assertNotIn("Apply 0 changes?", after)
+        self.assertIn("Apply 1 change?", after)
 
     def test_the_confirmation_names_them_in_plain_words(self):
         from sunshine_apps_ui import state as st
@@ -815,9 +823,9 @@ class ApplyCountsTheQueueTest(ServerTest):
         self.assertIn("Hide Portal 2", body)
         self.assertIn("Add My Script", body)
 
-    def test_nothing_queued_and_nothing_found_still_reads_as_nothing(self):
-        self.engine.plan = {"schema": 1, "generator": {"name": "x", "version": "1"},
-                            "totals": {}, "sources": [], "plan": {"added": []}}
+    def test_nothing_queued_reads_as_nothing_however_much_a_scan_would_find(self):
+        """A scan finding things is not a reason to promise them here."""
+        self.engine.plan = dict(PLAN)
         _, body = self.get("/apply", token=self.token)
         self.assertIn("Nothing would change.", body)
         self.assertIn("Apply 0 changes?", body)
@@ -1358,11 +1366,13 @@ class StopAfterApplyTest(ServerTest):
         handler = self.httpd.RequestHandlerClass
         handler.applied = False
         handler.stopping = False
+        handler._armed = False
 
     def tearDown(self):
         import shutil as sh
         handler = self.httpd.RequestHandlerClass
         handler.applied = handler.stopping = handler.via_sunshine = False
+        handler._armed = False
         if self._old is None:
             os.environ.pop("XDG_STATE_HOME", None)
         else:
@@ -1379,21 +1389,34 @@ class StopAfterApplyTest(ServerTest):
     def test_applying_from_a_stream_stops_the_server(self):
         self.httpd.RequestHandlerClass.via_sunshine = True
         self._apply()
-        self.get(f"/applied?token={self.token}")
+        self.assertTrue(self.httpd.RequestHandlerClass.stopping)
+
+    def test_it_does_not_wait_for_the_applied_page_to_be_asked_for(self):
+        """Applying reloads Sunshine, which ends the stream this is watched
+        through -- so the browser is usually gone before it can ask for that
+        page. Waiting for it left the window sitting on the desktop."""
+        self.httpd.RequestHandlerClass.via_sunshine = True
+        self._apply()                      # and never fetch /applied
         self.assertTrue(self.httpd.RequestHandlerClass.stopping)
 
     def test_stopping_means_the_serving_loop_is_actually_ended(self):
         """Setting a flag would be no use on its own."""
-        from unittest import mock
+        handler = self.httpd.RequestHandlerClass
+        with mock.patch.object(threading, "Timer") as timer:
+            handler.via_sunshine = True
+            self._apply()
+        self.assertTrue(timer.called)
+        delay, function = timer.call_args[0]
+        self.assertGreater(delay, 0, "the response needs time to reach the browser")
+        self.assertEqual(function, self.httpd.shutdown)
+
+    def test_the_timer_is_not_stacked_if_the_page_is_asked_for_too(self):
         handler = self.httpd.RequestHandlerClass
         with mock.patch.object(threading, "Timer") as timer:
             handler.via_sunshine = True
             self._apply()
             self.get(f"/applied?token={self.token}")
-        self.assertTrue(timer.called)
-        delay, function = timer.call_args[0]
-        self.assertGreater(delay, 0, "the response needs time to reach the browser")
-        self.assertEqual(function, self.httpd.shutdown)
+        self.assertEqual(timer.call_count, 1)
 
     def test_a_browser_on_the_network_is_left_alone(self):
         """Opened from a laptop, this window is the user's to close."""
@@ -1699,3 +1722,62 @@ class ResponseOrderingTest(ServerTest):
             self.assertTrue(self.httpd.RequestHandlerClass.stopping,
                             "the page arrived before the decision was made")
             self.httpd.RequestHandlerClass.stopping = False
+
+
+class ConfirmationShowsWhatApplyDoesTest(ServerTest):
+    """The confirmation lists the queue, because the queue is what Apply does.
+
+    It used to run a scan and show what that found as well. A game deleted
+    earlier reappears in a scan -- deleting does not leave a tombstone -- so it
+    was listed as "will be added", and then was not added, because Apply
+    applies the queue. The page promised something the button does not do.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.engine.plan = dict(PLAN)      # a scan would find Half-Life
+
+    def test_the_confirmation_does_not_scan(self):
+        """It is the page whose whole job is to ask first."""
+        scanned = []
+        original = self.engine.run_plan
+        self.engine.run_plan = lambda *a, **k: (scanned.append(1), original(*a, **k))[1]
+        import sunshine_apps_ui.server as sm
+        with mock.patch.object(sm, "run_plan", self.engine.run_plan):
+            self.get("/apply", token=self.token)
+        self.assertEqual(scanned, [], "the confirmation ran a library scan")
+
+    def test_it_does_not_promise_what_a_scan_found(self):
+        _, body = self.get("/apply", token=self.token)
+        self.assertNotIn("Half-Life", body)
+        self.assertNotIn("Will be added", body)
+
+    def test_it_lists_the_queue(self):
+        from sunshine_apps_ui import state as st
+        st.enqueue({"op": "hide", "index": 1, "name": "Portal 2"})
+        st.enqueue({"op": "add", "fields": {"name": "My Script"}})
+        _, body = self.get("/apply", token=self.token)
+        self.assertIn("Hide Portal 2", body)
+        self.assertIn("Add My Script", body)
+
+    def test_the_count_is_the_queue_and_nothing_else(self):
+        from sunshine_apps_ui import state as st
+        st.enqueue({"op": "hide", "index": 1, "name": "Portal 2"})
+        _, body = self.get("/apply", token=self.token)
+        self.assertIn("Apply 1 change?", body)
+
+    def test_an_empty_queue_says_nothing_would_change(self):
+        _, body = self.get("/apply", token=self.token)
+        self.assertIn("Nothing would change.", body)
+        self.assertIn("Apply 0 changes?", body)
+
+    def test_what_it_lists_is_what_gets_applied(self):
+        """The property that was broken: the page and the button agree."""
+        from sunshine_apps_ui import state as st
+        st.enqueue({"op": "hide", "index": 1, "name": "Portal 2"})
+        _, body = self.get("/apply", token=self.token)
+        self.post({}, token=self.token, path="/apply")
+        self.assertEqual(len(self.engine.applied), 1)
+        applied = [op["name"] for op in self.engine.applied[0]]
+        self.assertIn("Portal 2", applied)
+        self.assertEqual(len(applied), body.count('class="queued"') or len(applied))

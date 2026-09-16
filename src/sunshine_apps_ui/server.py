@@ -26,6 +26,11 @@ from .render import (LOCK_NOTE, app_page, applied_page, artwork_page,
 
 log = logging.getLogger("sunshine-apps-ui")
 
+# How long to keep serving after applying, when this is being watched through a
+# stream. The reload has already ended that stream, so this is only enough for
+# the redirect to land if it somehow survived.
+STOP_AFTER_APPLY = 3.0
+
 
 class PlanHandler(BaseHTTPRequestHandler):
     server_version = f"sunshine-apps-ui/{__version__}"
@@ -35,6 +40,7 @@ class PlanHandler(BaseHTTPRequestHandler):
     # left to stay open for.
     applied: bool = False
     stopping: bool = False
+    _armed: bool = False
 
     # Set by serve().
     token: str = ""
@@ -325,6 +331,9 @@ class PlanHandler(BaseHTTPRequestHandler):
             # Decided before the response goes out, armed after. The client can
             # be reading the page while this thread is still here, so anything
             # that happens after _send is not yet true when the page arrives.
+            #
+            # Usually already armed by the apply itself; this covers the case
+            # where the stream survived long enough to ask for this page.
             stopping = bool(self.applied and self.via_sunshine)
             if stopping:
                 type(self).stopping = True
@@ -341,13 +350,10 @@ class PlanHandler(BaseHTTPRequestHandler):
             return
 
         if parts.path == "/apply":
-            try:
-                doc, _ = run_plan(self.conf_dir, self.importer_opts)
-            except EngineError as e:
-                self._send(500, error_page("Could not work out what would change.",
-                                           str(e), token=self.token))
-                return
-            self._send(200, confirm_page(doc, self.token, self.via_sunshine,
+            # No scan here. Applying applies the queue, so the confirmation
+            # shows the queue; running a library scan to decorate it promised
+            # changes that would not happen and took seconds to say so.
+            self._send(200, confirm_page({}, self.token, self.via_sunshine,
                                          pending=state.queue()))
             return
 
@@ -497,7 +503,10 @@ class PlanHandler(BaseHTTPRequestHandler):
         From a timer thread, because shutdown() waits for the serving loop to
         finish and this is running inside it.
         """
+        if self._armed:
+            return                      # already stopping; do not stack timers
         type(self).stopping = True
+        type(self)._armed = True
         threading.Timer(delay, self.server.shutdown).start()
 
     def _redirect_raw(self, location: str) -> None:
@@ -706,6 +715,15 @@ class PlanHandler(BaseHTTPRequestHandler):
                 state.clear_queue()
                 type(self).applied = True
                 self._redirect("/applied")
+                if self.via_sunshine:
+                    # Arm the stop here rather than when /applied is fetched.
+                    # Applying reloads Sunshine, which ends the stream this is
+                    # being watched through -- so the browser is usually gone
+                    # before it can ask for that page, and waiting for it meant
+                    # the window was still sitting there on the desktop
+                    # afterwards. Long enough for the redirect to land if the
+                    # stream did survive.
+                    self._stop_soon(delay=STOP_AFTER_APPLY)
             else:
                 self._redirect("/", apply_error=message[:300])
             return

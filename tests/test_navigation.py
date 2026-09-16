@@ -90,3 +90,40 @@ class TestEveryPageHasAWayOnward(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ItSaysWhatProgramThisIsTest(unittest.TestCase):
+    """One name, on every page.
+
+    The navbar said "apps import" on some pages and "apps" on others, and the
+    window title said "Sunshine apps" -- none of which is what this is called.
+    It runs as its own window, so the title is what the title bar and the task
+    switcher show.
+    """
+
+    def test_every_page_names_the_program_in_its_title(self):
+        for name, html in pages().items():
+            with self.subTest(page=name):
+                title = re.search(r"<title>(.*?)</title>", html, re.S)
+                self.assertIsNotNone(title, f"{name} has no title")
+                self.assertIn(render.PRODUCT, title.group(1))
+
+    def test_every_page_says_the_same_thing_in_the_navbar(self):
+        seen = set()
+        for name, html in pages().items():
+            found = re.search(r'class="where">([^<]*)<', html)
+            self.assertIsNotNone(found, f"{name} has no navbar label")
+            seen.add(found.group(1))
+        self.assertEqual(len(seen), 1, f"the navbar says several things: {seen}")
+
+    def test_no_page_still_calls_it_an_importer(self):
+        """Importing is one of the things it does, not what it is."""
+        for name, html in pages().items():
+            with self.subTest(page=name):
+                self.assertNotIn("apps import", html)
+
+    def test_the_title_leads_with_the_program_rather_than_the_page(self):
+        """That is what someone is looking for in a task switcher."""
+        title = re.search(r"<title>(.*?)</title>",
+                          render.app_page(APP, "t"), re.S).group(1)
+        self.assertTrue(title.startswith(render.PRODUCT), title)

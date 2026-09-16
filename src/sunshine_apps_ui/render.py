@@ -12,6 +12,21 @@ from typing import Any, Dict, List, Optional
 
 from . import __version__
 
+# What this is called, in one place. It is not an importer any more -- importing
+# is one of the things it does -- and the tile it is launched from says the same.
+PRODUCT = "App Manager"
+
+
+def _title(part: str = "") -> str:
+    """A window title that says what program this is, then which page.
+
+    It runs as its own window, so this is what the title bar and the task
+    switcher show. The program comes first because that is what someone is
+    looking for there.
+    """
+    return f"{PRODUCT} \u2014 {part}" if part else PRODUCT
+
+
 # What each bucket means to someone looking at their own app list, in the order
 # a person cares about: things that need a decision first.
 BUCKETS = [
@@ -243,17 +258,19 @@ def confirm_page(doc: Dict[str, Any], token: str, via_sunshine: bool = False,
                  pending: Optional[List[Dict[str, Any]]] = None) -> str:
     """The step between wanting to apply and applying.
 
+    It lists the queue and nothing else, because the queue is exactly what
+    applying does. It used to run a scan and show what that found as well,
+    which was wrong twice over: it promised changes Apply does not make -- a
+    game deleted earlier reappears in a scan and was listed as "will be added",
+    then was not added -- and it ran a library scan nobody asked for, on the
+    page whose whole job is to ask first.
+
     Applying reloads Sunshine, which ends any stream in progress. That is not a
     malfunction -- it is how the new list reaches Moonlight -- but it should be
     stated before it happens rather than discovered.
     """
     pending = pending or []
-    plan = doc.get("plan", {}) or {}
-    totals = doc.get("totals", {}) or {}
-    # Both kinds of pending change count: the ones you queued by hand, and the
-    # ones a scan found. Counting only the second is what made this read zero.
-    changing = len(pending) + sum(int(totals.get(k, 0))
-                                  for k in ("added", "updated", "pruned"))
+    changing = len(pending)
 
     if via_sunshine:
         warning = ("<p><b>This will disconnect you.</b> Sunshine has to reload its app "
@@ -282,14 +299,14 @@ def confirm_page(doc: Dict[str, Any], token: str, via_sunshine: bool = False,
     return f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Apply changes</title><style>{_CSS}</style></head>
+<title>{_title('Apply changes')}</title><style>{_CSS}</style></head>
 <body>
 <div class="navbar"><span class="brand">Sunshine</span><span class="sep">/</span>
-<span class="where">apps import</span></div>
+<span class="where">app manager</span></div>
 <div class="wrap">
 <h1>Apply {changing} change{'' if changing == 1 else 's'}?</h1>
-<section>{_queued_list(pending)}{_change_list(plan)
-  or ('' if pending else '<p class="why">Nothing would change.</p>')}</section>
+<section>{_queued_list(pending)
+  or '<p class="why">Nothing would change.</p>'}</section>
 {warn_block}
 {action_block}
 </div></body></html>"""
@@ -312,10 +329,10 @@ def applied_page(token: str, via_sunshine: bool = False) -> str:
     return f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Applied</title><style>{_CSS}</style></head>
+<title>{_title('Applied')}</title><style>{_CSS}</style></head>
 <body>
 <div class="navbar"><span class="brand">Sunshine</span><span class="sep">/</span>
-<span class="where">apps import</span></div>
+<span class="where">app manager</span></div>
 <div class="wrap">
 <h1>Applied</h1>
 <section class="ok"><p class="why">apps.json was written. {_e(detail)}</p></section>
@@ -371,10 +388,10 @@ def page(doc: Dict[str, Any], log: str = "", token: str = "",
     return f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Sunshine apps</title><style>{_CSS}</style></head>
+<title>{_title()}</title><style>{_CSS}</style></head>
 <body>
 <div class="navbar"><span class="brand">Sunshine</span><span class="sep">/</span>
-<span class="where">apps import</span><span class="ro">read-only preview</span></div>
+<span class="where">app manager</span><span class="ro">read-only preview</span></div>
 <div class="wrap">
 <h1>{_e(summary)}</h1>
 <p class="sub"><code>{_e(doc.get("apps_json", ""))}</code></p>
@@ -400,10 +417,10 @@ def error_page(message: str, detail: str = "", token: str = "",
     return f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Sunshine apps</title><style>{_CSS}</style></head>
+<title>{_title()}</title><style>{_CSS}</style></head>
 <body>
 <div class="navbar"><span class="brand">Sunshine</span><span class="sep">/</span>
-<span class="where">apps import</span></div>
+<span class="where">app manager</span></div>
 <div class="wrap">
 <section class="err"><h2>{_e(title)}</h2>
 <p class="why">{_e(message)}</p>{extra}</section>
@@ -460,11 +477,11 @@ def backups_page(copies: List[Dict[str, Any]], token: str,
     return f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Restore a copy</title>
+<title>{_title('Restore a copy')}</title>
 <style>{_CSS}{_BACKUPS_CSS}</style></head>
 <body>
 <div class="navbar"><span class="brand">Sunshine</span><span class="sep">/</span>
-<span class="where">apps</span></div>
+<span class="where">app manager</span></div>
 <div class="wrap">
 <h1>Restore a copy</h1>
 <p class="sub">A copy of apps.json is taken before anything is written to it.
@@ -565,10 +582,10 @@ def connect_page(token: str, message: str = "", username: str = "") -> str:
     return f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Connect to Sunshine</title><style>{_CSS}</style></head>
+<title>{_title('Connect to Sunshine')}</title><style>{_CSS}</style></head>
 <body>
 <div class="navbar"><span class="brand">Sunshine</span><span class="sep">/</span>
-<span class="where">apps</span></div>
+<span class="where">app manager</span></div>
 <div class="wrap">
 {credentials_form(token, message, username)}
 <div class="actions"><a class="btn sec" href="/?token={_e(token)}">Back</a></div>
@@ -756,10 +773,10 @@ def grid_page(state: Dict[str, Any], token: str, *, new_ids: Optional[set] = Non
     return f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Sunshine apps</title><style>{_CSS}{_GRID_CSS}</style></head>
+<title>{_title()}</title><style>{_CSS}{_GRID_CSS}</style></head>
 <body>
 <div class="navbar"><span class="brand">Sunshine</span><span class="sep">/</span>
-<span class="where">apps</span></div>
+<span class="where">app manager</span></div>
 <div class="wrap">
 <h1>{len(apps)} application{'' if len(apps) == 1 else 's'}</h1>
 <p class="sub"><code>{_e(state.get("apps_json", ""))}</code></p>
@@ -932,11 +949,11 @@ def picker_page(listing: Dict[str, Any], token: str, *, key: str, field: str,
     return f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Choose {_e(label)}</title>
+<title>{_title('Choose ' + _e(label))}</title>
 <style>{_CSS}{_APP_CSS}{_PICKER_CSS}</style></head>
 <body>
 <div class="navbar"><span class="brand">Sunshine</span><span class="sep">/</span>
-<span class="where">apps</span></div>
+<span class="where">app manager</span></div>
 <div class="wrap">
 <h1>Choose {_e(label)}</h1>
 {problem}
@@ -996,10 +1013,10 @@ def hidden_page(entry: Dict[str, Any], token: str, queued: bool = False) -> str:
     return f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>{_e(name)}</title><style>{_CSS}{_APP_CSS}{_GRID_CSS}</style></head>
+<title>{_title(_e(name))}</title><style>{_CSS}{_APP_CSS}{_GRID_CSS}</style></head>
 <body>
 <div class="navbar"><span class="brand">Sunshine</span><span class="sep">/</span>
-<span class="where">apps</span></div>
+<span class="where">app manager</span></div>
 <div class="wrap">
 <h1>{_e(name)}</h1>
 <div class="preview">{art}<div class="meta">
@@ -1096,11 +1113,11 @@ def artwork_page(candidates: List[Dict[str, Any]], token: str, *, key: str,
     return f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Artwork for {_e(label)}</title>
+<title>{_title('Artwork for ' + _e(label))}</title>
 <style>{_CSS}{_APP_CSS}{_ARTWORK_CSS}</style></head>
 <body>
 <div class="navbar"><span class="brand">Sunshine</span><span class="sep">/</span>
-<span class="where">apps</span></div>
+<span class="where">app manager</span></div>
 <div class="wrap">
 <h1>Artwork for {_e(label)}</h1>
 {problem}{note_list}{find}
@@ -1230,11 +1247,11 @@ def app_page(entry: Dict[str, Any], token: str, *, is_new: bool = False,
     return f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>{_e(name or "New application")}</title>
+<title>{_title(_e(name or "New application"))}</title>
 <style>{_CSS}{_APP_CSS}</style></head>
 <body>
 <div class="navbar"><span class="brand">Sunshine</span><span class="sep">/</span>
-<span class="where">apps</span></div>
+<span class="where">app manager</span></div>
 <div class="wrap">
 <h1>{_e(name or "New application")}</h1>
 {preview}{warn}
@@ -1270,10 +1287,10 @@ def explain_page(op: str, entry: Dict[str, Any], token: str) -> str:
     return f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>{_e(title)}</title><style>{_CSS}{_APP_CSS}</style></head>
+<title>{_title(_e(title))}</title><style>{_CSS}{_APP_CSS}</style></head>
 <body>
 <div class="navbar"><span class="brand">Sunshine</span><span class="sep">/</span>
-<span class="where">apps</span></div>
+<span class="where">app manager</span></div>
 <div class="wrap">
 <h1>{_e(title)}</h1>
 <section><p class="why"><b>{_e(name)}</b> &mdash; {_e(body)}</p></section>
