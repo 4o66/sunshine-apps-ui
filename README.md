@@ -145,6 +145,7 @@ Scanning without opening the interface, for scripts:
       installer.py  putting it in place, and removing it again
       credentials.py  asking for a secret without it reaching argv
     docs/security.md  threat model and the decisions behind it
+    docs/releasing.md the version scheme, and how a release is cut
     docs/backlog.md   decided, not built
 
 ## License
