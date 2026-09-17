@@ -115,10 +115,22 @@ def profile_dir() -> str:
 
 
 def log_path() -> str:
-    base = os.getenv("XDG_RUNTIME_DIR") or ("" if WINDOWS else "/tmp")
-    if not base:
-        base = os.path.join(os.getenv("TEMP") or os.path.expanduser("~"))
-    return os.path.join(base, "sunshine-apps-ui.log")
+    """Where the server's output goes -- which includes the session token.
+
+    Not /tmp, and not %TEMP%. The server prints its URL, the URL carries the
+    token, and the token is the whole of the authentication for a server that
+    can rewrite apps.json. A fixed name in a directory everyone can write is two
+    problems at once: anybody may read what lands there, and anybody may get
+    there first with a symlink pointing somewhere we would then overwrite -- as
+    an elevated process, on Windows.
+
+    The state directory is ours and per-user. The file is opened mode 600 and
+    with O_NOFOLLOW; see core.filemode.open_private.
+    """
+    from . import places
+    directory = places.state_dir()
+    os.makedirs(directory, exist_ok=True)
+    return os.path.join(directory, "server.log")
 
 
 # ------------------------------------------------------- finding processes ---
@@ -317,7 +329,8 @@ def launch(argv: Optional[List[str]] = None) -> int:
 
     environment = server_environment()
 
-    with open(log_file, "w", encoding="utf-8") as handle:
+    from .core import filemode
+    with filemode.open_private(log_file) as handle:
         server = subprocess.Popen(server_command(), stdout=handle,
                                   stderr=subprocess.STDOUT, env=environment)
 

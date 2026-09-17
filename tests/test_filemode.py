@@ -129,5 +129,64 @@ class WindowsAclTest(unittest.TestCase):
         self.assertEqual(filemode.SYSTEM_SID, "S-1-5-18")
 
 
+
+class PrivateLogTest(unittest.TestCase):
+    """The server's log carries the session token, so it is not a public file.
+
+    The token is the whole of the authentication for a server that can rewrite
+    apps.json. It used to be written to /tmp/sunshine-apps-ui.log with whatever
+    the umask gave it -- a fixed name, in a directory every local user can write
+    and read. That is the exact threat the token exists to answer.
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.path = os.path.join(self.tmp, "server.log")
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    @unittest.skipIf(os.name == "nt", "POSIX modes; Windows is checked by ACL")
+    def test_the_log_is_created_unreadable_by_others(self):
+        with filemode.open_private(self.path) as handle:
+            handle.write("http://127.0.0.1:1/?token=secret\n")
+        self.assertEqual(stat.S_IMODE(os.stat(self.path).st_mode), 0o600)
+
+    @unittest.skipIf(os.name == "nt", "POSIX symlinks")
+    def test_a_symlink_left_there_first_is_refused_not_followed(self):
+        """Otherwise a fixed path in a shared directory is a way to make an
+        elevated launcher overwrite a file of somebody else's choosing."""
+        target = os.path.join(self.tmp, "victim")
+        with open(target, "w") as handle:
+            handle.write("important")
+        os.symlink(target, self.path)
+        with self.assertRaises(OSError):
+            filemode.open_private(self.path)
+        self.assertEqual(open(target).read(), "important")
+
+    def test_it_writes_what_it_was_given(self):
+        with filemode.open_private(self.path) as handle:
+            handle.write("hello\n")
+        self.assertEqual(open(self.path).read(), "hello\n")
+
+
+class LogLocationTest(unittest.TestCase):
+    def test_the_log_lives_in_our_state_directory_not_a_shared_temp(self):
+        from sunshine_apps_ui import launcher, places
+        previous = os.environ.get("XDG_STATE_HOME")
+        os.environ["XDG_STATE_HOME"] = tempfile.mkdtemp()
+        try:
+            path = launcher.log_path()
+            self.assertTrue(path.startswith(places.state_dir()), path)
+            self.assertNotIn("/tmp/", path)
+        finally:
+            import shutil
+            shutil.rmtree(os.environ["XDG_STATE_HOME"], ignore_errors=True)
+            if previous is None:
+                os.environ.pop("XDG_STATE_HOME", None)
+            else:
+                os.environ["XDG_STATE_HOME"] = previous
+
 if __name__ == "__main__":
     unittest.main()

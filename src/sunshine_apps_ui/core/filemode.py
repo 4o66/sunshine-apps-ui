@@ -251,6 +251,28 @@ def _lock_down_windows(path: str) -> None:
                    creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
 
 
+def open_private(path: str):
+    """Open a file for writing that only its owner may read.
+
+    For the server's log, which carries the session token in the URL it prints.
+    Two properties, and the second is the one that is easy to miss:
+
+    * **Mode 600 from creation**, so the token is never in a world-readable file.
+    * **O_NOFOLLOW**, so a symlink someone else left at that path is refused
+      rather than followed. A fixed name in a shared directory is a place
+      anybody can get there first, and a launcher that runs elevated following
+      one is an arbitrary-file-overwrite.
+    """
+    flags = (os.O_WRONLY | os.O_CREAT | os.O_TRUNC
+             | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_BINARY", 0))
+    handle = os.open(path, flags, 0o600)
+    if not on_windows():
+        os.chmod(path, 0o600)
+    else:
+        _lock_down_windows(path)
+    return os.fdopen(handle, "w", encoding="utf-8")
+
+
 def write_private(path: str, text: str) -> str:
     """Write a secret, private from the moment it exists.
 
