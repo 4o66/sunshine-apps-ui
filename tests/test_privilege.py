@@ -55,9 +55,15 @@ class PrivilegeTest(unittest.TestCase):
         self.assertTrue(privilege.check(self.conf).can_write)
 
     def test_missing_config_dir_reports_read_only(self):
-        state = privilege.check(os.path.join(self.tmp, "nowhere"))
+        missing = os.path.join(self.tmp, "nowhere")
+        state = privilege.check(missing)
         self.assertFalse(state.can_write)
-        self.assertIn("cannot be written", state.detail)
+        # Which sentence comes back depends on what the token says, and that
+        # differs between an elevated run and an ordinary one. What must hold
+        # either way: it says no, it names the file, and it has a headline to
+        # put on the banner.
+        self.assertIn(privilege.apps_json_path(missing), state.detail)
+        self.assertTrue(state.headline)
 
     def test_checking_does_not_touch_the_file(self):
         """r+b, never w: the test must not truncate the file or restamp it."""

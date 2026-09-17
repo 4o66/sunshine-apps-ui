@@ -87,7 +87,20 @@ def _windows_install_dirs() -> List[str]:
             cut = lowered.find(".exe")
             image = image[:cut + 4] if cut != -1 else image.split(" ")[0]
         if image:
-            add(ntpath.dirname(image))
+            # sunshinesvc.exe lives in tools\ beside Sunshine.exe, not next to
+            # it -- measured against the real installer, where ImagePath is
+            # "C:\Program Files\Sunshine\tools\sunshinesvc.exe". The install
+            # is the directory holding sunshine.exe, so step up until that is
+            # what we have.
+            # ntpath splits the path (it understands both separators); os.path
+            # joins for the existence check, because that has to be a path this
+            # filesystem can actually open. On Windows they are the same module.
+            directory = ntpath.dirname(image)
+            if not os.path.isfile(os.path.join(directory, "sunshine.exe")):
+                parent = ntpath.dirname(directory)
+                if parent and os.path.isfile(os.path.join(parent, "sunshine.exe")):
+                    directory = parent
+            add(directory)
 
     # Add/Remove Programs, per-machine, both registry views.
     uninstall = r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall"

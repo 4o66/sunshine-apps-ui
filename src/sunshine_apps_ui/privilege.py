@@ -63,6 +63,22 @@ def is_elevated() -> Optional[bool]:
     advapi32 = ctypes.WinDLL("advapi32", use_last_error=True)
     kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
 
+    # Declare the prototypes. Without this ctypes assumes every argument and
+    # return value is a C int, and GetCurrentProcess()'s pseudo-handle
+    # (0xFFFFFFFFFFFFFFFF) is truncated on its way in -- so OpenProcessToken
+    # fails with ERROR_INVALID_HANDLE and this function quietly answers "I
+    # cannot tell" on the one platform it exists for.
+    kernel32.GetCurrentProcess.argtypes = []
+    kernel32.GetCurrentProcess.restype = wintypes.HANDLE
+    kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+    advapi32.OpenProcessToken.argtypes = [wintypes.HANDLE, wintypes.DWORD,
+                                          ctypes.POINTER(wintypes.HANDLE)]
+    advapi32.OpenProcessToken.restype = wintypes.BOOL
+    advapi32.GetTokenInformation.argtypes = [wintypes.HANDLE, ctypes.c_int,
+                                             ctypes.c_void_p, wintypes.DWORD,
+                                             ctypes.POINTER(wintypes.DWORD)]
+    advapi32.GetTokenInformation.restype = wintypes.BOOL
+
     token = wintypes.HANDLE()
     if not advapi32.OpenProcessToken(kernel32.GetCurrentProcess(),
                                      TOKEN_QUERY, ctypes.byref(token)):

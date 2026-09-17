@@ -63,13 +63,16 @@ class WindowsAclTest(unittest.TestCase):
         self.real_name = os.name
         self.real_sid = filemode.current_user_sid
         self.real_dacl = filemode.dacl_sids
+        self.real_owner = filemode.owner_sid
         os.name = "nt"
         filemode.current_user_sid = lambda: "S-1-5-21-1-2-3-1000"
+        filemode.owner_sid = lambda path: "S-1-5-21-1-2-3-1000"
 
     def tearDown(self):
         os.name = self.real_name
         filemode.current_user_sid = self.real_sid
         filemode.dacl_sids = self.real_dacl
+        filemode.owner_sid = self.real_owner
 
     def test_owner_system_and_administrators_are_allowed(self):
         filemode.dacl_sids = lambda path: [
@@ -100,6 +103,23 @@ class WindowsAclTest(unittest.TestCase):
         private, why = filemode.check_private("C:\\x\\credentials")
         self.assertFalse(private)
         self.assertIn("cannot confirm", why)
+
+    def test_owner_rights_entries_are_not_a_leak(self):
+        """S-1-3-4 is "whoever owns this", which Windows puts on files in your own
+        directories. It is the owner, not a second principal -- and it cost a real
+        false positive on the rig before it was allowed for."""
+        filemode.dacl_sids = lambda path: [
+            filemode.OWNER_RIGHTS_SID, filemode.CREATOR_OWNER_SID, filemode.SYSTEM_SID]
+        private, why = filemode.check_private("C:\\x\\credentials")
+        self.assertTrue(private, why)
+
+    def test_a_file_owned_by_somebody_else_is_not_private(self):
+        """Allowing OWNER RIGHTS is only sound while the owner is us."""
+        filemode.owner_sid = lambda path: "S-1-5-21-9-9-9-1001"
+        filemode.dacl_sids = lambda path: [filemode.OWNER_RIGHTS_SID]
+        private, why = filemode.check_private("C:\\x\\credentials")
+        self.assertFalse(private)
+        self.assertIn("owned by", why)
 
     def test_the_decision_is_made_from_sids_not_names(self):
         """Names are localised; "Administrators" is not what a German install calls it."""

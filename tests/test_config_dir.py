@@ -14,7 +14,9 @@ particular machine. The rig in issue #15 is where the latter is checked.
 
 import ntpath
 import os
+import shutil
 import sys
+import tempfile
 import types
 import unittest
 
@@ -116,6 +118,8 @@ class WindowsDiscoveryTest(unittest.TestCase):
     def test_the_default_location_is_the_last_resort(self):
         self.install()
         os.environ["ProgramFiles"] = r"C:\Program Files"
+        os.environ.pop("ProgramW6432", None)
+        os.environ.pop("ProgramFiles(x86)", None)
         dirs = api._windows_install_dirs()
         self.assertEqual(dirs[-1], ntpath.normpath(r"C:\Program Files\Sunshine"))
 
@@ -155,6 +159,7 @@ class WindowsDiscoveryTest(unittest.TestCase):
                          [ntpath.normpath(r"C:\Program Files\Sunshine")])
 
 
+@unittest.skipIf(os.name == "nt", "the POSIX candidate list; Windows has its own")
 class PosixCandidatesTest(unittest.TestCase):
     """The existing behaviour, unchanged by the Windows work."""
 
@@ -172,3 +177,52 @@ class PosixCandidatesTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ServiceBinaryLocationTest(unittest.TestCase):
+    """sunshinesvc.exe is in tools\\, not beside sunshine.exe.
+
+    Measured on the rig: the real installer registers
+    "C:\\Program Files\\Sunshine\\tools\\sunshinesvc.exe". Taking its directory
+    gives ...\\Sunshine\\tools, so the config directory would be looked for at
+    ...\\Sunshine\\tools\\config, which does not exist. The liveness ranking
+    happened to recover from it, which is exactly why it needed a test: it was
+    wrong and still worked.
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.install = os.path.join(self.tmp, "Sunshine")
+        self.tools = os.path.join(self.install, "tools")
+        os.makedirs(self.tools)
+        open(os.path.join(self.install, "sunshine.exe"), "w").close()
+        self.real_environ = dict(os.environ)
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+        os.environ.clear()
+        os.environ.update(self.real_environ)
+        sys.modules.pop("winreg", None)
+
+    def test_the_install_is_the_directory_holding_sunshine_exe(self):
+        service = os.path.join(self.tools, "sunshinesvc.exe")
+        sys.modules["winreg"] = types.SimpleNamespace(
+            **{name: getattr(FakeWinreg(services={"SunshineService": f'"{service}"'}), name)
+               for name in ("OpenKey", "QueryValueEx", "QueryInfoKey", "EnumKey")},
+            HKEY_LOCAL_MACHINE=FakeWinreg.HKEY_LOCAL_MACHINE, KEY_READ=FakeWinreg.KEY_READ,
+            KEY_WOW64_64KEY=FakeWinreg.KEY_WOW64_64KEY, KEY_WOW64_32KEY=FakeWinreg.KEY_WOW64_32KEY)
+        for name in ("ProgramFiles", "ProgramW6432", "ProgramFiles(x86)"):
+            os.environ.pop(name, None)
+        self.assertEqual(api._windows_install_dirs(), [ntpath.normpath(self.install)])
+
+    def test_a_service_beside_sunshine_exe_is_left_alone(self):
+        """Do not climb when there is nothing to climb for."""
+        service = os.path.join(self.install, "sunshinesvc.exe")
+        sys.modules["winreg"] = types.SimpleNamespace(
+            **{name: getattr(FakeWinreg(services={"SunshineService": f'"{service}"'}), name)
+               for name in ("OpenKey", "QueryValueEx", "QueryInfoKey", "EnumKey")},
+            HKEY_LOCAL_MACHINE=FakeWinreg.HKEY_LOCAL_MACHINE, KEY_READ=FakeWinreg.KEY_READ,
+            KEY_WOW64_64KEY=FakeWinreg.KEY_WOW64_64KEY, KEY_WOW64_32KEY=FakeWinreg.KEY_WOW64_32KEY)
+        for name in ("ProgramFiles", "ProgramW6432", "ProgramFiles(x86)"):
+            os.environ.pop(name, None)
+        self.assertEqual(api._windows_install_dirs(), [ntpath.normpath(self.install)])

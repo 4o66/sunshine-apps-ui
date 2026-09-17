@@ -269,8 +269,11 @@ class WhereCopiesLiveTest(unittest.TestCase):
         self.assertEqual(backups.adopt_previous_location(), 0)
 
     def test_an_override_is_still_honoured(self):
-        with mock.patch.dict(os.environ, {"BSM_BACKUP_DIR": "/tmp/elsewhere"}):
-            self.assertEqual(backups.backup_dir(), "/tmp/elsewhere")
+        # Built rather than written out: the behaviour under test is that the
+        # override wins, not how this platform spells an absolute path.
+        elsewhere = os.path.abspath(os.path.join(os.sep, "tmp", "elsewhere"))
+        with mock.patch.dict(os.environ, {"BSM_BACKUP_DIR": elsewhere}):
+            self.assertEqual(backups.backup_dir(), elsewhere)
 
 
 class WhatWouldChangeTest(unittest.TestCase):

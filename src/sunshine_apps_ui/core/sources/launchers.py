@@ -146,9 +146,13 @@ def _apps_ui(home: str) -> tuple[str, str]:
     Detected by the launcher being on disk, the same way Steam and Heroic are
     detected by their directories. Nothing is imported from it.
     """
-    poster = f"{home}/.local/share/sunshine-apps-ui/assets/poster.png"
+    # os.path.join, not an f-string: on Windows a hand-built "/" path produces
+    # C:\Users\sean/.local/bin/... which is a real path Windows will open and a
+    # string nothing else here will match.
+    poster = os.path.join(home, ".local", "share", "sunshine-apps-ui",
+                          "assets", "poster.png")
     poster = poster if os.path.isfile(poster) else ""
-    local = f"{home}/.local/bin/sunshine-apps-ui"
+    local = os.path.join(home, ".local", "bin", "sunshine-apps-ui")
     if os.path.isfile(local) and os.access(local, os.X_OK):
         return (local, poster)
     if have_cmd("sunshine-apps-ui"):

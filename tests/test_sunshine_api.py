@@ -64,6 +64,8 @@ class TestCredentials(unittest.TestCase):
         d = conf_dir_with("# mine\n\nusername=admin\npassword=hunter2\n")
         self.assertEqual(load_credentials(d), ("admin", "hunter2"))
 
+    @unittest.skipIf(os.name == "nt",
+                     "POSIX modes. Windows privacy is an ACL, covered in test_filemode")
     def test_a_world_readable_file_is_refused(self):
         """A password file others can read is not one we should quietly use."""
         d = conf_dir_with("username=a\npassword=b\n", mode=0o644)
@@ -174,10 +176,19 @@ class TestSaveCredentials(unittest.TestCase):
         self.assertFalse(os.path.exists(
             os.path.join(self.d, sunshine_api.CREDENTIALS_FILE)))
 
-    def test_the_file_is_created_mode_600_from_the_outset(self):
-        """Never create readable then narrow -- that leaves a window."""
+    def test_the_file_is_created_private_from_the_outset(self):
+        """Never create readable then narrow -- that leaves a window with the secret in it.
+
+        What "private" means differs by platform, so ask the thing that knows.
+        Asserting 0o600 here passed vacuously on Windows, where the mode is
+        synthetic and the ACL is what decides.
+        """
+        from sunshine_apps_ui.core import filemode
         path = save_credentials(self.d, "admin", "hunter2")
-        self.assertEqual(stat.S_IMODE(os.stat(path).st_mode), 0o600)
+        private, why = filemode.check_private(path)
+        self.assertTrue(private, why)
+        if os.name != "nt":
+            self.assertEqual(stat.S_IMODE(os.stat(path).st_mode), 0o600)
 
     def test_it_round_trips_through_load(self):
         save_credentials(self.d, "admin", "p@ss word=with=signs")

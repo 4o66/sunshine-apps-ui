@@ -32,10 +32,59 @@ from typing import List, Optional, Tuple
 # Access that may exist on a secrets file without it being a leak.
 SYSTEM_SID = "S-1-5-18"
 ADMINISTRATORS_SID = "S-1-5-32-544"
+# These two name the owner rather than a principal: CREATOR OWNER is the
+# placeholder an inherited entry carries, and OWNER RIGHTS is the access the
+# current owner has. Windows puts them on files created in a user's own
+# directories. Accepting them is only sound because the owner is checked too --
+# "whoever owns this may read it" is a leak if that is not us.
+CREATOR_OWNER_SID = "S-1-3-0"
+OWNER_RIGHTS_SID = "S-1-3-4"
 
 
 def on_windows() -> bool:
     return os.name == "nt"
+
+
+def _apis():
+    """advapi32 and kernel32 with their prototypes declared.
+
+    Not optional. Undeclared, ctypes treats every argument as a C int, and
+    GetCurrentProcess()'s pseudo-handle is truncated on a 64-bit build -- so the
+    call fails with ERROR_INVALID_HANDLE and the guard answers "cannot tell"
+    about a file it never actually looked at. This was found by running on the
+    rig; it cannot be found from macOS, where none of it executes.
+    """
+    import ctypes
+    from ctypes import wintypes
+
+    advapi32 = ctypes.WinDLL("advapi32", use_last_error=True)
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+
+    kernel32.GetCurrentProcess.argtypes = []
+    kernel32.GetCurrentProcess.restype = wintypes.HANDLE
+    kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+    kernel32.LocalFree.argtypes = [ctypes.c_void_p]
+    kernel32.LocalFree.restype = ctypes.c_void_p
+
+    advapi32.OpenProcessToken.argtypes = [wintypes.HANDLE, wintypes.DWORD,
+                                          ctypes.POINTER(wintypes.HANDLE)]
+    advapi32.OpenProcessToken.restype = wintypes.BOOL
+    advapi32.GetTokenInformation.argtypes = [wintypes.HANDLE, ctypes.c_int,
+                                             ctypes.c_void_p, wintypes.DWORD,
+                                             ctypes.POINTER(wintypes.DWORD)]
+    advapi32.GetTokenInformation.restype = wintypes.BOOL
+    advapi32.ConvertSidToStringSidW.argtypes = [ctypes.c_void_p,
+                                                ctypes.POINTER(ctypes.c_wchar_p)]
+    advapi32.ConvertSidToStringSidW.restype = wintypes.BOOL
+    advapi32.GetNamedSecurityInfoW.argtypes = [
+        wintypes.LPCWSTR, ctypes.c_int, wintypes.DWORD,
+        ctypes.POINTER(ctypes.c_void_p), ctypes.POINTER(ctypes.c_void_p),
+        ctypes.c_void_p, ctypes.c_void_p, ctypes.POINTER(ctypes.c_void_p)]
+    advapi32.GetNamedSecurityInfoW.restype = wintypes.DWORD
+    advapi32.GetAce.argtypes = [ctypes.c_void_p, wintypes.DWORD,
+                                ctypes.POINTER(ctypes.c_void_p)]
+    advapi32.GetAce.restype = wintypes.BOOL
+    return advapi32, kernel32
 
 
 def current_user_sid() -> Optional[str]:
@@ -47,8 +96,7 @@ def current_user_sid() -> Optional[str]:
 
     TOKEN_QUERY = 0x0008
     TokenUser = 1
-    advapi32 = ctypes.WinDLL("advapi32", use_last_error=True)
-    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    advapi32, kernel32 = _apis()
 
     token = wintypes.HANDLE()
     if not advapi32.OpenProcessToken(kernel32.GetCurrentProcess(),
@@ -70,8 +118,7 @@ def current_user_sid() -> Optional[str]:
 
 def _sid_to_string(sid_pointer) -> Optional[str]:
     import ctypes
-    advapi32 = ctypes.WinDLL("advapi32", use_last_error=True)
-    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    advapi32, kernel32 = _apis()
     text = ctypes.c_wchar_p()
     # ConvertSidToStringSidW: the W matters. Letting ctypes pick the ANSI entry
     # point and then reading the result as wide characters returns mojibake.
@@ -84,6 +131,28 @@ def _sid_to_string(sid_pointer) -> Optional[str]:
         kernel32.LocalFree(text)
 
 
+def owner_sid(path: str) -> Optional[str]:
+    """Who owns the file, as a string SID."""
+    import ctypes
+
+    SE_FILE_OBJECT = 1
+    OWNER_SECURITY_INFORMATION = 0x00000001
+    advapi32, kernel32 = _apis()
+
+    owner = ctypes.c_void_p()
+    descriptor = ctypes.c_void_p()
+    status = advapi32.GetNamedSecurityInfoW(
+        path, SE_FILE_OBJECT, OWNER_SECURITY_INFORMATION,
+        ctypes.byref(owner), None, None, None, ctypes.byref(descriptor))
+    if status != 0:
+        raise OSError(f"could not read the owner of {path} (error {status})")
+    try:
+        return _sid_to_string(owner.value)
+    finally:
+        if descriptor:
+            kernel32.LocalFree(descriptor)
+
+
 def dacl_sids(path: str) -> List[str]:
     """Every SID with an entry in the file's DACL, as strings."""
     import ctypes
@@ -91,8 +160,7 @@ def dacl_sids(path: str) -> List[str]:
 
     SE_FILE_OBJECT = 1
     DACL_SECURITY_INFORMATION = 0x00000004
-    advapi32 = ctypes.WinDLL("advapi32", use_last_error=True)
-    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    advapi32, kernel32 = _apis()
 
     class ACL(ctypes.Structure):
         _fields_ = [("AclRevision", ctypes.c_ubyte), ("Sbz1", ctypes.c_ubyte),
@@ -107,21 +175,22 @@ def dacl_sids(path: str) -> List[str]:
         _fields_ = [("Header", ACE_HEADER), ("Mask", wintypes.DWORD),
                     ("SidStart", wintypes.DWORD)]
 
-    dacl = ctypes.POINTER(ACL)()
+    dacl_pointer = ctypes.c_void_p()
     descriptor = ctypes.c_void_p()
     status = advapi32.GetNamedSecurityInfoW(
-        ctypes.c_wchar_p(path), SE_FILE_OBJECT, DACL_SECURITY_INFORMATION,
-        None, None, ctypes.byref(dacl), None, ctypes.byref(descriptor))
+        path, SE_FILE_OBJECT, DACL_SECURITY_INFORMATION,
+        None, None, ctypes.byref(dacl_pointer), None, ctypes.byref(descriptor))
     if status != 0:
         raise OSError(f"could not read the permissions of {path} (error {status})")
     try:
-        if not dacl:
+        if not dacl_pointer:
             # No DACL at all means no protection whatsoever.
             return ["<none>"]
+        dacl = ctypes.cast(dacl_pointer, ctypes.POINTER(ACL))
         found = []
         for index in range(dacl.contents.AceCount):
             ace = ctypes.c_void_p()
-            if not advapi32.GetAce(dacl, index, ctypes.byref(ace)):
+            if not advapi32.GetAce(dacl_pointer, index, ctypes.byref(ace)):
                 continue
             entry = ctypes.cast(ace, ctypes.POINTER(ACCESS_ALLOWED_ACE)).contents
             sid = _sid_to_string(ctypes.addressof(entry) +
@@ -144,11 +213,16 @@ def check_private(path: str) -> Tuple[bool, str]:
                            f"Run: chmod 600 {path}")
         return True, ""
 
-    allowed = {SYSTEM_SID, ADMINISTRATORS_SID}
+    allowed = {SYSTEM_SID, ADMINISTRATORS_SID, CREATOR_OWNER_SID, OWNER_RIGHTS_SID}
     mine = current_user_sid()
     if mine:
         allowed.add(mine)
     try:
+        owner = owner_sid(path)
+        if owner and owner not in (mine, SYSTEM_SID, ADMINISTRATORS_SID):
+            return False, (f"{path} is owned by {owner}, not by you. Anything granted "
+                           f"to the owner is granted to them, so this cannot be "
+                           f"treated as private.")
         sids = dacl_sids(path)
     except OSError as e:
         # Refusing to guess: an unreadable ACL is not evidence of a safe one.

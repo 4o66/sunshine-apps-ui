@@ -107,6 +107,9 @@ class WhereTheBuildComesFromTest(unittest.TestCase):
         version.details(refresh=True)
 
 
+@unittest.skipIf(os.name == "nt",
+                 "installs to ~/.local and runs the launcher script it leaves; "
+                 "Windows gets an installer of its own: issue #13")
 class InstalledCopyTest(unittest.TestCase):
     """An install has no git, so the installer writes the answer down."""
 

@@ -20,6 +20,8 @@ sys.path.insert(0, os.path.join(
 from sunshine_apps_ui import installer  # noqa: E402
 
 
+@unittest.skipIf(os.name == "nt",
+                 "the ~/.local install model. Windows gets an installer of its own: issue #13")
 class InstallTest(unittest.TestCase):
     def setUp(self):
         self.prefix = tempfile.mkdtemp()

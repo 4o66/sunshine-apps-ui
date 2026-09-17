@@ -308,11 +308,15 @@ class SgdbKeyTest(_Fixture):
         with mock.patch.dict(os.environ, {"SGDB_API_KEY": ""}):
             self.assertEqual(art.load_sgdb_key(self.conf), "abc123")
 
+    @unittest.skipIf(os.name == "nt",
+                     "POSIX modes. Windows privacy is an ACL, covered in test_filemode")
     def test_the_key_file_is_not_readable_by_others(self):
         with mock.patch.object(art, "_sgdb_json", return_value={"data": []}):
             path = art.save_sgdb_key(self.conf, "abc123")
         self.assertEqual(os.stat(path).st_mode & 0o777, 0o600)
 
+    @unittest.skipIf(os.name == "nt",
+                     "POSIX modes. Windows privacy is an ACL, covered in test_filemode")
     def test_a_world_readable_key_is_ignored(self):
         with mock.patch.object(art, "_sgdb_json", return_value={"data": []}):
             path = art.save_sgdb_key(self.conf, "abc123")

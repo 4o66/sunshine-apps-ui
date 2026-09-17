@@ -84,6 +84,8 @@ class InstallDetectionTest(unittest.TestCase):
         self.assertEqual(legacy.find_installs(self.home, search_path=False), [])
 
 
+@unittest.skipIf(os.name == "nt",
+                 "removes a POSIX install of the original importer, which never ran on Windows")
 class RemovalPlanTest(unittest.TestCase):
     def setUp(self):
         self.home = tempfile.mkdtemp()
