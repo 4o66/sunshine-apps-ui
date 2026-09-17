@@ -1,8 +1,29 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 import os, re, urllib.request, urllib.parse, tempfile, shutil, subprocess
 from io import BytesIO
-from PIL import Image  # pillow is required
 from .utils import have_cmd
+
+
+def _image():
+    """Pillow, imported when a picture actually has to be turned into a PNG.
+
+    Not at module import. Everything reaches this module eventually -- the
+    importers import it, the engine imports them -- so a top-level `from PIL
+    import Image` made Pillow a requirement of *starting*, including of
+    `--install`. On a Windows machine with a freshly bootstrapped interpreter,
+    that meant the installer could not run far enough to install the Pillow it
+    was about to need. Scanning needs Pillow; installing does not, and now says
+    so only when it is true.
+    """
+    try:
+        from PIL import Image
+    except ImportError as e:                     # pragma: no cover - platform
+        raise ImportError(
+            "Pillow is needed to convert artwork, and is not installed. "
+            "On Windows, reinstall with --with-interpreter to get one. "
+            "Elsewhere: pip install pillow"
+        ) from e
+    return Image
 
 def download_temp(url_or_path: str, suffix: str = "") -> str:
     """
@@ -53,6 +74,7 @@ def save_bytes_to(path: str, data: bytes):
 
 def stretch_png_600x900(src_path: str, dst_png: str) -> bool:
     try:
+        Image = _image()
         im = Image.open(src_path)
         if im.mode not in ("RGB", "RGBA"): im = im.convert("RGB")
         im = im.resize((600, 900), resample=Image.BICUBIC)
@@ -89,6 +111,7 @@ def stretch_png_600x900(src_path: str, dst_png: str) -> bool:
         fd, tmp = tempfile.mkstemp(prefix="img_", suffix=os.path.splitext(src_path)[1])
         os.close(fd)
         shutil.copy2(src_path, tmp)
+        Image = _image()
         im = Image.open(tmp)
         if im.mode not in ("RGB", "RGBA"): im = im.convert("RGB")
         im.save(dst_png, format="PNG")
@@ -141,6 +164,7 @@ def _download_image_bytes(url: str, timeout: int) -> bytes:
         return data
 
     try:
+        Image = _image()
         with Image.open(BytesIO(data)) as im:
             im.verify()
         return data

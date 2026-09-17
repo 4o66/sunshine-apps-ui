@@ -79,6 +79,14 @@ def main(argv=None) -> int:
                         help="read a SteamGridDB key on stdin, check it against "
                              "the API, and store it mode 600. Never as an "
                              "argument: argv is visible in ps and in history")
+    parser.add_argument("--with-interpreter", dest="interpreter",
+                        action="store_true", default=None,
+                        help="install a Python alongside it (Windows). Without "
+                             "this you are asked, unless there is no terminal "
+                             "to ask at")
+    parser.add_argument("--without-interpreter", dest="interpreter",
+                        action="store_false",
+                        help="do not; use whatever Python is on PATH")
     parser.add_argument("--browser-helper", default="",
                         help="internal: hold the browser at medium integrity, so "
                              "an elevated launcher never hands it those rights")
@@ -150,7 +158,8 @@ def main(argv=None) -> int:
             # question say what it would have asked, which is the useful half
             # of a prompt nobody is there to answer.
             ok, messages = install(
-                prefix, confirm=confirm if sys.stdin.isatty() else None)
+                prefix, with_interpreter=args.interpreter,
+                confirm=confirm if sys.stdin.isatty() else None)
         else:
             ok, messages = uninstall(prefix, keep_state=args.keep_state,
                                      keep_tile=args.keep_tile,
