@@ -7,6 +7,7 @@ orphaning the old entry and adding a second beside it.
 """
 
 import os
+import shutil
 import sys
 import tempfile
 import unittest
@@ -40,12 +41,37 @@ class LauncherEntryTest(unittest.TestCase):
         for name in ("Desktop.png", "Steam.png", "Heroic.png", "Reboot.png"):
             with open(os.path.join(self.images, name), "wb") as handle:
                 handle.write(b"\x89PNG\r\n\x1a\n")
-        # The UI's launcher is detected by being on disk and executable.
-        os.makedirs(os.path.join(self.home, ".local", "bin"))
-        self.ui = os.path.join(self.home, ".local", "bin", "sunshine-apps-ui")
-        with open(self.ui, "w") as handle:
-            handle.write("#!/bin/sh\n")
-        os.chmod(self.ui, 0o755)
+        # "Installed" means something different per platform, so build what that
+        # platform's installer actually leaves behind. On POSIX that is an
+        # executable in ~/.local/bin; on Windows it is a .cmd inside the install
+        # directory, found through the installer rather than guessed at here.
+        if os.name == "nt":
+            from sunshine_apps_ui import installer as _installer
+            self._previous_prefix = os.environ.get("PREFIX")
+            os.environ["PREFIX"] = self.home
+            self.addCleanup(self._restore_prefix)
+            where = _installer.paths()
+            os.makedirs(where["install"], exist_ok=True)
+            self.ui_path = where["command"]
+            with open(self.ui_path, "w") as handle:
+                handle.write("@echo off\r\n")
+            # What the entry should say: quoted, because the path usually has a
+            # space in it. self.ui_path is the file itself, for tests that
+            # remove it -- the two are not interchangeable.
+            self.ui = f'"{self.ui_path}"'
+        else:
+            os.makedirs(os.path.join(self.home, ".local", "bin"))
+            self.ui = os.path.join(self.home, ".local", "bin", "sunshine-apps-ui")
+            self.ui_path = self.ui
+            with open(self.ui, "w") as handle:
+                handle.write("#!/bin/sh\n")
+            os.chmod(self.ui, 0o755)
+
+    def _restore_prefix(self):
+        if getattr(self, "_previous_prefix", None) is None:
+            os.environ.pop("PREFIX", None)
+        else:
+            os.environ["PREFIX"] = self._previous_prefix
 
     def _apps(self):
         return import_launchers(self.home, self.home, self.images, {})
@@ -74,7 +100,7 @@ class LauncherEntryTest(unittest.TestCase):
         self.assertEqual(self._apps_ui()["cmd"], self.ui)
 
     def test_no_entry_when_it_is_not_installed(self):
-        os.unlink(self.ui)
+        os.unlink(self.ui_path)
         self.assertIsNone(self._apps_ui())
 
     def test_every_generated_entry_is_marked_as_ours(self):
@@ -183,3 +209,42 @@ class RebootCommandTest(unittest.TestCase):
         os.name = "posix"
         sys.platform = "linux"
         self.assertEqual(launchers._reboot_cmd(), "systemctl reboot")
+
+
+class ElevationOnWindowsTest(unittest.TestCase):
+    """The manager's own tile asks for elevation on Windows, and nowhere else.
+
+    apps.json is under Program Files there, so an unelevated tile can read
+    everything and change nothing. Sunshine grants the rights to an entry marked
+    "elevated" without a UAC prompt, because it is already SYSTEM -- so this one
+    flag is the difference between a working install and a read-only one.
+
+    On Linux and macOS the config directory belongs to the user, and asking for
+    root would be asking for rights the program does not need.
+    """
+
+    def setUp(self):
+        self.home = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.home, True)
+        self.images = os.path.join(self.home, "images")
+        os.makedirs(self.images)
+        self.real_name = os.name
+
+    def tearDown(self):
+        os.name = self.real_name
+
+    def entry(self, platform):
+        os.name = platform
+        with mock.patch.object(launchers, "_apps_ui",
+                               return_value=("C:\\x\\sunshine-apps-ui.cmd", "")), \
+             mock.patch.object(launchers, "_ensure_posters",
+                               return_value={k: "" for k in ("desktop", "steam",
+                                                             "heroic", "reboot")}):
+            apps = import_launchers(self.home, self.home, self.images, {})
+        return next(a for a in apps if a.get(MARKER, {}).get("id") == "apps-ui")
+
+    def test_windows_asks_for_elevation(self):
+        self.assertIs(self.entry("nt")["elevated"], True)
+
+    def test_posix_does_not(self):
+        self.assertIs(self.entry("posix")["elevated"], False)

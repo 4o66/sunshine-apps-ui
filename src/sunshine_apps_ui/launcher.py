@@ -106,8 +106,8 @@ _URL = re.compile(r"http://127\.0\.0\.1:\d+/\?token=[A-Za-z0-9_-]+")
 
 
 def state_dir() -> str:
-    base = os.getenv("XDG_STATE_HOME") or os.path.expanduser("~/.local/state")
-    return os.path.join(base, "sunshine-apps-ui")
+    from . import places
+    return places.state_dir()
 
 
 def profile_dir() -> str:

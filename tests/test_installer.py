@@ -159,8 +159,9 @@ class UninstallTest(unittest.TestCase):
                                return_value=(False, "could not")):
             ok, messages = installer.uninstall(self.prefix)
         self.assertFalse(ok)
-        self.assertTrue(os.path.isdir(
-            os.path.join(self.prefix, "share", "sunshine-apps-ui")))
+        # Asked of the installer, not spelled out: Windows installs to one
+        # directory rather than a share/bin split.
+        self.assertTrue(os.path.isdir(installer.paths(self.prefix)["install"]))
         self.assertTrue(any("Leaving the files in place" in m for m in messages))
 
     def test_the_copies_of_apps_json_are_kept(self):

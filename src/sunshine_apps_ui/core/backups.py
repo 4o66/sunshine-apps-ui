@@ -44,8 +44,8 @@ def backup_dir(create: bool = False) -> str:
     if override:
         directory = os.path.abspath(os.path.expanduser(override))
     else:
-        base = os.getenv("XDG_STATE_HOME") or os.path.expanduser("~/.local/state")
-        directory = os.path.join(base, "sunshine-apps-ui", "backups")
+        from ..places import state_dir
+        directory = os.path.join(state_dir(), "backups")
     if create:
         os.makedirs(directory, exist_ok=True)
     return directory

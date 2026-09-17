@@ -146,6 +146,19 @@ def _apps_ui(home: str) -> tuple[str, str]:
     Detected by the launcher being on disk, the same way Steam and Heroic are
     detected by their directories. Nothing is imported from it.
     """
+    if os.name == "nt":
+        # Windows keeps a program in one directory and has no bin/ convention,
+        # so the installed command is a .cmd inside the install itself. Asked of
+        # the installer rather than rebuilt here, so the two cannot disagree.
+        from ...installer import paths
+        where = paths()
+        poster = os.path.join(where["install"], "assets", "poster.png")
+        command = where["command"]
+        if os.path.isfile(command):
+            # Quoted: it lives under a path with a space in it more often than not.
+            return (f'"{command}"', poster if os.path.isfile(poster) else "")
+        return ("", "")
+
     # os.path.join, not an f-string: on Windows a hand-built "/" path produces
     # C:\Users\sean/.local/bin/... which is a real path Windows will open and a
     # string nothing else here will match.
@@ -272,7 +285,16 @@ def import_launchers(home: str, conf_dir: str, images_dir: str, settings: Dict[s
             "working-dir": home,
             "image-path": ui_poster,
             "detached": False,
-            "elevated": False,
+            # On Windows this flag is the whole mechanism. apps.json lives in
+            # Sunshine's own directory under Program Files, so only an elevated
+            # process can write it -- and Sunshine grants that to an entry
+            # marked "elevated" with no UAC prompt, because it is already
+            # running as SYSTEM. Without it the manager opens read-only and can
+            # do nothing but look, which is what privilege.check reports.
+            #
+            # Not on Linux or macOS, where the config directory is the user's
+            # own and asking for root would be asking for rights we do not need.
+            "elevated": os.name == "nt",
             "exit-on-close": True,
             **_common_fields(),
         }, "launcher", "apps-ui"))

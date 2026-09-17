@@ -115,7 +115,10 @@ def _steam_candidates(home: str) -> List[Tuple[str, str]]:
                 path = str(winreg.QueryValueEx(key, "SteamPath")[0])
                 if path:
                     found.insert(0, (ntpath.normpath(path), "native"))
-        except OSError:
+        except (OSError, ImportError):
+            # ImportError because winreg exists only on Windows, and this branch
+            # is reachable from a test that says os.name == "nt" elsewhere. The
+            # registry is an optimisation here; the standard locations follow.
             pass
         return found
 

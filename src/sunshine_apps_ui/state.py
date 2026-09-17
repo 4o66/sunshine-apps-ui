@@ -9,6 +9,7 @@ ten.
 
 import json
 import os
+from . import places
 import tempfile
 import uuid
 from typing import Any, Dict, List, Optional
@@ -21,8 +22,7 @@ EXPLAINED = ("hide", "delete")
 
 
 def state_dir() -> str:
-    base = os.getenv("XDG_STATE_HOME") or os.path.expanduser("~/.local/state")
-    path = os.path.join(base, "sunshine-apps-ui")
+    path = places.state_dir()
     os.makedirs(path, exist_ok=True)
     return path
 
