@@ -2,6 +2,7 @@
 # importers/launchers.py
 from __future__ import annotations
 import os
+import sys
 import urllib.request
 from typing import List, Dict, Any
 from pathlib import Path
@@ -58,6 +59,16 @@ def _download_image(src_url: str, dst_path: str, timeout: int = 8) -> bool:  # R
 
 def _steam_cmd(home: str) -> tuple[str, str]:
     """Return (cmd, working_dir) for Steam if found, else ('','')."""
+    if os.name == "nt":
+        import ntpath
+        from ..artwork_sources import find_steam_root
+        root, _ = find_steam_root(home)
+        if root:
+            exe = ntpath.join(root, "steam.exe")
+            if os.path.isfile(exe):
+                return (f'"{exe}"', root)
+        return ("", "")
+
     flatpak_root = f"{home}/.var/app/com.valvesoftware.Steam/.local/share/Steam"
     if os.path.isdir(flatpak_root):
         return ("flatpak run com.valvesoftware.Steam", flatpak_root)
@@ -70,6 +81,18 @@ def _steam_cmd(home: str) -> tuple[str, str]:
 
 def _heroic_cmd(home: str) -> tuple[str, str]:
     """Return (cmd, working_dir) for Heroic if found, else ('','')."""
+    if os.name == "nt":
+        import ntpath
+        places = [os.environ.get("LOCALAPPDATA", ntpath.join(home, "AppData", "Local")),
+                  os.environ.get("ProgramFiles", ""),
+                  os.environ.get("ProgramFiles(x86)", "")]
+        for base in [p for p in places if p]:
+            for tail in (("Programs", "heroic", "Heroic.exe"), ("Heroic", "Heroic.exe")):
+                exe = ntpath.join(base, *tail)
+                if os.path.isfile(exe):
+                    return (f'"{exe}"', ntpath.dirname(exe))
+        return ("", "")
+
     candidates = [
         f"{home}/.var/app/com.heroicgameslauncher.hgl/config/heroic",
         f"{home}/.config/heroic",
@@ -80,6 +103,20 @@ def _heroic_cmd(home: str) -> tuple[str, str]:
     if have_cmd("heroic"):
         return ("heroic", home)
     return ("", "")
+
+def _reboot_cmd() -> str:
+    """How this platform is told to restart.
+
+    Not a detail: the tile says "Reboot", and on Windows `systemctl reboot`
+    would be an entry that looks right and does nothing.
+    """
+    if os.name == "nt":
+        return "shutdown /r /t 0"
+    if sys.platform == "darwin":
+        # No sudo: this is the supported way to ask for a restart as the user.
+        return 'osascript -e \'tell application "System Events" to restart\''
+    return "systemctl reboot"
+
 
 def _sunshine_is_flatpak(conf_dir: str) -> bool:
     """Is Sunshine itself running from a Flatpak?
@@ -244,7 +281,7 @@ def import_launchers(home: str, conf_dir: str, images_dir: str, settings: Dict[s
         "name": NAMES["reboot"],
         "auto-detach": True,
         "cmd": [],
-        "detached": [_host("systemctl reboot", sandboxed)],
+        "detached": [_host(_reboot_cmd(), sandboxed)],
         "image-path": posters["reboot"],
         **_common_fields(),
     }, "launcher", "reboot"))

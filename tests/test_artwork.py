@@ -145,3 +145,44 @@ class TestQueuedArtwork(unittest.TestCase):
 
     def test_no_queue_behaves_as_before(self):
         self.assertEqual(artwork.allowed_paths(STATE), {"/tmp/a.png", "/tmp/c.png"})
+
+
+class WindowsPathMatchingTest(unittest.TestCase):
+    """C:\\x\\y.png, c:/x/y.png and C:\\X\\Y.PNG are one file.
+
+    An allowlist of exact strings refuses two of those three, so Sunshine's own
+    tiles show broken images. Loosening the match must not loosen the allowlist:
+    it stays an exact set of paths read out of apps.json.
+    """
+
+    def setUp(self):
+        self.real_name = os.name
+        os.name = "nt"
+
+    def tearDown(self):
+        os.name = self.real_name
+
+    def test_separator_and_case_do_not_decide_whether_a_tile_has_a_cover(self):
+        allowed = {r"C:\ProgramData\cover.png"}
+        for spelling in (r"C:\ProgramData\cover.png", "C:/ProgramData/cover.png",
+                         r"c:\programdata\COVER.PNG"):
+            self.assertEqual(artwork._key(spelling), artwork._key(r"C:\ProgramData\cover.png"),
+                             f"{spelling} should be the same file")
+            self.assertIn(artwork._key(spelling), {artwork._key(p) for p in allowed})
+
+    def test_a_different_file_is_still_refused(self):
+        allowed = {artwork._key(r"C:\ProgramData\cover.png")}
+        for other in (r"C:\ProgramData\other.png", r"C:\Windows\System32\config\SAM",
+                      r"C:\ProgramData\cover.png.exe"):
+            self.assertNotIn(artwork._key(other), allowed)
+
+    def test_traversal_does_not_become_a_way_in(self):
+        """normpath collapses "..", so check it cannot reach outside the set."""
+        allowed = {artwork._key(r"C:\ProgramData\cover.png")}
+        self.assertNotIn(artwork._key(r"C:\ProgramData\..\Windows\win.ini"), allowed)
+
+    def test_posix_is_left_case_sensitive(self):
+        os.name = self.real_name
+        if os.name == "nt":
+            self.skipTest("POSIX only")
+        self.assertNotEqual(artwork._key("/tmp/Cover.png"), artwork._key("/tmp/cover.png"))

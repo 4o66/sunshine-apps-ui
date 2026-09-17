@@ -12,6 +12,7 @@ designed for a front end to render and there was no reason to change them.
 """
 
 import os
+import sys
 import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -38,11 +39,96 @@ class CoreError(RuntimeError):
     """Something could not be read, written, or asked of Sunshine."""
 
 
+def _windows_install_dirs() -> List[str]:
+    """Where Sunshine.exe lives, according to Windows itself.
+
+    On Windows, Sunshine's appdata() is not per-user AppData -- it is the
+    directory holding Sunshine.exe:
+
+        GetModuleFileNameW(nullptr, sunshine_path, _countof(sunshine_path));
+        return std::filesystem::path{sunshine_path}.remove_filename() / L"config"sv;
+
+    So apps.json sits under Program Files, written by a process running as
+    SYSTEM. Finding it means finding the install, and the registry knows two
+    ways: the service it registers, and the entry it makes in Add/Remove
+    Programs. Both are asked because either can be absent -- the portable
+    "lite" zip registers no service, and a hand-placed install registers
+    nothing at all.
+    """
+    import ntpath
+    import winreg
+
+    found: List[str] = []
+
+    def add(path: str) -> None:
+        # ntpath rather than os.path: this is Windows semantics by definition,
+        # and saying so lets it be tested from anywhere.
+        path = ntpath.normpath(path) if path else ""
+        if path and path not in found:
+            found.append(path)
+
+    # The service: ImagePath points at sunshinesvc.exe, beside Sunshine.exe.
+    for service in ("SunshineService", "sunshinesvc", "Sunshine"):
+        try:
+            with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE,
+                                rf"SYSTEM\CurrentControlSet\Services\{service}") as key:
+                image = str(winreg.QueryValueEx(key, "ImagePath")[0])
+        except OSError:
+            continue
+        # ImagePath is a command line, not a path. Quoted is easy; unquoted is
+        # ambiguous, because "C:\Program Files\..." splits at a space that is
+        # part of the path. Cut at the .exe instead, which is what the name of
+        # an image path always ends with, and only fall back to the first space.
+        image = image.strip()
+        if image.startswith('"'):
+            image = image[1:].split('"', 1)[0]
+        else:
+            lowered = image.lower()
+            cut = lowered.find(".exe")
+            image = image[:cut + 4] if cut != -1 else image.split(" ")[0]
+        if image:
+            add(ntpath.dirname(image))
+
+    # Add/Remove Programs, per-machine, both registry views.
+    uninstall = r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall"
+    for view in (winreg.KEY_WOW64_64KEY, winreg.KEY_WOW64_32KEY):
+        try:
+            with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, uninstall, 0,
+                                winreg.KEY_READ | view) as parent:
+                for i in range(winreg.QueryInfoKey(parent)[0]):
+                    try:
+                        name = winreg.EnumKey(parent, i)
+                        if "sunshine" not in name.lower():
+                            continue
+                        with winreg.OpenKey(parent, name) as entry:
+                            add(str(winreg.QueryValueEx(entry, "InstallLocation")[0]))
+                    except OSError:
+                        continue
+        except OSError:
+            continue
+
+    # The place the installer puts it, for an install neither key mentions.
+    for env in ("ProgramFiles", "ProgramW6432", "ProgramFiles(x86)"):
+        root = os.environ.get(env)
+        if root:
+            add(ntpath.join(root, "Sunshine"))
+    return found
+
+
 def _candidates(home: str) -> List[str]:
+    if os.name == "nt":
+        # config/ beside the executable, which is what appdata() returns there.
+        import ntpath
+        return [ntpath.join(d, "config") for d in _windows_install_dirs()]
+
     flatpak_ids = ["dev.lizardbyte.app.Sunshine", "dev.lizardbyte.Sunshine"]
     found = [os.path.join(home, ".var", "app", fid, "config", "sunshine")
              for fid in flatpak_ids]
     found.append(os.path.join(home, ".config", "sunshine"))
+    if sys.platform == "darwin":
+        # Homebrew keeps it where Linux does; the app bundle carries its own.
+        found.append("/Applications/Sunshine.app/Contents/Resources/assets/config")
+        found.append(os.path.join(home, "Library", "Application Support", "Sunshine"))
     return found
 
 

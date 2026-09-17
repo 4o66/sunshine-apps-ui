@@ -1,0 +1,113 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+"""Keeping the two secrets files to their owner.
+
+The POSIX behaviour is the behaviour that already existed, and is tested for
+real. The Windows behaviour cannot be tested from macOS -- there is no DACL to
+read -- so what is tested here is that the decision is made from SIDs rather
+than names, and that an unreadable ACL is treated as a failure rather than as
+permission. The real check runs on the rig.
+
+Worth stating the bug this replaces: on Windows `st_mode & 0o077` is always
+zero, so the old guard reported "private" about a password file that inherited
+Program Files' ACL and was readable by every authenticated account.
+"""
+
+import os
+import stat
+import sys
+import tempfile
+import unittest
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "src"))
+
+from sunshine_apps_ui.core import filemode  # noqa: E402
+
+
+class PosixModeTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.path = os.path.join(self.tmp, "secret")
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    @unittest.skipIf(os.name == "nt", "POSIX modes")
+    def test_a_written_secret_is_private_immediately(self):
+        filemode.write_private(self.path, "password=hunter2\n")
+        self.assertEqual(os.stat(self.path).st_mode & 0o777, 0o600)
+        private, why = filemode.check_private(self.path)
+        self.assertTrue(private)
+        self.assertEqual(why, "")
+
+    @unittest.skipIf(os.name == "nt", "POSIX modes")
+    @unittest.skipIf(hasattr(os, "geteuid") and os.geteuid() == 0, "root reads anything")
+    def test_a_readable_secret_is_refused_and_the_fix_is_named(self):
+        filemode.write_private(self.path, "password=hunter2\n")
+        os.chmod(self.path, 0o644)
+        private, why = filemode.check_private(self.path)
+        self.assertFalse(private)
+        self.assertIn("chmod 600", why)
+        self.assertIn(self.path, why)
+
+    @unittest.skipIf(os.name == "nt", "POSIX modes")
+    def test_the_content_survives_the_locking_down(self):
+        filemode.write_private(self.path, "username=sean\npassword=hunter2\n")
+        self.assertEqual(open(self.path).read(), "username=sean\npassword=hunter2\n")
+
+
+class WindowsAclTest(unittest.TestCase):
+    """What the Windows path decides, with the ACL lookup stood in for."""
+
+    def setUp(self):
+        self.real_name = os.name
+        self.real_sid = filemode.current_user_sid
+        self.real_dacl = filemode.dacl_sids
+        os.name = "nt"
+        filemode.current_user_sid = lambda: "S-1-5-21-1-2-3-1000"
+
+    def tearDown(self):
+        os.name = self.real_name
+        filemode.current_user_sid = self.real_sid
+        filemode.dacl_sids = self.real_dacl
+
+    def test_owner_system_and_administrators_are_allowed(self):
+        filemode.dacl_sids = lambda path: [
+            "S-1-5-21-1-2-3-1000", filemode.SYSTEM_SID, filemode.ADMINISTRATORS_SID]
+        private, why = filemode.check_private("C:\\x\\credentials")
+        self.assertTrue(private, why)
+
+    def test_an_inherited_everyone_entry_is_a_leak(self):
+        """The real case: a file created under Program Files inherits its ACL."""
+        filemode.dacl_sids = lambda path: [
+            "S-1-5-21-1-2-3-1000", filemode.SYSTEM_SID, "S-1-5-11"]  # Authenticated Users
+        private, why = filemode.check_private("C:\\x\\credentials")
+        self.assertFalse(private)
+        self.assertIn("S-1-5-11", why)
+        # The message has to carry the fix, since there is no chmod to suggest.
+        self.assertIn("icacls", why)
+        self.assertIn("/inheritance:r", why)
+
+    def test_a_missing_dacl_is_not_treated_as_safe(self):
+        filemode.dacl_sids = lambda path: ["<none>"]
+        private, _ = filemode.check_private("C:\\x\\credentials")
+        self.assertFalse(private)
+
+    def test_an_unreadable_acl_is_refused_rather_than_assumed(self):
+        def explode(path):
+            raise OSError("could not read the permissions of C:\\x (error 5)")
+        filemode.dacl_sids = explode
+        private, why = filemode.check_private("C:\\x\\credentials")
+        self.assertFalse(private)
+        self.assertIn("cannot confirm", why)
+
+    def test_the_decision_is_made_from_sids_not_names(self):
+        """Names are localised; "Administrators" is not what a German install calls it."""
+        filemode.dacl_sids = lambda path: [filemode.ADMINISTRATORS_SID]
+        self.assertTrue(filemode.check_private("C:\\x\\credentials")[0])
+        self.assertEqual(filemode.ADMINISTRATORS_SID, "S-1-5-32-544")
+        self.assertEqual(filemode.SYSTEM_SID, "S-1-5-18")
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -12,8 +12,36 @@ import os
 from typing import Any, Dict, List, Optional, Set
 
 # Relative image-paths (Sunshine's own defaults use them) resolve against the
-# directory it ships its assets in.
+# directory it ships its assets in. Windows keeps that beside the executable
+# rather than under /usr/share, and its default entries are relative too --
+# "desktop.png", "steam.png" -- so without this Sunshine's own tiles would show
+# broken images, which is the loss this project exists to prevent.
 _ASSET_DIRS = ("/usr/share/sunshine", "/usr/local/share/sunshine")
+
+
+def _asset_dirs() -> tuple:
+    if os.name != "nt":
+        return _ASSET_DIRS
+    import ntpath
+
+    from .core.api import _windows_install_dirs
+    return tuple(ntpath.join(d, "assets") for d in _windows_install_dirs())
+
+
+def _key(path: str) -> str:
+    """The spelling two paths share when they are the same file.
+
+    On Windows C:\\x\\y.png, c:/x/y.png and C:\\X\\Y.PNG are one file, so an
+    allowlist of exact strings refuses images it should serve. Comparing
+    normalised keys fixes that without loosening anything: it stays an exact set
+    of paths taken from apps.json, never a prefix or a pattern.
+
+    POSIX is left alone deliberately. There, those are three different files.
+    """
+    if os.name != "nt":
+        return path
+    import ntpath
+    return ntpath.normcase(ntpath.normpath(path))
 
 _ALLOWED_TYPES = {"image/png", "image/jpeg", "image/webp", "image/gif"}
 MAX_BYTES = 8 * 1024 * 1024
@@ -25,7 +53,7 @@ def resolve(image_path: str) -> str:
         return ""
     if os.path.isabs(image_path):
         return image_path if os.path.isfile(image_path) else ""
-    for base in _ASSET_DIRS:
+    for base in _asset_dirs():
         candidate = os.path.join(base, image_path)
         if os.path.isfile(candidate):
             return candidate
@@ -82,7 +110,7 @@ def allowed_paths(state: Dict[str, Any],
 
 def read(image_path: str, allowed: Set[str]) -> Optional[tuple]:
     """Return (bytes, content_type) if this is a referenced image, else None."""
-    if image_path not in allowed:
+    if _key(image_path) not in {_key(path) for path in allowed}:
         return None
     resolved = resolve(image_path)
     if not resolved:

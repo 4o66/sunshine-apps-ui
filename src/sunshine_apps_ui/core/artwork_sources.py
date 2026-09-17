@@ -23,12 +23,14 @@ import json
 import os
 import re
 import shutil
+import sys
 import time
 import urllib.parse
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Dict, List, Optional, Tuple
 
+from . import filemode
 from .utils import log
 
 CACHE_DIRNAME = ".candidates"
@@ -93,14 +95,43 @@ def _listdir(path: str) -> List[str]:
         return []
 
 
+def _steam_candidates(home: str) -> List[Tuple[str, str]]:
+    """(path, kind) for every place Steam keeps its root, most specific first.
+
+    The library *cache* layout inside the root is the same everywhere -- that is
+    what makes the artwork sources portable. Only the root differs.
+    """
+    if os.name == "nt":
+        import ntpath
+        found = []
+        for env in ("ProgramFiles(x86)", "ProgramFiles", "ProgramW6432"):
+            root = os.environ.get(env)
+            if root:
+                found.append((ntpath.join(root, "Steam"), "native"))
+        # A Steam moved to another drive still records where it went.
+        try:
+            import winreg
+            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Valve\Steam") as key:
+                path = str(winreg.QueryValueEx(key, "SteamPath")[0])
+                if path:
+                    found.insert(0, (ntpath.normpath(path), "native"))
+        except OSError:
+            pass
+        return found
+
+    if sys.platform == "darwin":
+        return [(os.path.join(home, "Library", "Application Support", "Steam"), "native")]
+
+    return [(f"{home}/.var/app/com.valvesoftware.Steam/.local/share/Steam", "flatpak"),
+            (f"{home}/.local/share/Steam", "native"),
+            (f"{home}/.steam/steam", "native")]
+
+
 def find_steam_root(home: str) -> Tuple[str, str]:
     """Return (steam root, "flatpak"|"native"), or ("", "") if Steam is absent."""
-    flatpak_root = f"{home}/.var/app/com.valvesoftware.Steam/.local/share/Steam"
-    if os.path.isdir(flatpak_root):
-        return flatpak_root, "flatpak"
-    for native in (f"{home}/.local/share/Steam", f"{home}/.steam/steam"):
-        if os.path.isdir(native):
-            return native, "native"
+    for path, kind in _steam_candidates(home):
+        if os.path.isdir(path):
+            return path, kind
     return "", ""
 
 
@@ -431,8 +462,9 @@ def load_sgdb_key(conf_dir: str) -> str:
     path = os.path.join(conf_dir, SGDB_KEY_FILE)
     if not os.path.isfile(path):
         return ""
-    if os.stat(path).st_mode & 0o077:
-        log(f"Ignoring {path}: it is readable by others. Run: chmod 600 {path}")
+    private, why = filemode.check_private(path)
+    if not private:
+        log(f"Ignoring {path}: {why}")
         return ""
     try:
         with open(path, "r", encoding="utf-8") as handle:
@@ -452,8 +484,5 @@ def save_sgdb_key(conf_dir: str, key: str) -> str:
     except Exception as e:
         raise ArtworkError(f"SteamGridDB did not accept that key: {e}") from e
     path = os.path.join(conf_dir, SGDB_KEY_FILE)
-    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-    with os.fdopen(fd, "w", encoding="utf-8") as handle:
-        handle.write(key + "\n")
-    os.chmod(path, 0o600)
+    filemode.write_private(path, key + "\n")
     return path

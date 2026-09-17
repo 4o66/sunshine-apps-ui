@@ -25,6 +25,8 @@ import urllib.parse
 import urllib.request
 from typing import Any, Dict, Optional, Tuple
 
+from . import filemode
+
 from .utils import log
 
 DEFAULT_BASE_URL = "https://127.0.0.1:47990"
@@ -53,12 +55,9 @@ def load_credentials(conf_dir: str) -> Tuple[str, str]:
             f"or write them to {path} as two lines 'username=...' and 'password=...' "
             f"with mode 600."
         )
-    mode = os.stat(path).st_mode & 0o077
-    if mode:
-        raise SunshineAPIError(
-            f"{path} is readable by others (mode {oct(os.stat(path).st_mode & 0o777)}). "
-            f"Run: chmod 600 {path}"
-        )
+    private, why = filemode.check_private(path)
+    if not private:
+        raise SunshineAPIError(why)
 
     values: Dict[str, str] = {}
     with open(path, "r", encoding="utf-8") as handle:
@@ -120,10 +119,7 @@ def save_credentials(conf_dir: str, user: str, password: str) -> str:
     path = os.path.join(conf_dir, CREDENTIALS_FILE)
     # Create with restrictive permissions from the outset rather than widening
     # then narrowing, which would leave a readable window.
-    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-    with os.fdopen(fd, "w", encoding="utf-8") as handle:
-        handle.write(f"username={user}\npassword={password}\n")
-    os.chmod(path, 0o600)
+    filemode.write_private(path, f"username={user}\npassword={password}\n")
     return path
 
 

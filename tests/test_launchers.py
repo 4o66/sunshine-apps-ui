@@ -16,6 +16,7 @@ sys.path.insert(0, os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "src"))
 
 from sunshine_apps_ui.core.reconcile import MARKER, identity  # noqa: E402
+from sunshine_apps_ui.core.sources import launchers  # noqa: E402
 from sunshine_apps_ui.core.sources.launchers import NAMES, import_launchers  # noqa: E402
 
 
@@ -125,8 +126,11 @@ class SandboxedSunshineTest(LauncherEntryTest):
     def test_reboot_runs_on_the_host_too(self):
         entry = next(a for a in self._entries(self._flatpak_conf())
                      if a.get(MARKER, {}).get("id") == "reboot")
+        # What is asserted here is the flatpak-spawn prefix, not which command
+        # reboots this machine -- that is the platform's business, and tested
+        # separately. Hard-coding systemctl here made this fail on macOS.
         self.assertEqual(entry["detached"],
-                         ["flatpak-spawn --host systemctl reboot"])
+                         [f"flatpak-spawn --host {launchers._reboot_cmd()}"])
 
     def test_a_native_sunshine_is_left_exactly_as_it_was(self):
         conf = os.path.join(self.home, ".config", "sunshine")
@@ -147,3 +151,35 @@ class SandboxedSunshineTest(LauncherEntryTest):
         entry = next(a for a in self._entries(self._flatpak_conf())
                      if a.get(MARKER, {}).get("id") == "desktop")
         self.assertEqual(entry["cmd"], "")
+
+
+class RebootCommandTest(unittest.TestCase):
+    """The Reboot tile has to actually reboot the machine it is on.
+
+    `systemctl reboot` on Windows is the worst kind of wrong: an entry that
+    looks right on the grid and does nothing when a gamepad presses it.
+    """
+
+    def setUp(self):
+        self.real_name = os.name
+        self.real_platform = sys.platform
+
+    def tearDown(self):
+        os.name = self.real_name
+        sys.platform = self.real_platform
+
+    def test_windows_uses_shutdown(self):
+        os.name = "nt"
+        self.assertEqual(launchers._reboot_cmd(), "shutdown /r /t 0")
+
+    def test_macos_asks_without_sudo(self):
+        os.name = "posix"
+        sys.platform = "darwin"
+        cmd = launchers._reboot_cmd()
+        self.assertIn("osascript", cmd)
+        self.assertNotIn("sudo", cmd)
+
+    def test_linux_is_unchanged(self):
+        os.name = "posix"
+        sys.platform = "linux"
+        self.assertEqual(launchers._reboot_cmd(), "systemctl reboot")
