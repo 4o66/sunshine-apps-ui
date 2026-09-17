@@ -79,6 +79,9 @@ def main(argv=None) -> int:
                         help="read a SteamGridDB key on stdin, check it against "
                              "the API, and store it mode 600. Never as an "
                              "argument: argv is visible in ps and in history")
+    parser.add_argument("--browser-helper", default="",
+                        help="internal: hold the browser at medium integrity, so "
+                             "an elevated launcher never hands it those rights")
     parser.add_argument("--verbose", action="store_true", help="log every request")
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     parser.add_argument("importer_args", nargs="*",
@@ -91,6 +94,13 @@ def main(argv=None) -> int:
         return launch()
 
     args = parser.parse_args(argv)
+
+    if args.browser_helper:
+        # Started by the launcher through the shell, so that this process is
+        # unelevated. It owns the job the browser lives in and stays for as
+        # long as the window should. See winbrowser.
+        from .winbrowser import helper_main
+        return helper_main(args.browser_helper)
 
     logging.basicConfig(
         level=logging.INFO if args.verbose else logging.WARNING,

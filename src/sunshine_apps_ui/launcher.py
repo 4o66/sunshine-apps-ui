@@ -41,7 +41,8 @@ PROFILE_LEAF = os.path.join("sunshine-apps-ui", "browser-profile")
 # ostree system /home is a symlink to /var/home and the same directory has two
 # spellings. A browser started under one would not match a pattern built from
 # the other, and the point here is not to miss it.
-PROFILE_PATTERN = r"(--user-data-dir=|--profile )[^ ]*sunshine-apps-ui/browser-profile"
+PROFILE_PATTERN = (r"(--user-data-dir=|--profile )[^ ]*sunshine-apps-ui"
+                   r"[/\\]browser-profile")
 
 # A server we started earlier, which a relaunch has to end. Written to match the
 # command SERVER_COMMAND builds and nothing else -- the launcher itself carries
@@ -218,8 +219,16 @@ def _flatpak_installed(app: str) -> bool:
                           capture_output=True).returncode == 0
 
 
+# Set when the browser is held by a medium-integrity helper rather than by us,
+# which is how an elevated launcher avoids handing its rights to a browser.
+_HELPER_HOLDS_IT = "helper"
+
+
 def open_browser(url: str, profile: str) -> Tuple[Optional[subprocess.Popen], str]:
     """Open *url* as a window of its own. Returns (process, how)."""
+    if WINDOWS:
+        return _open_browser_windows(url, profile)
+
     for app in FLATPAK_BROWSERS:
         if _flatpak_installed(app):
             process = _spawn(["flatpak", "run", app,
@@ -245,6 +254,39 @@ def open_browser(url: str, profile: str) -> Tuple[Optional[subprocess.Popen], st
                 return process, binary
 
     return None, ""
+
+
+def _open_browser_windows(url: str, profile: str) -> Tuple[Optional[subprocess.Popen], str]:
+    """Windows: per-browser flags, a job object, and no elevation for the browser.
+
+    Everything specific to this lives in winbrowser, including why each browser
+    needs a different flag and why the elevated case needs a helper.
+    """
+    from . import privilege, winbrowser
+
+    if not winbrowser.find_browsers():
+        return None, ""
+
+    if privilege.is_elevated():
+        # Our rights came from Sunshine so that we could write apps.json. The
+        # browser must not inherit them: it is a far bigger surface than we are.
+        if winbrowser.start_helper_de_elevated(url, profile):
+            return None, _HELPER_HOLDS_IT
+        print("Could not start the browser de-elevated; refusing to run it as "
+              "administrator.", file=sys.stderr)
+        return None, ""
+
+    process, how, job = winbrowser.start_browser(url, profile)
+    if process is None:
+        return None, ""
+    # Held for as long as this launcher runs: closing the last handle is what
+    # takes the browser down with us, including if we are killed.
+    global _JOB
+    _JOB = job
+    return process, how
+
+
+_JOB = None                                   # the job the browser lives in
 
 
 # ---------------------------------------------------------------- the run ---
@@ -288,7 +330,7 @@ def launch(argv: Optional[List[str]] = None) -> int:
             return 1
 
         browser, how = open_browser(url, profile)
-        if not browser:
+        if not browser and how != _HELPER_HOLDS_IT:
             return _no_browser(url, server)
         print(f"Opened with {how}", file=sys.stderr)
 
@@ -296,7 +338,7 @@ def launch(argv: Optional[List[str]] = None) -> int:
         # remember which processes are ours.
         deadline = time.monotonic() + APPEAR_TIMEOUT
         while time.monotonic() < deadline and not browsers():
-            if browser.poll() is not None:
+            if browser is not None and browser.poll() is not None:
                 break
             time.sleep(0.5)
         ours = browsers()
@@ -347,6 +389,18 @@ def _shut_down(server: subprocess.Popen,
     pids are recorded when our browser appears, so leaving does not disturb
     whatever came after.
     """
+    # On Windows the job is the teardown: terminating it takes every descendant,
+    # including the process Firefox and Opera respawn after exiting the one we
+    # started. That respawn is exactly what pid-tracking loses.
+    global _JOB
+    if _JOB is not None:
+        try:
+            _JOB.terminate()
+            _JOB.close()
+        except OSError:
+            pass
+        _JOB = None
+
     if browser is not None and browser.poll() is None:
         try:
             browser.terminate()

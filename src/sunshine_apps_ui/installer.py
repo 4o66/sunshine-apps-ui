@@ -14,6 +14,7 @@ in docs/backlog.md is to install as a normal Windows application instead.
 
 import os
 import shutil
+import subprocess
 import sys
 from typing import List, Optional, Tuple
 
@@ -234,6 +235,28 @@ def stamp_build(package_dir: str) -> bool:
         return False              # a missing build number is not worth failing over
 
 
+def _remove_browser_task() -> List[str]:
+    """Take back the scheduled task the Windows launcher registers.
+
+    It exists because a task at RunLevel Limited is the one way measured to
+    start a medium-integrity process from an elevated one. Leaving a task behind
+    after an uninstall would be litter on somebody's machine.
+    """
+    if os.name != "nt":
+        return []
+    from .winbrowser import TASK_NAME
+    try:
+        result = subprocess.run(
+            ["schtasks", "/delete", "/tn", TASK_NAME, "/f"],
+            capture_output=True, timeout=30,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    except (OSError, subprocess.SubprocessError):
+        return [f"Could not remove the scheduled task {TASK_NAME}; remove it by hand."]
+    if result.returncode == 0:
+        return [f"Removed the scheduled task {TASK_NAME}."]
+    return []            # it was never registered, which is the usual case
+
+
 def uninstall(prefix: Optional[str] = None, *, keep_state: bool = False,
               keep_tile: bool = False,
               purge_backups: bool = False) -> Tuple[bool, List[str]]:
@@ -243,6 +266,7 @@ def uninstall(prefix: Optional[str] = None, *, keep_state: bool = False,
 
     from .launcher import stop_previous
     stop_previous()
+    messages.extend(_remove_browser_task())
 
     if not keep_tile:
         # The tile goes first, while the engine is still installed to remove it

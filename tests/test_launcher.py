@@ -113,6 +113,9 @@ class StopPreviousTest(unittest.TestCase):
                         "it was never killed")
 
 
+@unittest.skipIf(os.name == "nt",
+                 "the POSIX chain: flatpak, then native Chromium, then Firefox. "
+                 "Windows has its own route and its own tests")
 class BrowserChoiceTest(unittest.TestCase):
     """Which browser it opens, on machines that are not Bazzite.
 

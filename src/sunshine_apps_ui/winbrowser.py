@@ -1,0 +1,534 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+"""Opening the interface as a window on Windows, and being sure it closes.
+
+Three things are different here and each was measured on the rig (issue #15)
+rather than reasoned about, because every one of them contradicts what the
+obvious implementation would do.
+
+**The browsers do not share a flag.** Edge and Chrome take ``--app=<url>`` and
+give a window with no tabs and no address bar. Opera is Chromium-family and
+**ignores ``--app`` completely** -- it opens an ordinary window, with Speed Dial,
+a sidebar and a "make Opera your everyday browser" prompt, and never loads the
+page. It honours ``--kiosk``. Firefox takes ``--kiosk`` too. So "Chromium-family"
+is not a category that can be treated as one case.
+
+**A fresh Firefox profile opens onboarding, not the page.** Kiosk mode fills the
+screen with "Welcome to Firefox / Terms of Use" and our grid behind it, which on
+a television with a gamepad is a dead end. The profile is seeded before first
+launch so that cannot happen.
+
+**Teardown is a job object, not a process tree.** Opera and Firefox both exit
+their launched process and respawn, so the pid we started is gone within seconds
+while the browser is still on screen -- tracking it would lose them. A job with
+``JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`` catches every descendant, including the
+respawn, and the OS takes them all down when the job's last handle closes *even
+if we are killed rather than exiting*. Measured on all four browsers.
+
+**The elevated case needs a helper.** When Sunshine grants us the administrator
+token, anything we start plainly inherits it, and a browser running as
+administrator is a far bigger surface than our server is: a general-purpose
+program with a JIT, a network stack and extensions, on the user's desktop.
+Handing it Explorer's token de-elevates it correctly but the browser then fails
+to finish starting -- ``CreateProcessWithTokenW`` goes through the Secondary
+Logon service, and Chromium does not survive the trip. What does work is asking
+Explorer to start a *helper* at medium integrity, and letting the helper own the
+job and the browser. The helper is this same program, run with ``--browser-helper``.
+"""
+
+import json
+import os
+import subprocess
+import sys
+import time
+from typing import Dict, List, NamedTuple, Optional, Tuple
+
+WINDOWS = os.name == "nt"
+
+# Enough to stop a fresh profile showing onboarding instead of the page. Without
+# this, kiosk mode opens on the Terms of Use screen.
+FIREFOX_PREFS = """// Written by sunshine-apps-ui. A fresh profile otherwise opens
+// kiosk mode on the onboarding screen, which cannot be dismissed from a gamepad.
+user_pref("browser.aboutwelcome.enabled", false);
+user_pref("datareporting.policy.dataSubmissionPolicyBypassNotification", true);
+user_pref("datareporting.policy.firstRunURL", "");
+user_pref("toolkit.telemetry.reportingpolicy.firstRun", false);
+user_pref("browser.startup.homepage_override.mstone", "ignore");
+user_pref("browser.shell.checkDefaultBrowser", false);
+user_pref("trailhead.firstrun.didSeeAboutWelcome", true);
+"""
+
+
+class Browser(NamedTuple):
+    name: str
+    path: str
+    kind: str          # "app" | "kiosk-chromium" | "kiosk-firefox"
+
+    def command(self, url: str, profile: str) -> List[str]:
+        if self.kind == "app":
+            return [self.path, f"--user-data-dir={profile}", "--no-first-run",
+                    "--no-default-browser-check", f"--app={url}"]
+        if self.kind == "kiosk-chromium":
+            # Opera. --app is accepted on the command line and ignored, which is
+            # worse than being rejected: it looks like it worked.
+            return [self.path, f"--user-data-dir={profile}", "--no-first-run",
+                    "--kiosk", url]
+        return [self.path, "--profile", profile, "--no-remote", "--kiosk", url]
+
+
+def _candidates() -> List[Tuple[str, str, List[str]]]:
+    """(name, kind, paths) in the order they are preferred.
+
+    Edge first because it ships with Windows: there is always one, which is the
+    problem Linux has and Windows does not.
+    """
+    local = os.environ.get("LOCALAPPDATA", "")
+    x86 = os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)")
+    files = os.environ.get("ProgramFiles", r"C:\Program Files")
+    return [
+        ("edge", "app", [os.path.join(x86, "Microsoft", "Edge", "Application", "msedge.exe"),
+                         os.path.join(files, "Microsoft", "Edge", "Application", "msedge.exe")]),
+        ("chrome", "app", [os.path.join(files, "Google", "Chrome", "Application", "chrome.exe"),
+                           os.path.join(x86, "Google", "Chrome", "Application", "chrome.exe"),
+                           os.path.join(local, "Google", "Chrome", "Application", "chrome.exe")]),
+        ("opera", "kiosk-chromium", [os.path.join(local, "Programs", "Opera", "opera.exe"),
+                                     os.path.join(files, "Opera", "opera.exe")]),
+        ("firefox", "kiosk-firefox", [os.path.join(files, "Mozilla Firefox", "firefox.exe"),
+                                      os.path.join(x86, "Mozilla Firefox", "firefox.exe")]),
+    ]
+
+
+def _registered(executable: str) -> str:
+    """Where Windows says a program is, for an install in none of the usual places."""
+    try:
+        import winreg
+    except ImportError:
+        return ""
+    key = rf"SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\{executable}"
+    for root in (winreg.HKEY_LOCAL_MACHINE, winreg.HKEY_CURRENT_USER):
+        try:
+            with winreg.OpenKey(root, key) as handle:
+                path = str(winreg.QueryValueEx(handle, "")[0]).strip('"')
+                if path and os.path.isfile(path):
+                    return path
+        except OSError:
+            continue
+    return ""
+
+
+def find_browsers() -> List[Browser]:
+    """Every browser we can drive, best first."""
+    found: List[Browser] = []
+    for name, kind, paths in _candidates():
+        for path in paths:
+            if path and os.path.isfile(path):
+                found.append(Browser(name, path, kind))
+                break
+        else:
+            registered = _registered(os.path.basename(paths[0]))
+            if registered:
+                found.append(Browser(name, registered, kind))
+    return found
+
+
+def seed_firefox_profile(profile: str) -> None:
+    """Make a fresh profile open the page rather than the onboarding screen."""
+    try:
+        os.makedirs(profile, exist_ok=True)
+        with open(os.path.join(profile, "user.js"), "w", encoding="utf-8") as handle:
+            handle.write(FIREFOX_PREFS)
+    except OSError:
+        # Not fatal: worst case the first launch shows onboarding once.
+        pass
+
+
+# ------------------------------------------------------------- job objects ---
+
+
+def _kernel32():
+    import ctypes
+    from ctypes import wintypes
+
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    # Declared, always. Undeclared, ctypes passes every argument as a C int and
+    # a 64-bit handle is truncated on the way in -- which fails in a way that
+    # looks like the API refusing rather than like a bug here.
+    kernel32.CreateJobObjectW.argtypes = [ctypes.c_void_p, wintypes.LPCWSTR]
+    kernel32.CreateJobObjectW.restype = wintypes.HANDLE
+    kernel32.SetInformationJobObject.argtypes = [wintypes.HANDLE, ctypes.c_int,
+                                                 ctypes.c_void_p, wintypes.DWORD]
+    kernel32.SetInformationJobObject.restype = wintypes.BOOL
+    kernel32.AssignProcessToJobObject.argtypes = [wintypes.HANDLE, wintypes.HANDLE]
+    kernel32.AssignProcessToJobObject.restype = wintypes.BOOL
+    kernel32.TerminateJobObject.argtypes = [wintypes.HANDLE, wintypes.UINT]
+    kernel32.TerminateJobObject.restype = wintypes.BOOL
+    kernel32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+    kernel32.OpenProcess.restype = wintypes.HANDLE
+    kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+    kernel32.CloseHandle.restype = wintypes.BOOL
+    return kernel32
+
+
+def _extended_limit_struct():
+    import ctypes
+    from ctypes import wintypes
+
+    class BASIC(ctypes.Structure):
+        _fields_ = [("PerProcessUserTimeLimit", ctypes.c_int64),
+                    ("PerJobUserTimeLimit", ctypes.c_int64),
+                    ("LimitFlags", wintypes.DWORD),
+                    ("MinimumWorkingSetSize", ctypes.c_size_t),
+                    ("MaximumWorkingSetSize", ctypes.c_size_t),
+                    ("ActiveProcessLimit", wintypes.DWORD),
+                    ("Affinity", ctypes.c_size_t),
+                    ("PriorityClass", wintypes.DWORD),
+                    ("SchedulingClass", wintypes.DWORD)]
+
+    class IO(ctypes.Structure):
+        _fields_ = [(name, ctypes.c_uint64) for name in
+                    ("ReadOperationCount", "WriteOperationCount", "OtherOperationCount",
+                     "ReadTransferCount", "WriteTransferCount", "OtherTransferCount")]
+
+    class EXTENDED(ctypes.Structure):
+        _fields_ = [("BasicLimitInformation", BASIC), ("IoInfo", IO),
+                    ("ProcessMemoryLimit", ctypes.c_size_t),
+                    ("JobMemoryLimit", ctypes.c_size_t),
+                    ("PeakProcessMemoryUsed", ctypes.c_size_t),
+                    ("PeakJobMemoryUsed", ctypes.c_size_t)]
+
+    return EXTENDED
+
+
+class KillOnCloseJob:
+    """A job whose processes die when its last handle closes.
+
+    Which is the guarantee Sunshine's own service relies on for Sunshine.exe,
+    and is stronger than anything a process tree offers: it survives us being
+    killed rather than exiting.
+    """
+
+    JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE = 0x00002000
+    JobObjectExtendedLimitInformation = 9
+
+    def __init__(self) -> None:
+        import ctypes
+
+        self._kernel32 = _kernel32()
+        self.handle = self._kernel32.CreateJobObjectW(None, None)
+        if not self.handle:
+            raise OSError(f"CreateJobObject failed: {ctypes.get_last_error()}")
+        extended = _extended_limit_struct()()
+        extended.BasicLimitInformation.LimitFlags = self.JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+        if not self._kernel32.SetInformationJobObject(
+                self.handle, self.JobObjectExtendedLimitInformation,
+                ctypes.byref(extended), ctypes.sizeof(extended)):
+            raise OSError(f"SetInformationJobObject failed: {ctypes.get_last_error()}")
+
+    def assign_pid(self, pid: int) -> bool:
+        PROCESS_SET_QUOTA, PROCESS_TERMINATE = 0x0100, 0x0001
+        handle = self._kernel32.OpenProcess(PROCESS_SET_QUOTA | PROCESS_TERMINATE,
+                                            False, pid)
+        if not handle:
+            return False
+        try:
+            return bool(self._kernel32.AssignProcessToJobObject(self.handle, handle))
+        finally:
+            self._kernel32.CloseHandle(handle)
+
+    def terminate(self) -> None:
+        if self.handle:
+            self._kernel32.TerminateJobObject(self.handle, 1)
+
+    def close(self) -> None:
+        if self.handle:
+            self._kernel32.CloseHandle(self.handle)
+            self.handle = None
+
+
+# ---------------------------------------------------------------- starting ---
+
+
+def start_browser(url: str, profile: str,
+                  browser: Optional[Browser] = None) -> Tuple[Optional[subprocess.Popen], str, Optional[KillOnCloseJob]]:
+    """Start a browser and put it in a kill-on-close job. (process, how, job).
+
+    The process is started suspended and assigned before it runs, so that every
+    child it spawns is inside the job from the first instruction. Assigning
+    afterwards does not work: Chromium's own sandbox jobs get in the way, and a
+    measurement on the rig accepted 1 process out of 14.
+    """
+    chosen = browser or next(iter(find_browsers()), None)
+    if chosen is None:
+        return None, "", None
+    if chosen.kind == "kiosk-firefox":
+        seed_firefox_profile(profile)
+
+    job = KillOnCloseJob()
+    CREATE_SUSPENDED = 0x00000004
+    try:
+        process = subprocess.Popen(
+            chosen.command(url, profile),
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            creationflags=CREATE_SUSPENDED)
+    except (OSError, subprocess.SubprocessError):
+        job.close()
+        return None, "", None
+
+    if not job.assign_pid(process.pid):
+        # Without the job there is no teardown guarantee, and a browser that
+        # cannot be closed is worse than one that never opened.
+        process.kill()
+        job.close()
+        return None, "", None
+
+    _resume(process.pid)
+    return process, chosen.name, job
+
+
+def _resume(pid: int) -> None:
+    """Let a suspended process run, now that it is inside the job."""
+    import ctypes
+    from ctypes import wintypes
+
+    TH32CS_SNAPTHREAD = 0x00000004
+    THREAD_SUSPEND_RESUME = 0x0002
+
+    class THREADENTRY32(ctypes.Structure):
+        _fields_ = [("dwSize", wintypes.DWORD), ("cntUsage", wintypes.DWORD),
+                    ("th32ThreadID", wintypes.DWORD), ("th32OwnerProcessID", wintypes.DWORD),
+                    ("tpBasePri", ctypes.c_long), ("tpDeltaPri", ctypes.c_long),
+                    ("dwFlags", wintypes.DWORD)]
+
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.CreateToolhelp32Snapshot.argtypes = [wintypes.DWORD, wintypes.DWORD]
+    kernel32.CreateToolhelp32Snapshot.restype = wintypes.HANDLE
+    kernel32.Thread32First.argtypes = [wintypes.HANDLE, ctypes.POINTER(THREADENTRY32)]
+    kernel32.Thread32Next.argtypes = [wintypes.HANDLE, ctypes.POINTER(THREADENTRY32)]
+    kernel32.OpenThread.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+    kernel32.OpenThread.restype = wintypes.HANDLE
+    kernel32.ResumeThread.argtypes = [wintypes.HANDLE]
+    kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+
+    snapshot = kernel32.CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0)
+    if not snapshot:
+        return
+    try:
+        entry = THREADENTRY32()
+        entry.dwSize = ctypes.sizeof(THREADENTRY32)
+        ok = kernel32.Thread32First(snapshot, ctypes.byref(entry))
+        while ok:
+            if entry.th32OwnerProcessID == pid:
+                thread = kernel32.OpenThread(THREAD_SUSPEND_RESUME, False,
+                                             entry.th32ThreadID)
+                if thread:
+                    kernel32.ResumeThread(thread)
+                    kernel32.CloseHandle(thread)
+            ok = kernel32.Thread32Next(snapshot, ctypes.byref(entry))
+    finally:
+        kernel32.CloseHandle(snapshot)
+
+
+# ------------------------------------------------------- the medium helper ---
+
+
+def write_request(url: str, profile: str, where: str) -> str:
+    """Put the request in a file, and hand the helper its path.
+
+    Two reasons, both learned the hard way:
+
+    * **The URL carries the session token.** On a command line it is readable by
+      every process on the machine, which undoes the point of minting a token at
+      all. In a file created private, it is not. The file is deleted as soon as
+      it has been read.
+    * **Task Scheduler mangles embedded quotes.** A JSON payload in the action's
+      arguments arrived at Python with its escaping altered, and the helper
+      exited 1 before opening anything. A path has no quoting to get wrong.
+
+    The launcher's pid travels with it so the helper can go when the launcher
+    does: without that, an elevated launcher that is killed leaves a browser on
+    screen with nothing holding it.
+    """
+    from .core import filemode
+
+    os.makedirs(where, exist_ok=True)
+    path = os.path.join(where, "browser-request.json")
+    filemode.write_private(path, json.dumps(
+        {"url": url, "profile": profile, "parent": os.getpid()}))
+    return path
+
+
+def helper_command(request_path: str) -> List[str]:
+    return [sys.executable, "-m", "sunshine_apps_ui", "--browser-helper",
+            request_path]
+
+
+TASK_NAME = "sunshine-apps-ui-browser"
+
+
+def start_helper_de_elevated(url: str, profile: str) -> bool:
+    """Start the helper at medium integrity, through the task scheduler.
+
+    Measured on the rig, because two more obvious routes do not work:
+
+    * ``ShellExecuteW`` starts the target with *our* token. An elevated launcher
+      produced a High helper.
+    * ``Shell.Application``'s ShellExecute -- the "ask Explorer" trick -- does the
+      same when the caller is elevated, because the shell object is created in
+      our own process rather than marshalled into Explorer's. Proved with
+      notepad, which came up High. It *looked* like it worked when tested with a
+      browser, and that is a trap worth naming: **Edge and Chrome refuse to run
+      elevated and relaunch themselves de-elevated**, so they come out Medium
+      however they were started. Firefox and Opera do not, and would have
+      inherited administrator rights while the test said otherwise.
+
+    A scheduled task with ``RunLevel Limited`` genuinely produces a medium
+    process in the user's own session.
+
+    The registration is left in place, under one known name, and overwritten on
+    each launch. Removing it after starting the helper was tried and is wrong:
+    unregistering a task terminates the instance it is running, which killed the
+    helper three seconds in and took the browser with it. ``uninstall`` removes
+    the task.
+    """
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    command = helper_command(write_request(url, profile, os.path.dirname(profile)))
+    arguments = subprocess.list2cmdline(command[1:])
+
+    def quote(value: str) -> str:
+        return "'" + value.replace("'", "''") + "'"
+
+    # A task inherits nothing of ours -- not PYTHONPATH, not the working
+    # directory -- so `-m sunshine_apps_ui` would fail to import and the helper
+    # would exit before it started anything. Running it from the directory the
+    # package lives under is what puts it on sys.path.
+    script = (
+        f"$action = New-ScheduledTaskAction -Execute {quote(command[0])} "
+        f"-Argument {quote(arguments)} -WorkingDirectory {quote(root)}; "
+        f"$principal = New-ScheduledTaskPrincipal "
+        f"-UserId ([Security.Principal.WindowsIdentity]::GetCurrent().Name) "
+        f"-LogonType Interactive -RunLevel Limited; "
+        f"Register-ScheduledTask -TaskName {quote(TASK_NAME)} -Action $action "
+        f"-Principal $principal -Force | Out-Null; "
+        f"Start-ScheduledTask -TaskName {quote(TASK_NAME)}"
+    )
+    try:
+        result = subprocess.run(
+            ["powershell", "-NoProfile", "-NonInteractive", "-Command", script],
+            capture_output=True, timeout=60,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return result.returncode == 0
+
+
+def process_alive(pid: int) -> bool:
+    """Is that process still running? Asked of the launcher, from the helper."""
+    import ctypes
+    from ctypes import wintypes
+
+    PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+    STILL_ACTIVE = 259
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+    kernel32.OpenProcess.restype = wintypes.HANDLE
+    kernel32.GetExitCodeProcess.argtypes = [wintypes.HANDLE,
+                                            ctypes.POINTER(wintypes.DWORD)]
+    kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+
+    handle = kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
+    if not handle:
+        return False
+    try:
+        code = wintypes.DWORD()
+        if not kernel32.GetExitCodeProcess(handle, ctypes.byref(code)):
+            return False
+        return code.value == STILL_ACTIVE
+    finally:
+        kernel32.CloseHandle(handle)
+
+
+def _read_request(payload: str) -> Optional[Dict]:
+    """The request, from the file the launcher wrote. Deleted once read.
+
+    A JSON string is still accepted, because it is what the tests pass and what
+    a person debugging this by hand would type.
+    """
+    if os.path.isfile(payload):
+        try:
+            with open(payload, "r", encoding="utf-8") as handle:
+                request = json.load(handle)
+        except (OSError, ValueError):
+            return None
+        try:
+            os.unlink(payload)         # it holds the session token
+        except OSError:
+            pass
+        return request if isinstance(request, dict) else None
+    try:
+        request = json.loads(payload)
+    except ValueError:
+        return None
+    return request if isinstance(request, dict) else None
+
+
+def helper_main(payload: str) -> int:
+    """Run as the medium-integrity child: own the job, hold the browser.
+
+    Exiting closes the job's last handle, which is what kills the browser -- so
+    this stays for exactly as long as the window should, and no longer.
+    """
+    request = _read_request(payload)
+    if request is None:
+        return 2
+    process, how, job = start_browser(str(request.get("url", "")),
+                                      str(request.get("profile", "")))
+    if process is None or job is None:
+        return 1
+    parent = request.get("parent")
+    try:
+        while True:
+            # Firefox and Opera exit the process we started and respawn, so the
+            # pid we have is not the browser for long. The job knows who is
+            # left; ask it rather than trusting that pid.
+            if not _job_has_processes(job):
+                break
+            # And go when the launcher goes, however it went. A parent of 0 or
+            # None means nobody asked us to follow one -- not "the launcher is
+            # already gone", which is what treating it as a pid would say.
+            if isinstance(parent, int) and parent > 0 and not process_alive(parent):
+                break
+            time.sleep(1.0)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        job.terminate()
+        job.close()
+    return 0
+
+
+def _job_has_processes(job: KillOnCloseJob) -> bool:
+    import ctypes
+    from ctypes import wintypes
+
+    class BASIC_ACCOUNTING(ctypes.Structure):
+        _fields_ = [("TotalUserTime", ctypes.c_int64), ("TotalKernelTime", ctypes.c_int64),
+                    ("ThisPeriodTotalUserTime", ctypes.c_int64),
+                    ("ThisPeriodTotalKernelTime", ctypes.c_int64),
+                    ("TotalPageFaultCount", wintypes.DWORD),
+                    ("TotalProcesses", wintypes.DWORD),
+                    ("ActiveProcesses", wintypes.DWORD),
+                    ("TotalTerminatedProcesses", wintypes.DWORD)]
+
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.QueryInformationJobObject.argtypes = [
+        wintypes.HANDLE, ctypes.c_int, ctypes.c_void_p, wintypes.DWORD,
+        ctypes.POINTER(wintypes.DWORD)]
+    kernel32.QueryInformationJobObject.restype = wintypes.BOOL
+
+    info = BASIC_ACCOUNTING()
+    returned = wintypes.DWORD()
+    JobObjectBasicAccountingInformation = 1
+    if not kernel32.QueryInformationJobObject(
+            job.handle, JobObjectBasicAccountingInformation,
+            ctypes.byref(info), ctypes.sizeof(info), ctypes.byref(returned)):
+        return False
+    return info.ActiveProcesses > 0
