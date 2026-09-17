@@ -167,6 +167,13 @@ reaching for it risks shutting Sunshine down with no way back.
 
 ### Worth knowing
 
+**Checked against Sunshine `v2026.914.233613` (released 2026-09-14) on
+2026-09-16.** Everything this project depends on was unchanged from the
+2026-09-11 tree these notes were written against: `process.cpp` (`apps.json`
+parsing, `proc::refresh`, and the `bsm` markers surviving a read), `appdata()`,
+`"elevated"`, `platf::restart()`, the service's job object, the web UI's own
+sorting, and the shipped default entries. What did change is noted below.
+
 `POST /api/config` rewrites `sunshine.conf`, and `file_apps` is a setting -- so
 `apps.json` can be relocated through the API without touching the filesystem.
 Not needed if we run elevated, but it is the escape hatch if elevation turns
@@ -176,11 +183,22 @@ out to be unacceptable.
 cover art for us, elevated, on request -- so the artwork picker has a path that
 needs no file access at all.
 
-There is **no API that writes the `meta` block**. All 25 endpoints were
-enumerated: `/api/apps` POST replaces one app, DELETE removes one. The `bsm`
-markers ride inside each entry and survive, but the managed list and the
-tombstones have no API path. Any design that avoids writing the file directly
-has to put them somewhere else, and they then stop travelling with the file and
+`saveApp()` still sorts `apps.json` by name on every write
+(`confighttp.cpp:1163` in `v2026.914.233613`), so the file is reordered under
+us. It does not matter: every consumer orders the list itself. The web UI has
+its own sorting, moonlight-qt runs a case-insensitive `stable_sort` in
+`NvComputer::sortAppList()` on every refresh, and moonlight-android does the
+same in `AppGridAdapter.sortList()` on every `addApp()` -- all three confirmed
+still true on 2026-09-16. A patch removing the sort was written and dropped for
+this reason.
+
+There is **no API that writes the `meta` block**. All endpoints were
+enumerated -- 25 as of 2026-09-11, and **26 as of `v2026.914.233613`**, which
+added `POST /api/reset-portal-token` (it deletes the saved XDG Portal restore
+token, and is a no-op off Linux). None of them writes `meta`. `/api/apps` POST
+replaces one app, DELETE removes one. The `bsm` markers ride inside each entry
+and survive, but the managed list and the tombstones have no API path. Any
+design that avoids writing the file directly has to put them somewhere else, and they then stop travelling with the file and
 stop being in the backups.
 
 ## What generic Linux established
