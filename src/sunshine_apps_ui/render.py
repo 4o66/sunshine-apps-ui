@@ -627,7 +627,8 @@ def grid_page(state: Dict[str, Any], token: str, *, new_ids: Optional[set] = Non
               scanned: bool = False, auth_ok: bool = True,
               pending: Optional[List[Dict[str, Any]]] = None,
               auth_detail: str = "",
-              restore: Optional[Dict[str, Any]] = None) -> str:
+              restore: Optional[Dict[str, Any]] = None,
+              rights: Any = None) -> str:
     new_ids = new_ids or set()
     pending = pending or []
     apps = state.get("apps") or []
@@ -811,9 +812,12 @@ def grid_page(state: Dict[str, Any], token: str, *, new_ids: Optional[set] = Non
             f'</form></div></section>')
 
     outstanding = queued
+    read_only = bool(rights is not None and not rights.can_write)
+    # An Apply that can only fail is worse than no Apply: it loses the queue's
+    # meaning and teaches people the tool is broken rather than unprivileged.
     apply_button = (f'<a class="btn" href="/apply?token={_e(token)}">'
                     f'Apply {outstanding} change{"" if outstanding == 1 else "s"}</a>'
-                    if outstanding else "")
+                    if outstanding and not read_only else "")
     discard_button = (f'<form method="post" action="/discard?token={_e(token)}" '
                       f'style="display:inline">'
                       f'<button class="btn sec" type="submit">Discard</button></form>'
@@ -834,6 +838,13 @@ def grid_page(state: Dict[str, Any], token: str, *, new_ids: Optional[set] = Non
                      f'<a class="chip" style="text-decoration:none;color:var(--primary)" '
                      f'href="/connect?token={_e(token)}">Connect</a></div>')
 
+    # Said here, once, on the page someone is already looking at -- not at the
+    # write, after a dozen changes are queued. See privilege.py.
+    rights_note = ""
+    if read_only:
+        rights_note = (f'<section class="err"><h2>{_e(rights.headline or "Changes cannot be saved")}</h2>'
+                       f'<p class="why">{_e(rights.detail)}</p></section>')
+
     return f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -844,7 +855,7 @@ def grid_page(state: Dict[str, Any], token: str, *, new_ids: Optional[set] = Non
 <div class="wrap">
 <h1>{len(apps)} application{'' if len(apps) == 1 else 's'}</h1>
 <p class="sub"><code>{_e(state.get("apps_json", ""))}</code></p>
-{auth_note}{restore_note}
+{rights_note}{auth_note}{restore_note}
 <div class="actions">{apply_button}{discard_button}
 <a class="btn{'' if not queued else ' sec'}" href="/?scan=1&token={_e(token)}">Rescan</a>
 <a class="btn sec" href="/backups?token={_e(token)}">Restore a copy</a></div>

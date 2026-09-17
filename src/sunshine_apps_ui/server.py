@@ -15,7 +15,7 @@ from typing import Any, Dict, List, Optional
 from urllib.parse import parse_qs, urlencode, urlsplit
 
 from . import __version__, security
-from . import artwork, state
+from . import artwork, privilege, state
 from .engine import (EngineError, art_choose, art_search, backup_diff, browse,
                      check_auth, get_state, list_backups, mutate, run_plan,
                      save_auth)
@@ -48,6 +48,10 @@ class PlanHandler(BaseHTTPRequestHandler):
     importer_opts: Dict[str, Any] = {}
     port: int = 0
     via_sunshine: bool = False
+    # Whether apps.json can be written. Assumed writable so that a handler
+    # constructed without serve() -- every test that builds one directly --
+    # behaves as it always did.
+    rights: privilege.Privilege = privilege.Privilege(True, None, "", "")
 
     def log_message(self, fmt: str, *args: Any) -> None:
         log.info("%s %s", self.address_string(), fmt % args)
@@ -152,7 +156,8 @@ class PlanHandler(BaseHTTPRequestHandler):
                                "unreadable": str(e)}
             self._send(200, grid_page(current, self.token, scanned=scanned,
                                       auth_ok=auth_ok, pending=queued,
-                                      auth_detail=detail, restore=restore))
+                                      auth_detail=detail, restore=restore,
+                                      rights=self.rights))
             return
 
         if parts.path == "/app.js":
@@ -761,9 +766,16 @@ def serve(token: str, conf_dir: str,
            importer_opts: Optional[Dict[str, Any]] = None,
            port: int = 0) -> ThreadingHTTPServer:
     """Bind and return a server. The address is always loopback, by design."""
+    # Asked once, here, rather than at the first write. See privilege.py.
+    rights = privilege.check(conf_dir)
+    # Read-only is a warning even without --verbose: it is the one startup fact
+    # that changes what the program can do for you.
+    (log.info if rights.can_write else log.warning)(
+        "%s", privilege.startup_line(rights, conf_dir))
     handler = type("BoundPlanHandler", (PlanHandler,), {
         "token": token,
         "conf_dir": conf_dir,
+        "rights": rights,
         "importer_opts": dict(importer_opts or {}),
         # Set by our launcher, which only ever runs inside a streamed session.
         "via_sunshine": os.getenv("BSM_UI_VIA_SUNSHINE", "") == "1",

@@ -1781,3 +1781,44 @@ class ConfirmationShowsWhatApplyDoesTest(ServerTest):
         applied = [op["name"] for op in self.engine.applied[0]]
         self.assertIn("Portal 2", applied)
         self.assertEqual(len(applied), body.count('class="queued"') or len(applied))
+
+
+class ReadOnlyGridTest(ServerTest):
+    """What the grid says when apps.json cannot be written.
+
+    The failure this prevents is silent: on Windows a standard account, or a
+    hand-started Sunshine, gets no elevation and no error, and the first sign of
+    trouble is a write failing after a dozen changes are queued.
+    """
+
+    def setUp(self):
+        from sunshine_apps_ui import privilege
+        patched = mock.patch.object(
+            server_module.privilege, "check",
+            lambda conf_dir: privilege.Privilege(
+                False, False, "Because this is not elevated.",
+                "Changes cannot be saved"))
+        patched.start()
+        self.addCleanup(patched.stop)
+        super().setUp()
+
+    def test_the_grid_says_why_nothing_can_be_saved(self):
+        _, body = self.get(token=self.token)
+        self.assertIn("Changes cannot be saved", body)
+        self.assertIn("Because this is not elevated.", body)
+
+    def test_apply_is_not_offered_when_it_could_only_fail(self):
+        self.post({"op": "edit", "index": "1", "orig_name": "Portal 2",
+                   "name": "X"}, token=self.token, path="/app")
+        _, body = self.get(token=self.token)
+        self.assertNotIn(">Apply 1 change<", body)
+        # The queue is still there, and still discardable: read-only is not a
+        # reason to throw away what somebody typed.
+        self.assertIn("Discard", body)
+
+    def test_the_rest_of_the_grid_still_works(self):
+        """Read-only is not broken. Everything but saving carries on."""
+        _, body = self.get(token=self.token)
+        self.assertIn("2 applications", body)
+        self.assertIn("Portal 2", body)
+        self.assertIn("Rescan", body)
