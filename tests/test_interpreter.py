@@ -157,9 +157,15 @@ class ProvisionTest(unittest.TestCase):
             return path
 
         interpreter._download = fake_download
+        # The unpacked python.exe here is a text file, so it cannot be run.
+        # Whether a real one runs is tested on the rig; these are about what
+        # ends up where.
+        self.real_works = interpreter.works
+        interpreter.works = lambda executable: os.path.isfile(executable)
 
     def tearDown(self):
         interpreter._download = self.real_download
+        interpreter.works = self.real_works
         shutil.rmtree(self.tmp, ignore_errors=True)
 
     def test_it_puts_an_interpreter_beside_the_program(self):
@@ -346,6 +352,109 @@ class PillowIsNotNeededToInstallTest(unittest.TestCase):
             self.assertIn("pip install pillow", str(caught.exception))
         finally:
             builtins.__import__ = real_import
+
+class ProvisionSafetyTest(unittest.TestCase):
+    """What happens to the interpreter that is already there.
+
+    Found on the rig: re-provisioning while a leftover server was still running
+    from the old interpreter deleted everything it could (the zip, Lib, the
+    ._pth), failed to overwrite the executable still in use, and left something
+    that could not start at all -- while reporting that the install had
+    succeeded.
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.tmp, True)
+        self.install = os.path.join(self.tmp, "install")
+        self.python_dir = os.path.join(self.install, "python")
+        os.makedirs(self.python_dir)
+        # An interpreter that is already here and works.
+        with open(os.path.join(self.python_dir, "python.exe"), "w") as handle:
+            handle.write("the one that already works")
+
+        self.real_download = interpreter._download
+        self.real_works = interpreter.works
+
+        def fake_download(artifact, into, log=None):
+            path = os.path.join(into, os.path.basename(artifact.url))
+            with zipfile.ZipFile(path, "w") as archive:
+                archive.writestr("python.exe", "the new one")
+            return path
+
+        interpreter._download = fake_download
+
+    def tearDown(self):
+        interpreter._download = self.real_download
+        interpreter.works = self.real_works
+
+    def test_a_new_one_that_does_not_run_is_not_swapped_in(self):
+        interpreter.works = lambda executable: False
+        with self.assertRaises(interpreter.ProvisionError) as caught:
+            interpreter.provision(self.install)
+        self.assertIn("does not run", str(caught.exception))
+        # The one that was here is still here, and still itself.
+        self.assertEqual(open(os.path.join(self.python_dir, "python.exe")).read(),
+                         "the one that already works")
+
+    def test_a_failed_attempt_leaves_no_half_built_directory(self):
+        interpreter.works = lambda executable: False
+        with self.assertRaises(interpreter.ProvisionError):
+            interpreter.provision(self.install)
+        self.assertFalse(os.path.exists(self.python_dir + ".new"))
+
+    def test_a_working_new_one_replaces_the_old(self):
+        interpreter.works = lambda executable: True
+        interpreter.provision(self.install)
+        self.assertEqual(open(os.path.join(self.python_dir, "python.exe")).read(),
+                         "the new one")
+
+    def test_a_download_that_fails_leaves_the_old_one_alone(self):
+        def explode(artifact, into, log=None):
+            raise interpreter.ProvisionError("no route to host")
+        interpreter._download = explode
+        with self.assertRaises(interpreter.ProvisionError):
+            interpreter.provision(self.install)
+        self.assertEqual(open(os.path.join(self.python_dir, "python.exe")).read(),
+                         "the one that already works")
+
+
+class InstallerLeavesWorkingInterpretersAloneTest(unittest.TestCase):
+    """Replacing means deleting, and deleting one that is in use breaks it."""
+
+    def setUp(self):
+        from sunshine_apps_ui import installer
+        self.installer = installer
+        self.real_name = os.name
+        self.tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.tmp, True)
+        os.makedirs(os.path.join(self.tmp, "python"))
+        open(os.path.join(self.tmp, "python", "python.exe"), "w").close()
+        self.where = {"install": self.tmp}
+        os.name = "nt"
+        self.provisioned = []
+        self.real_provision = interpreter.provision
+        self.real_works = interpreter.works
+        interpreter.provision = lambda install_dir, log=None: (
+            self.provisioned.append(install_dir) or "python.exe")
+
+    def tearDown(self):
+        os.name = self.real_name
+        interpreter.provision = self.real_provision
+        interpreter.works = self.real_works
+
+    def test_a_working_one_is_left_alone_even_when_asked_for(self):
+        interpreter.works = lambda executable: True
+        messages = self.installer._provide_interpreter(self.where, True)
+        self.assertEqual(self.provisioned, [])
+        self.assertTrue(any("leaving it alone" in m for m in messages))
+
+    def test_a_broken_one_is_replaced_and_said_so(self):
+        interpreter.works = lambda executable: False
+        messages = self.installer._provide_interpreter(self.where, True)
+        self.assertEqual(self.provisioned, [self.tmp])
+        self.assertTrue(any("does not run" in m for m in messages))
+
 
 if __name__ == "__main__":
     unittest.main()

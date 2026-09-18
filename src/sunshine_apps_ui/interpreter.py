@@ -29,6 +29,7 @@ nothing. The paths this program needs are written into that file instead.
 import hashlib
 import os
 import shutil
+import subprocess
 import tempfile
 import urllib.request
 import zipfile
@@ -133,36 +134,81 @@ def _write_pth(python_dir: str) -> str:
     return path
 
 
+def works(executable: str) -> bool:
+    """Does that interpreter actually run, with what this program needs?
+
+    Asked after installing one and before replacing one. An interpreter that
+    exists is not the same as an interpreter that works: a half-written one
+    fails with "No module named 'encodings'" before it reaches any code of
+    ours, and the install that produced it reported success.
+    """
+    if not executable or not os.path.isfile(executable):
+        return False
+    try:
+        result = subprocess.run(
+            [executable, "-c", "import encodings, PIL; print('ok')"],
+            capture_output=True, timeout=60,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return result.returncode == 0 and b"ok" in result.stdout
+
+
 def provision(install_dir: str,
               log: Optional[Callable[[str], None]] = None) -> str:
-    """Put an interpreter beside the program. Returns the path to python.exe."""
+    """Put an interpreter beside the program. Returns the path to python.exe.
+
+    Built beside the old one and swapped in once it is known to work. The
+    obvious version -- delete the directory, unpack into it -- destroyed a
+    working interpreter on the rig: a server left over from an earlier launch
+    still had python.exe open, so the delete took everything it *could* (the
+    zip, Lib, the ._pth) and left the executable, and the unpack then failed
+    against the file still in use. What remained could not start at all, and
+    the install said it had succeeded.
+    """
     say = log or (lambda message: None)
     python_dir = interpreter_dir(install_dir)
+    staging = python_dir + ".new"
+    previous = python_dir + ".old"
     workspace = tempfile.mkdtemp(prefix="sunshine-apps-ui-interpreter-")
     try:
         cpython_zip = _download(CPYTHON, workspace, say)
         wheel = _download(PILLOW, workspace, say)
 
-        # Replaced wholesale rather than merged: a half-upgraded interpreter is
-        # worse than either version of it.
-        if os.path.isdir(python_dir):
-            shutil.rmtree(python_dir, ignore_errors=True)
-        os.makedirs(python_dir, exist_ok=True)
-
+        shutil.rmtree(staging, ignore_errors=True)
+        os.makedirs(staging, exist_ok=True)
         with zipfile.ZipFile(cpython_zip) as archive:
-            archive.extractall(python_dir)
-        packages = os.path.join(python_dir, "Lib", "site-packages")
+            archive.extractall(staging)
+        packages = os.path.join(staging, "Lib", "site-packages")
         os.makedirs(packages, exist_ok=True)
         with zipfile.ZipFile(wheel) as archive:
             archive.extractall(packages)
-        _write_pth(python_dir)
+        _write_pth(staging)
+
+        candidate = os.path.join(staging, "python.exe")
+        if not works(candidate):
+            raise ProvisionError(
+                "The interpreter that was unpacked does not run. Nothing has "
+                "been replaced; the one that was already here is untouched.")
+
+        # Swap. Only now is the working one at risk, and only for the moment
+        # between the two renames.
+        shutil.rmtree(previous, ignore_errors=True)
+        if os.path.isdir(python_dir):
+            try:
+                os.rename(python_dir, previous)
+            except OSError as e:
+                raise ProvisionError(
+                    f"The interpreter already here could not be moved aside "
+                    f"({e}). Something is still running from it. Close the "
+                    f"manager and try again; nothing has been changed.") from e
+        os.rename(staging, python_dir)
+        shutil.rmtree(previous, ignore_errors=True)   # locked files stay; harmless
     finally:
         shutil.rmtree(workspace, ignore_errors=True)
+        shutil.rmtree(staging, ignore_errors=True)
 
     executable = os.path.join(python_dir, "python.exe")
-    if not os.path.isfile(executable):
-        raise ProvisionError(
-            f"The interpreter did not unpack as expected: no {executable}")
     say(f"Interpreter installed in {python_dir}")
     return executable
 

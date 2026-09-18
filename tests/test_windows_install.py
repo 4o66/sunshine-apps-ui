@@ -216,5 +216,72 @@ class DeferredRemovalTest(unittest.TestCase):
         message = installer._deferred_removal(r"C:\x")
         self.assertIn("Delete it by hand", message)
 
+
+class StartMenuShortcutTest(unittest.TestCase):
+    """A way to open it at the machine, which is the case a tile cannot cover."""
+
+    def setUp(self):
+        self.real_name = os.name
+        self.real_environ = dict(os.environ)
+        self.real_run = installer.subprocess.run
+        self.tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.tmp, True)
+        os.name = "nt"
+        appdata = os.path.join(self.tmp, "Roaming")
+        self.programs = os.path.join(appdata, "Microsoft", "Windows",
+                                     "Start Menu", "Programs")
+        os.makedirs(self.programs)
+        os.environ["APPDATA"] = appdata
+        self.where = {"install": self.tmp,
+                      "command": os.path.join(self.tmp, "sunshine-apps-ui.cmd")}
+        self.scripts = []
+
+        class Result:
+            returncode = 0
+
+        def fake_run(cmd, **kwargs):
+            self.scripts.append(cmd[-1] if isinstance(cmd, list) else cmd)
+            # A real shortcut is a structured file; standing in for it here.
+            open(os.path.join(self.programs, "Sunshine App Manager.lnk"), "w").close()
+            return Result()
+
+        installer.subprocess.run = fake_run
+
+    def tearDown(self):
+        os.name = self.real_name
+        installer.subprocess.run = self.real_run
+        os.environ.clear()
+        os.environ.update(self.real_environ)
+
+    def test_it_makes_a_shortcut_to_the_installed_command(self):
+        link = installer._start_menu_shortcut(self.where)
+        self.assertTrue(link.endswith("Sunshine App Manager.lnk"))
+        self.assertIn(self.where["command"], self.scripts[0])
+        self.assertIn("WScript.Shell", self.scripts[0])
+
+    def test_it_uses_the_poster_as_its_icon_when_there_is_one(self):
+        os.makedirs(os.path.join(self.tmp, "assets"))
+        open(os.path.join(self.tmp, "assets", "poster.png"), "w").close()
+        installer._start_menu_shortcut(self.where)
+        self.assertIn("IconLocation", self.scripts[0])
+
+    def test_no_icon_is_not_a_failure(self):
+        installer._start_menu_shortcut(self.where)
+        self.assertNotIn("IconLocation", self.scripts[0])
+
+    def test_uninstalling_takes_it_back(self):
+        installer._start_menu_shortcut(self.where)
+        messages = installer._remove_start_menu_shortcut()
+        self.assertTrue(any("Start menu" in m for m in messages))
+        self.assertFalse(os.path.exists(
+            os.path.join(self.programs, "Sunshine App Manager.lnk")))
+
+    def test_none_of_this_happens_off_windows(self):
+        os.name = self.real_name
+        if os.name == "nt":
+            self.skipTest("this asserts the POSIX no-op")
+        self.assertEqual(installer._start_menu_shortcut(self.where), "")
+        self.assertEqual(installer._remove_start_menu_shortcut(), [])
+
 if __name__ == "__main__":
     unittest.main()

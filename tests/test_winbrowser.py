@@ -211,7 +211,7 @@ class WindowsRoutingTest(unittest.TestCase):
         self.helper_calls = []
         winbrowser.start_helper_de_elevated = lambda url, profile: (
             self.helper_calls.append((url, profile)) or True)
-        winbrowser.start_browser = lambda url, profile: ("process", "edge", "job")
+        winbrowser.start_browser = lambda url, profile, **kw: ("process", "edge", "job")
 
     def tearDown(self):
         self.launcher.WINDOWS = self.real_windows
@@ -277,7 +277,7 @@ class HelperLoopTest(unittest.TestCase):
             pid = 1234
 
         self.job = FakeJob
-        winbrowser.start_browser = lambda url, profile: (FakeProcess(), "edge", FakeJob())
+        winbrowser.start_browser = lambda url, profile, **kw: (FakeProcess(), "edge", FakeJob())
 
     def tearDown(self):
         winbrowser.start_browser = self.real_start
@@ -307,7 +307,7 @@ class HelperLoopTest(unittest.TestCase):
         self.assertEqual(winbrowser.helper_main(self.payload(0)), 0)
 
     def test_a_browser_that_will_not_start_is_reported(self):
-        winbrowser.start_browser = lambda url, profile: (None, "", None)
+        winbrowser.start_browser = lambda url, profile, **kw: (None, "", None)
         self.assertEqual(winbrowser.helper_main(self.payload(0)), 1)
 
 
@@ -338,6 +338,188 @@ class UninstallTaskTest(unittest.TestCase):
         self.assertEqual(calls[0][:3], ["schtasks", "/delete", "/tn"])
         self.assertEqual(calls[0][3], winbrowser.TASK_NAME)
         self.assertTrue(messages)
+
+
+class CheapLivenessTest(unittest.TestCase):
+    """How the launcher asks whether the browser is still up.
+
+    It used to enumerate every process on the machine through WMI, at 2.5-3.3
+    seconds a call, in two loops whose sleeps were 0.5 and 1 second. That was
+    most of the ten seconds it took to open, and all of the lag on closing.
+    Both answers below are exact and cost nothing.
+    """
+
+    def setUp(self):
+        from sunshine_apps_ui import launcher
+        self.launcher = launcher
+        self.real_windows = launcher.WINDOWS
+        self.real_job = launcher._JOB
+        self.real_browsers = launcher.browsers
+        self.real_read = winbrowser.read_helper_pid
+        self.real_alive = winbrowser.process_alive
+        self.real_occupied = winbrowser.job_is_occupied
+        launcher.WINDOWS = True
+        launcher.browsers = lambda: self.fail("the expensive path was taken")
+
+    def tearDown(self):
+        self.launcher.WINDOWS = self.real_windows
+        self.launcher._JOB = self.real_job
+        self.launcher.browsers = self.real_browsers
+        winbrowser.read_helper_pid = self.real_read
+        winbrowser.process_alive = self.real_alive
+        winbrowser.job_is_occupied = self.real_occupied
+
+    def test_when_we_hold_the_job_the_job_is_asked(self):
+        self.launcher._JOB = object()
+        winbrowser.job_is_occupied = lambda job: True
+        self.assertTrue(self.launcher.browser_is_up(r"C:\p"))
+        winbrowser.job_is_occupied = lambda job: False
+        self.assertFalse(self.launcher.browser_is_up(r"C:\p"))
+
+    def test_when_a_helper_holds_it_the_helper_is_watched(self):
+        self.launcher._JOB = None
+        winbrowser.read_helper_pid = lambda profile: 4321
+        winbrowser.process_alive = lambda pid: pid == 4321
+        self.assertTrue(self.launcher.browser_is_up(r"C:\p"))
+        winbrowser.process_alive = lambda pid: False
+        self.assertFalse(self.launcher.browser_is_up(r"C:\p"))
+
+    def test_the_expensive_path_is_the_last_resort_only(self):
+        """Neither a job nor a helper: fall back, rather than answer wrongly."""
+        self.launcher._JOB = None
+        winbrowser.read_helper_pid = lambda profile: 0
+        self.launcher.browsers = lambda: [111]
+        self.assertTrue(self.launcher.browser_is_up(r"C:\p"))
+
+
+class HelperRecordTest(unittest.TestCase):
+    """The helper says who it is, so a later run can end it without hunting."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.tmp, True)
+        self.profile = os.path.join(self.tmp, "browser-profile")
+        os.makedirs(self.profile)
+
+    def write(self, pid, image, started=0):
+        with open(winbrowser.helper_pid_path(self.profile), "w", encoding="utf-8") as handle:
+            handle.write(f"{pid}\n{image}\n{started}\n")
+
+    def test_it_records_the_pid_what_is_running_and_when_it_started(self):
+        """All three: a pid is not an identity, and neither is a pid plus an
+        image when every process here is the same python.exe. A recycled number
+        passed that weaker test on the rig and something innocent was ended."""
+        self.write(1234, r"C:\x\python.exe", 133012345678901234)
+        self.assertEqual(winbrowser.read_helper_record(self.profile),
+                         (1234, r"C:\x\python.exe", 133012345678901234))
+        self.assertEqual(winbrowser.read_helper_pid(self.profile), 1234)
+
+    def test_no_record_is_not_an_error(self):
+        self.assertEqual(winbrowser.read_helper_record(self.profile), (0, "", 0))
+        self.assertEqual(winbrowser.read_helper_pid(self.profile), 0)
+
+    def test_a_damaged_record_is_not_an_error(self):
+        with open(winbrowser.helper_pid_path(self.profile), "w") as handle:
+            handle.write("not a pid")
+        self.assertEqual(winbrowser.read_helper_record(self.profile), (0, "", 0))
+
+    def test_a_reused_pid_is_not_terminated(self):
+        """This is not hypothetical: it happened on the rig, and the launcher
+        ended something innocent and exited."""
+        real = (winbrowser.process_alive, winbrowser.process_image,
+                winbrowser.process_start_time)
+        try:
+            self.write(4321, r"C:\ours\python.exe", started=111)
+            winbrowser.process_alive = lambda pid: True
+            winbrowser.process_image = lambda pid: r"C:\ours\python.exe"
+            # Same pid, same image, different process.
+            winbrowser.process_start_time = lambda pid: 999
+            self.assertFalse(winbrowser.stop_helper(self.profile))
+        finally:
+            (winbrowser.process_alive, winbrowser.process_image,
+             winbrowser.process_start_time) = real
+
+    def test_our_own_pid_is_never_ended(self):
+        self.write(os.getpid(), r"C:\ours\python.exe", started=0)
+        self.assertFalse(winbrowser.stop_helper(self.profile))
+
+    def test_a_helper_that_is_gone_needs_no_stopping(self):
+        real_alive = winbrowser.process_alive
+        try:
+            self.write(4321, r"C:\ours\python.exe", started=111)
+            winbrowser.process_alive = lambda pid: False
+            self.assertFalse(winbrowser.stop_helper(self.profile))
+        finally:
+            winbrowser.process_alive = real_alive
+
+
+class WindowShapeTest(unittest.TestCase):
+    """Sean's rule, 2026-09-17: fullscreen either way, border only at the machine.
+
+    "on windows, fullscreen with the window border is fine, but from moonlight
+    fullscreen no window border."
+    """
+
+    URL = "http://127.0.0.1:1/?token=x"
+    PROFILE = r"C:\state\browser-profile"
+
+    def command(self, name, kind, streamed):
+        return winbrowser.Browser(name, rf"C:\{name}.exe", kind).command(
+            self.URL, self.PROFILE, streamed=streamed)
+
+    def test_streamed_chromium_is_fullscreen(self):
+        for name in ("edge", "chrome"):
+            command = self.command(name, "app", streamed=True)
+            self.assertIn("--start-fullscreen", command)
+            self.assertNotIn("--start-maximized", command)
+
+    def test_local_chromium_keeps_its_frame(self):
+        for name in ("edge", "chrome"):
+            command = self.command(name, "app", streamed=False)
+            self.assertIn("--start-maximized", command)
+            self.assertNotIn("--start-fullscreen", command)
+
+    def test_app_mode_is_used_either_way(self):
+        """The page should never be framed by tabs and an address bar."""
+        for streamed in (True, False):
+            self.assertIn(f"--app={self.URL}", self.command("edge", "app", streamed))
+
+    def test_streamed_firefox_and_opera_are_kiosk(self):
+        for name, kind in (("firefox", "kiosk-firefox"), ("opera", "kiosk-chromium")):
+            self.assertIn("--kiosk", self.command(name, kind, streamed=True))
+
+    def test_local_firefox_and_opera_are_not(self):
+        """Kiosk has no way out, which is wrong on a desktop."""
+        for name, kind in (("firefox", "kiosk-firefox"), ("opera", "kiosk-chromium")):
+            command = self.command(name, kind, streamed=False)
+            self.assertNotIn("--kiosk", command)
+            self.assertIn(self.URL, command)
+
+
+class LaunchedBySunshineTest(unittest.TestCase):
+    """Whether Sunshine started us, asked rather than asserted."""
+
+    def setUp(self):
+        self.real_environ = dict(os.environ)
+        for name in ("SUNSHINE_APP_ID", "SUNSHINE_CLIENT_NAME", "SUNSHINE_APP_NAME"):
+            os.environ.pop(name, None)
+
+    def tearDown(self):
+        os.environ.clear()
+        os.environ.update(self.real_environ)
+
+    def test_sunshine_says_so_in_the_environment(self):
+        for name in ("SUNSHINE_APP_ID", "SUNSHINE_CLIENT_NAME", "SUNSHINE_APP_NAME"):
+            os.environ[name] = "something"
+            self.assertTrue(winbrowser.launched_by_sunshine(), name)
+            os.environ.pop(name)
+
+    def test_opened_at_the_machine_it_says_nothing(self):
+        self.assertFalse(winbrowser.launched_by_sunshine())
+
+    def test_an_empty_value_does_not_count(self):
+        os.environ["SUNSHINE_APP_ID"] = ""
+        self.assertFalse(winbrowser.launched_by_sunshine())
 
 if __name__ == "__main__":
     unittest.main()

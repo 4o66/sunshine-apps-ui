@@ -77,8 +77,11 @@ def server_environment(base: Optional[dict] = None) -> dict:
         environment["PYTHONPATH"] = (f"{ours}{os.pathsep}{existing}" if existing
                                      else ours)
     # Says "you are being watched through a stream", which changes what the
-    # pages say about disconnecting.
-    environment["BSM_UI_VIA_SUNSHINE"] = "1"
+    # pages say about disconnecting. Asked of Sunshine rather than asserted:
+    # this used to be set whenever the launcher ran, so opening the manager at
+    # the machine still warned about interrupting a stream that was not there.
+    from .winbrowser import launched_by_sunshine
+    environment["BSM_UI_VIA_SUNSHINE"] = "1" if launched_by_sunshine() else "0"
     return environment
 
 # Flatpak first: on an immutable system it is the one that is really there, and
@@ -189,6 +192,55 @@ def _end(pids: Sequence[int], hard: bool = False) -> None:
             continue
 
 
+def _server_record_path() -> str:
+    from . import places
+    return os.path.join(places.state_dir(), "server.pid")
+
+
+def remember_server(process) -> None:
+    """Write down the server we just started, so the next run can end it cheaply.
+
+    Without this, finding a server left by a previous launch means enumerating
+    every process on the machine -- which on Windows is a WMI query costing
+    several seconds, on every single launch, to discover that there usually is
+    not one.
+    """
+    try:
+        os.makedirs(os.path.dirname(_server_record_path()), exist_ok=True)
+        started = 0
+        if WINDOWS:
+            from . import winbrowser
+            started = winbrowser.process_start_time(process.pid)
+        with open(_server_record_path(), "w", encoding="utf-8") as handle:
+            handle.write(f"{process.pid}\n{sys.executable}\n{started}\n")
+    except OSError:
+        pass
+
+
+def _stop_recorded_server() -> bool:
+    """End the server named in the record. True if there was one to end."""
+    try:
+        with open(_server_record_path(), "r", encoding="utf-8") as handle:
+            lines = handle.read().splitlines()
+        pid = int(lines[0])
+        image = lines[1] if len(lines) > 1 else ""
+        started = int(lines[2]) if len(lines) > 2 else 0
+    except (OSError, ValueError, IndexError):
+        return False
+    if not pid or pid == os.getpid():
+        return False
+    if WINDOWS:
+        from . import winbrowser
+        # A pid is not an identity, and neither is a pid plus an image when
+        # every process involved is the same python.exe -- a recycled number
+        # passed that test and something innocent was terminated. The moment it
+        # started is what makes it unique.
+        if not winbrowser.is_same_process(pid, image, started):
+            return False
+    _end([pid])
+    return True
+
+
 def stop_previous() -> None:
     """Replace the previous session rather than stacking one on top of it.
 
@@ -198,7 +250,25 @@ def stop_previous() -> None:
     launcher exits and takes down the server it just started, leaving every
     window dead.
     """
-    _end(_pgrep(SERVER_PATTERN))
+    # The one we wrote down, first and cheaply. The scan below is the fallback
+    # for a server started by some earlier version that left no record.
+    stopped = _stop_recorded_server()
+    if not (WINDOWS and stopped):
+        _end(_pgrep(SERVER_PATTERN))
+
+    if WINDOWS:
+        # Nothing to hunt for. A previous launcher that held the job itself took
+        # its browser down when it went -- that is what kill-on-close means --
+        # so the only thing that can still be up is a helper, and it says so in
+        # a file. Enumerating every process to discover that took two and a half
+        # seconds off every launch and usually found nothing.
+        from . import winbrowser
+        if winbrowser.stop_helper(profile_dir()):
+            deadline = time.monotonic() + STOP_TIMEOUT
+            while time.monotonic() < deadline and browser_is_up(profile_dir()):
+                time.sleep(0.25)
+        return
+
     if not browsers():
         return
     _end(browsers())
@@ -288,7 +358,8 @@ def _open_browser_windows(url: str, profile: str) -> Tuple[Optional[subprocess.P
               "administrator.", file=sys.stderr)
         return None, ""
 
-    process, how, job = winbrowser.start_browser(url, profile)
+    process, how, job = winbrowser.start_browser(
+        url, profile, streamed=winbrowser.launched_by_sunshine())
     if process is None:
         return None, ""
     # Held for as long as this launcher runs: closing the last handle is what
@@ -299,6 +370,43 @@ def _open_browser_windows(url: str, profile: str) -> Tuple[Optional[subprocess.P
 
 
 _JOB = None                                   # the job the browser lives in
+
+
+def winbrowser_helper_pid(profile: str) -> int:
+    if not WINDOWS:
+        return 0
+    from . import winbrowser
+    return winbrowser.read_helper_pid(profile)
+
+
+def browser_is_up(profile: str) -> bool:
+    """Is our browser still there?
+
+    Asked once a second while the window is open, so how it is asked matters.
+    On Windows there are two exact answers available for nothing:
+
+    * when we started the browser, it is in a job of ours -- ask the job;
+    * when a helper started it (the elevated case), the helper is holding that
+      job and goes when the browser does -- ask whether the helper is alive.
+
+    Only when neither applies does this fall back to `browsers()`, which
+    enumerates every process on the machine through WMI and takes two and a half
+    seconds. That was being called in two polling loops whose sleeps were half a
+    second and one second, which is where most of the ten seconds Sean measured
+    went, and all of the lag on closing the window.
+    """
+    if not WINDOWS:
+        return bool(browsers())
+
+    from . import winbrowser
+    if _JOB is not None:
+        return winbrowser.job_is_occupied(_JOB)
+
+    pid = winbrowser.read_helper_pid(profile)
+    if pid:
+        return winbrowser.process_alive(pid)
+
+    return bool(browsers())
 
 
 # ---------------------------------------------------------------- the run ---
@@ -333,6 +441,7 @@ def launch(argv: Optional[List[str]] = None) -> int:
     with filemode.open_private(log_file) as handle:
         server = subprocess.Popen(server_command(), stdout=handle,
                                   stderr=subprocess.STDOUT, env=environment)
+    remember_server(server)
 
     browser = None
     ours: List[int] = []
@@ -350,11 +459,15 @@ def launch(argv: Optional[List[str]] = None) -> int:
         # Give the window a moment to exist before watching for it to go, and
         # remember which processes are ours.
         deadline = time.monotonic() + APPEAR_TIMEOUT
-        while time.monotonic() < deadline and not browsers():
+        while time.monotonic() < deadline and not browser_is_up(profile):
             if browser is not None and browser.poll() is not None:
                 break
             time.sleep(0.5)
-        ours = browsers()
+        # Which processes are ours, for the teardown that cannot use the job --
+        # asked once, here, rather than once a second. On Windows with a job or
+        # a helper this is not needed at all.
+        ours = [] if (WINDOWS and (_JOB is not None or
+                                   winbrowser_helper_pid(profile))) else browsers()
 
         # Stay until one of the two goes; the other is taken down below.
         #
@@ -363,7 +476,7 @@ def launch(argv: Optional[List[str]] = None) -> int:
         # up, which would shut the server down under a live page. And the
         # server can stop on its own -- it does exactly that after applying --
         # which would leave the window showing a page that no longer loads.
-        while browsers() and server.poll() is None:
+        while browser_is_up(profile) and server.poll() is None:
             time.sleep(1)
         return 0
     finally:

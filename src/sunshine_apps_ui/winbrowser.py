@@ -44,6 +44,19 @@ from typing import Dict, List, NamedTuple, Optional, Tuple
 
 WINDOWS = os.name == "nt"
 
+
+def launched_by_sunshine() -> bool:
+    """Did Sunshine's tile start us, or did somebody open this at the machine?
+
+    Sunshine puts its own variables in the environment of everything it launches
+    (src/process.cpp). Their presence is the honest test; asserting it ourselves
+    is not, which is what BSM_UI_VIA_SUNSHINE used to do -- it was set whenever
+    the launcher ran, so opening this locally still warned about interrupting a
+    stream that was not there.
+    """
+    return any(os.environ.get(name) for name in
+               ("SUNSHINE_APP_ID", "SUNSHINE_CLIENT_NAME", "SUNSHINE_APP_NAME"))
+
 # Enough to stop a fresh profile showing onboarding instead of the page. Without
 # this, kiosk mode opens on the Terms of Use screen.
 FIREFOX_PREFS = """// Written by sunshine-apps-ui. A fresh profile otherwise opens
@@ -63,16 +76,27 @@ class Browser(NamedTuple):
     path: str
     kind: str          # "app" | "kiosk-chromium" | "kiosk-firefox"
 
-    def command(self, url: str, profile: str) -> List[str]:
+    def command(self, url: str, profile: str, streamed: bool = True) -> List[str]:
+        """The command line, which depends on where this will be looked at.
+
+        Streamed through Moonlight, nothing should frame the page: fullscreen,
+        no border, no title bar. Opened at the machine from the Start menu, a
+        window you cannot move or close is hostile -- so it fills the screen and
+        keeps its frame. Sean's rule, 2026-09-17.
+        """
         if self.kind == "app":
+            window = "--start-fullscreen" if streamed else "--start-maximized"
             return [self.path, f"--user-data-dir={profile}", "--no-first-run",
-                    "--no-default-browser-check", f"--app={url}"]
+                    "--no-default-browser-check", f"--app={url}", window]
         if self.kind == "kiosk-chromium":
             # Opera. --app is accepted on the command line and ignored, which is
             # worse than being rejected: it looks like it worked.
-            return [self.path, f"--user-data-dir={profile}", "--no-first-run",
-                    "--kiosk", url]
-        return [self.path, "--profile", profile, "--no-remote", "--kiosk", url]
+            command = [self.path, f"--user-data-dir={profile}", "--no-first-run"]
+            # Kiosk has no way out, which is right on a television and wrong on
+            # a desktop.
+            return command + (["--kiosk", url] if streamed else [url])
+        command = [self.path, "--profile", profile, "--no-remote"]
+        return command + (["--kiosk", url] if streamed else [url])
 
 
 def _candidates() -> List[Tuple[str, str, List[str]]]:
@@ -248,7 +272,8 @@ class KillOnCloseJob:
 
 
 def start_browser(url: str, profile: str,
-                  browser: Optional[Browser] = None) -> Tuple[Optional[subprocess.Popen], str, Optional[KillOnCloseJob]]:
+                  browser: Optional[Browser] = None,
+                  streamed: bool = True) -> Tuple[Optional[subprocess.Popen], str, Optional[KillOnCloseJob]]:
     """Start a browser and put it in a kill-on-close job. (process, how, job).
 
     The process is started suspended and assigned before it runs, so that every
@@ -266,7 +291,7 @@ def start_browser(url: str, profile: str,
     CREATE_SUSPENDED = 0x00000004
     try:
         process = subprocess.Popen(
-            chosen.command(url, profile),
+            chosen.command(url, profile, streamed=streamed),
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
             creationflags=CREATE_SUSPENDED)
     except (OSError, subprocess.SubprocessError):
@@ -352,7 +377,8 @@ def write_request(url: str, profile: str, where: str) -> str:
     os.makedirs(where, exist_ok=True)
     path = os.path.join(where, "browser-request.json")
     filemode.write_private(path, json.dumps(
-        {"url": url, "profile": profile, "parent": os.getpid()}))
+        {"url": url, "profile": profile, "parent": os.getpid(),
+         "streamed": launched_by_sunshine()}))
     return path
 
 
@@ -470,6 +496,143 @@ def _read_request(payload: str) -> Optional[Dict]:
     return request if isinstance(request, dict) else None
 
 
+def helper_pid_path(profile: str) -> str:
+    """Where the helper records that it is the one holding the browser."""
+    return os.path.join(os.path.dirname(profile), "browser-helper.pid")
+
+
+def read_helper_pid(profile: str) -> int:
+    return read_helper_record(profile)[0]
+
+
+def read_helper_record(profile: str):
+    """(pid, image, start time) of the helper that recorded itself, or (0, "", 0).
+
+    All three, because a pid on its own is not an identity and neither is a pid
+    plus an image when every process here is the same python.exe.
+    """
+    try:
+        with open(helper_pid_path(profile), "r", encoding="utf-8") as handle:
+            lines = handle.read().splitlines()
+        return (int(lines[0].strip() or 0),
+                lines[1].strip() if len(lines) > 1 else "",
+                int(lines[2].strip()) if len(lines) > 2 else 0)
+    except (OSError, ValueError, IndexError):
+        return 0, "", 0
+
+
+def process_image(pid: int) -> str:
+    """The executable a process is running, for checking a pid is still who we think."""
+    import ctypes
+    from ctypes import wintypes
+
+    PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+    kernel32.OpenProcess.restype = wintypes.HANDLE
+    kernel32.QueryFullProcessImageNameW.argtypes = [
+        wintypes.HANDLE, wintypes.DWORD, wintypes.LPWSTR,
+        ctypes.POINTER(wintypes.DWORD)]
+    kernel32.QueryFullProcessImageNameW.restype = wintypes.BOOL
+    kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+
+    handle = kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
+    if not handle:
+        return ""
+    try:
+        size = wintypes.DWORD(32768)
+        buffer = ctypes.create_unicode_buffer(size.value)
+        if not kernel32.QueryFullProcessImageNameW(handle, 0, buffer, ctypes.byref(size)):
+            return ""
+        return buffer.value
+    finally:
+        kernel32.CloseHandle(handle)
+
+
+def process_start_time(pid: int) -> int:
+    """When a process began, as a FILETIME. Identity, where a pid alone is not.
+
+    Every process here runs the same python.exe, so comparing images proves
+    nothing: a recycled pid passes that test and gets terminated. It happened --
+    a launcher ended something innocent and exited. A pid plus the moment it
+    started is unique for as long as anyone cares.
+    """
+    import ctypes
+    from ctypes import wintypes
+
+    PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+    kernel32.OpenProcess.restype = wintypes.HANDLE
+    kernel32.GetProcessTimes.argtypes = [wintypes.HANDLE] + [ctypes.POINTER(wintypes.FILETIME)] * 4
+    kernel32.GetProcessTimes.restype = wintypes.BOOL
+    kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+
+    handle = kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
+    if not handle:
+        return 0
+    try:
+        created, exited, kernel, user = (wintypes.FILETIME() for _ in range(4))
+        if not kernel32.GetProcessTimes(handle, ctypes.byref(created), ctypes.byref(exited),
+                                        ctypes.byref(kernel), ctypes.byref(user)):
+            return 0
+        return (created.dwHighDateTime << 32) | created.dwLowDateTime
+    finally:
+        kernel32.CloseHandle(handle)
+
+
+def is_same_process(pid: int, image: str, started: int) -> bool:
+    """Is that pid still the process we wrote down, rather than a new one?"""
+    if not pid or pid == os.getpid() or not process_alive(pid):
+        return False
+    if started and process_start_time(pid) != started:
+        return False
+    running = process_image(pid)
+    if image and running and os.path.normcase(running) != os.path.normcase(image):
+        return False
+    return True
+
+
+def stop_helper(profile: str) -> bool:
+    """End a helper left by an earlier run. True if one was there and is now gone.
+
+    Only the helper needs ending: it holds the job, and the job takes the browser
+    with it. A launcher that held the job itself needs nothing done at all --
+    kill-on-close means its browser died when it did.
+    """
+    import ctypes
+    from ctypes import wintypes
+
+    pid, image, started = read_helper_record(profile)
+    if not is_same_process(pid, image, started):
+        # Gone, or the number has been reused. Either way, not ours to end.
+        return False
+
+    PROCESS_TERMINATE = 0x0001
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+    kernel32.OpenProcess.restype = wintypes.HANDLE
+    kernel32.TerminateProcess.argtypes = [wintypes.HANDLE, wintypes.UINT]
+    kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+    handle = kernel32.OpenProcess(PROCESS_TERMINATE, False, pid)
+    if not handle:
+        return False
+    try:
+        kernel32.TerminateProcess(handle, 1)
+        return True
+    finally:
+        kernel32.CloseHandle(handle)
+
+
+def job_is_occupied(job: "KillOnCloseJob") -> bool:
+    """Does the job still hold anything? Microseconds, and exact.
+
+    This is the question the launcher was answering by enumerating every
+    process on the machine through WMI, at two and a half seconds a time.
+    """
+    return _job_has_processes(job)
+
+
 def helper_main(payload: str) -> int:
     """Run as the medium-integrity child: own the job, hold the browser.
 
@@ -480,10 +643,21 @@ def helper_main(payload: str) -> int:
     if request is None:
         return 2
     process, how, job = start_browser(str(request.get("url", "")),
-                                      str(request.get("profile", "")))
+                                      str(request.get("profile", "")),
+                                      streamed=bool(request.get("streamed", True)))
     if process is None or job is None:
         return 1
     parent = request.get("parent")
+    profile = str(request.get("profile", ""))
+    pid_file = helper_pid_path(profile) if profile else ""
+    if pid_file:
+        try:
+            os.makedirs(os.path.dirname(pid_file), exist_ok=True)
+            with open(pid_file, "w", encoding="utf-8") as handle:
+                handle.write(f"{os.getpid()}\n{sys.executable}\n"
+                             f"{process_start_time(os.getpid())}\n")
+        except OSError:
+            pid_file = ""
     try:
         while True:
             # Firefox and Opera exit the process we started and respawn, so the
@@ -502,6 +676,11 @@ def helper_main(payload: str) -> int:
     finally:
         job.terminate()
         job.close()
+        if pid_file:
+            try:
+                os.unlink(pid_file)
+            except OSError:
+                pass
     return 0
 
 

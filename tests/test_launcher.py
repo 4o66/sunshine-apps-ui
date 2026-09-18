@@ -355,9 +355,20 @@ class ChildCanImportUsTest(unittest.TestCase):
         self.assertEqual(once["PYTHONPATH"].split(os.pathsep).count(
             launcher.package_path()), 1)
 
-    def test_the_child_is_told_it_is_being_watched_through_a_stream(self):
+    def test_the_child_is_told_when_it_is_being_watched_through_a_stream(self):
+        """Sunshine puts its own variables in the environment of what it starts."""
+        with mock.patch.dict(os.environ, {"SUNSHINE_APP_ID": "3"}):
+            self.assertEqual(
+                launcher.server_environment({})["BSM_UI_VIA_SUNSHINE"], "1")
+
+    def test_and_told_when_it_is_not(self):
+        """Opened at the machine, nothing is being interrupted by applying a
+        change -- and this used to claim otherwise, because it was asserted
+        rather than asked. Sean's report, 2026-09-17."""
+        for name in ("SUNSHINE_APP_ID", "SUNSHINE_CLIENT_NAME", "SUNSHINE_APP_NAME"):
+            os.environ.pop(name, None)
         self.assertEqual(
-            launcher.server_environment({})["BSM_UI_VIA_SUNSHINE"], "1")
+            launcher.server_environment({})["BSM_UI_VIA_SUNSHINE"], "0")
 
     def test_the_server_starts_from_a_bare_interpreter(self):
         """The real check: spawn it the way the launcher does, with nothing
@@ -371,3 +382,53 @@ class ChildCanImportUsTest(unittest.TestCase):
             capture_output=True, text=True, timeout=60)
         self.assertNotIn("No module named", result.stderr)
         self.assertEqual(result.returncode, 0, result.stderr[:400])
+
+
+class ServerRecordTest(unittest.TestCase):
+    """The previous run's server, ended without hunting for it.
+
+    Finding it by enumerating every process costs several seconds on Windows,
+    on every launch, usually to discover there is not one. Sean measured the
+    result as "10 or more seconds" before the window appeared.
+    """
+
+    def setUp(self):
+        self.state = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.state, True)
+        self._previous = os.environ.get("XDG_STATE_HOME")
+        os.environ["XDG_STATE_HOME"] = self.state
+        self.ended = []
+        patched = mock.patch.object(launcher, "_end", self.ended.append)
+        patched.start()
+        self.addCleanup(patched.stop)
+
+    def tearDown(self):
+        if self._previous is None:
+            os.environ.pop("XDG_STATE_HOME", None)
+        else:
+            os.environ["XDG_STATE_HOME"] = self._previous
+
+    def test_the_server_is_written_down_when_it_starts(self):
+        class Process:
+            pid = 4242
+        launcher.remember_server(Process())
+        written = open(launcher._server_record_path()).read().splitlines()
+        self.assertEqual(int(written[0]), 4242)
+        self.assertTrue(written[1])
+
+    def test_no_record_means_nothing_to_stop(self):
+        self.assertFalse(launcher._stop_recorded_server())
+
+    def test_a_damaged_record_is_not_an_error(self):
+        os.makedirs(os.path.dirname(launcher._server_record_path()), exist_ok=True)
+        with open(launcher._server_record_path(), "w") as handle:
+            handle.write("nonsense")
+        self.assertFalse(launcher._stop_recorded_server())
+
+    @unittest.skipIf(os.name == "nt", "the POSIX path ends it without checking the image")
+    def test_a_recorded_server_is_ended(self):
+        class Process:
+            pid = 4242
+        launcher.remember_server(Process())
+        self.assertTrue(launcher._stop_recorded_server())
+        self.assertEqual(self.ended, [[4242]])

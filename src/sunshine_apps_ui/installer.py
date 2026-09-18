@@ -123,6 +123,54 @@ def _windows_launcher(install_dir: str) -> str:
 UNINSTALL_KEY = r"Software\Microsoft\Windows\CurrentVersion\Uninstall\sunshine-apps-ui"
 
 
+def _start_menu_shortcut(where) -> str:
+    """A way to open it at the machine, not only from a stream.
+
+    Sean, on using it: "we need a way to launch it locally too from the start
+    menu I think." Without one, the only way to open it on the machine in front
+    of you is to type the path to a .cmd that is not on PATH.
+
+    Made with a WScript shell object through PowerShell: a .lnk is a structured
+    file, not something to write by hand, and this is the one way to make one
+    that needs nothing installed.
+    """
+    if os.name != "nt":
+        return ""
+    programs = os.path.join(
+        os.environ.get("APPDATA", ""), "Microsoft", "Windows",
+        "Start Menu", "Programs")
+    if not os.path.isdir(programs):
+        return ""
+    link = os.path.join(programs, "Sunshine App Manager.lnk")
+    icon = os.path.join(where["install"], "assets", "poster.png")
+    script = (
+        "$shell = New-Object -ComObject WScript.Shell; "
+        f"$link = $shell.CreateShortcut('{link}'); "
+        f"$link.TargetPath = '{where['command']}'; "
+        f"$link.WorkingDirectory = '{where['install']}'; "
+        "$link.Description = 'Manage the apps Sunshine offers'; "
+        + (f"$link.IconLocation = '{icon}'; " if os.path.isfile(icon) else "")
+        + "$link.Save()")
+    try:
+        result = subprocess.run(
+            ["powershell", "-NoProfile", "-NonInteractive", "-Command", script],
+            capture_output=True, timeout=30,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    except (OSError, subprocess.SubprocessError):
+        return ""
+    return link if result.returncode == 0 and os.path.isfile(link) else ""
+
+
+def _remove_start_menu_shortcut() -> List[str]:
+    if os.name != "nt":
+        return []
+    link = os.path.join(os.environ.get("APPDATA", ""), "Microsoft", "Windows",
+                        "Start Menu", "Programs", "Sunshine App Manager.lnk")
+    if os.path.isfile(link) and _remove(link):
+        return ["Removed the Start menu shortcut."]
+    return []
+
+
 def _register_with_windows(where) -> List[str]:
     """Appear in Add/Remove Programs, like any other installed program.
 
@@ -210,8 +258,15 @@ def _provide_interpreter(where, wanted: Optional[bool], confirm=None) -> List[st
         return []
     from . import interpreter
 
-    if interpreter.bundled_python(where["install"]) and wanted is not True:
-        return ["Interpreter already installed; leaving it alone."]
+    # A working one is left alone even when asked for again. Replacing it means
+    # deleting it, and deleting an interpreter that something is still running
+    # from leaves a broken one -- which is exactly what happened on the rig.
+    existing = interpreter.bundled_python(where["install"])
+    if existing and interpreter.works(existing):
+        return ["Interpreter already installed and working; leaving it alone."]
+    if existing:
+        return ["", f"The interpreter at {existing} does not run. Replacing it.",
+                *_replace_interpreter(where, interpreter)]
     if wanted is False:
         return ["Skipped the interpreter, as asked. The command will use "
                 "whatever Python is on PATH."]
@@ -238,6 +293,14 @@ def _provide_interpreter(where, wanted: Optional[bool], confirm=None) -> List[st
                 "Everything else is in place; the command will use whatever "
                 "Python is on PATH."]
     return [f"Interpreter   {os.path.join(where['install'], 'python', 'python.exe')}"]
+
+
+def _replace_interpreter(where, interpreter) -> List[str]:
+    try:
+        interpreter.provision(where["install"], log=lambda line: None)
+    except interpreter.ProvisionError as e:
+        return [f"It could not be replaced: {e}"]
+    return ["Replaced it."]
 
 
 def install(prefix: Optional[str] = None, *,
@@ -303,6 +366,9 @@ def install(prefix: Optional[str] = None, *,
     messages.append(f"Installed to {where['install']}")
     messages.append(f"Command     {where['command']}")
     messages.extend(_provide_interpreter(where, with_interpreter, confirm))
+    shortcut = _start_menu_shortcut(where)
+    if shortcut:
+        messages.append(f"Start menu   {shortcut}")
     messages.extend(_register_with_windows(where))
 
     messages.extend(_offer_unhide_tile(confirm))
@@ -446,6 +512,7 @@ def uninstall(prefix: Optional[str] = None, *, keep_state: bool = False,
     stop_previous()
     messages.extend(_remove_browser_task())
     messages.extend(_unregister_with_windows())
+    messages.extend(_remove_start_menu_shortcut())
 
     if not keep_tile:
         # The tile goes first, while the engine is still installed to remove it
