@@ -135,19 +135,19 @@ def steam_local_to_png(appid: int, images_dir: str, steam_root: str = "") -> str
     if not steam_root:
         return ""
 
-    candidates = [
-        os.path.join(steam_root, "appcache", "librarycache", f"{appid}_library_600x900.jpg"),
-        os.path.join(steam_root, "appcache", "librarycache", f"{appid}_library_600x900.png"),
-        os.path.join(steam_root, "appcache", "librarycache", f"{appid}_library_600x900_2x.jpg"),
-        os.path.join(steam_root, "appcache", "librarycache", f"{appid}_library_600x900_2x.png"),
-    ]
+    # Asked of the artwork sources rather than worked out here. Steam has moved
+    # its library cache from flat <appid>_library_600x900.jpg files to a
+    # directory per appid with the asset a further level down under a content
+    # hash, and this had only ever known the old shape -- so on any current
+    # Steam it found nothing, every imported game came in with no picture, and
+    # the picker then offered SteamGridDB as though a key were required. The
+    # picker already knew both layouts; there is no reason for two answers to
+    # the same question.
+    from .artwork_sources import steam_local_portrait
 
-    for src in candidates:
-        if not os.path.isfile(src):
-            continue
-        if stretch_png_600x900(src, out):
-            return out
-
+    src = steam_local_portrait(steam_root, str(appid))
+    if src and stretch_png_600x900(src, out):
+        return out
     return ""
 
 

@@ -109,6 +109,17 @@ def import_steam(home: str, conf_dir: str, images_dir: str, settings: Dict[str, 
             if steam_mode=="flatpak":
                 cmd=f'flatpak-spawn --host flatpak run com.valvesoftware.Steam steam -applaunch {appid}'
                 workdir=f"{home}/.var/app/com.valvesoftware.Steam/.local/share/Steam"
+            elif os.name == "nt":
+                # Not `steam -applaunch`: there is no `steam` on PATH on Windows,
+                # and Sunshine's resolve_command_string() hands a name with no
+                # extension to CreateProcess to find -- so that entry looks right
+                # on the grid and fails when a gamepad presses it. A URL is
+                # resolved through its registered scheme handler instead, which
+                # is what Sunshine's own shipped entry relies on
+                # ("steam://open/bigpicture"), and it needs no path at all, so it
+                # survives Steam being moved to another drive.
+                cmd=f'steam://rungameid/{appid}'
+                workdir=steam_root
             else:
                 cmd=f'steam -applaunch {appid}'
                 workdir=steam_root

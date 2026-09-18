@@ -52,10 +52,17 @@ def import_heroic(home: str, conf_dir: str, images_dir: str, settings: Dict[str,
     os.makedirs(images_dir_sideload, exist_ok=True)
 
     # Heroic config root detection (Flatpak first, then native)
-    fallbacks = [
-        f"{home}/.var/app/com.heroicgameslauncher.hgl/config/heroic",
-        f"{home}/.config/heroic",
-    ]
+    if os.name == "nt":
+        # Windows keeps it in %APPDATA%, not a dotted directory under $HOME.
+        # Without this the importer found nothing at all on a machine with
+        # Heroic installed and games in it -- measured on the rig.
+        appdata = os.environ.get("APPDATA") or os.path.join(home, "AppData", "Roaming")
+        fallbacks = [os.path.join(appdata, "heroic")]
+    else:
+        fallbacks = [
+            f"{home}/.var/app/com.heroicgameslauncher.hgl/config/heroic",
+            f"{home}/.config/heroic",
+        ]
     hero_conf_root = next((p for p in fallbacks if os.path.isdir(p)), "")
     if not hero_conf_root:
         log("Heroic config root not found; skipping Heroic import.")
@@ -68,6 +75,14 @@ def import_heroic(home: str, conf_dir: str, images_dir: str, settings: Dict[str,
         heroic_kind = "flatpak"
         heroic_prefix = "flatpak run com.heroicgameslauncher.hgl "
         add_silent_param = True   # matches the monolith behavior
+    elif os.name == "nt":
+        # No prefix: Windows resolves a heroic:// URL through the scheme handler
+        # Heroic registers, which is how Sunshine runs it too. xdg-open does not
+        # exist here, and prefixing anything would make the whole string a
+        # command Windows cannot find.
+        heroic_kind = "native"
+        heroic_prefix = ""
+        add_silent_param = False
     else:
         heroic_kind = "native"
         heroic_prefix = "xdg-open "

@@ -299,6 +299,20 @@ def _steam_local(steam_root: str, appid: str) -> List[Dict[str, Any]]:
     return found
 
 
+def steam_local_portrait(steam_root: str, appid: str) -> str:
+    """The best local portrait Steam already has for this game, or "".
+
+    The importer's question, answered by the code that knows where Steam keeps
+    things -- rather than by a second, older copy of that knowledge. Portraits
+    only: the importer wants the one picture that goes on a tile, while the
+    picker offers every asset it can find.
+    """
+    for candidate in _steam_local(steam_root, appid):
+        if str(candidate.get("label", "")).startswith("Portrait"):
+            return str(candidate.get("origin", ""))
+    return ""
+
+
 def _steam_cdn(appid: str) -> List[Dict[str, Any]]:
     """Artwork as Valve publishes it today.
 
@@ -332,8 +346,15 @@ def _sgdb(name: str, appid: str, key: str, timeout: int,
           limit: int = SGDB_LIMIT) -> Tuple[List[Dict[str, Any]], str]:
     """Community artwork. Returns (candidates, note explaining any shortfall)."""
     if not key:
-        return [], ("SteamGridDB is not configured. Run sunshine-import "
-                    "--save-sgdb-key to add a key and community artwork appears here.")
+        # Named the old importer's command until 2026-09-18, which does not
+        # exist here -- anyone who followed it got "not recognised". The wording
+        # itself is still wrong and is issue #22: this reads as a requirement
+        # when it is one optional source among several, and assumes the reader
+        # knows what SteamGridDB is.
+        return [], ("No artwork was found for this one. SteamGridDB is a "
+                    "community library of game artwork; if you have an account "
+                    "there, sunshine-apps-ui --save-sgdb-key adds your key and "
+                    "its pictures appear here too.")
 
     def grids(endpoint: str) -> List[Dict[str, Any]]:
         try:
