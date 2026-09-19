@@ -12,3 +12,8 @@ specification, the provenance of every mark, and the licences are in
 rebuild needs no network.
 
 Nothing here is fetched at run time. Artwork ships with the program.
+
+`_template/` holds canvases for hand-lettering a language we cannot render:
+each tile with its mark placed and the caption area empty, plus
+`_layout-guide.png` showing the rules drawn over a real tile. See
+`../../docs/i18n.md`.

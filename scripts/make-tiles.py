@@ -318,17 +318,55 @@ def build_wordless(out_dir):
     return made
 
 
+def build_template(out_dir):
+    """Canvases for somebody adding text by hand.
+
+    The *worded* layout with no words: the mark sits in the glyph box with the
+    caption area empty below it. Built from the wordless set it would be
+    misleading -- there the mark is centred in the whole tile, because there is
+    nothing underneath to balance against, and text added under it would sit
+    too low.
+    """
+    made = []
+
+    def write(glyph, filename):
+        tile = background()
+        place(tile, glyph)
+        tile.save(os.path.join(out_dir, filename))
+        made.append(filename)
+
+    write(our_mark(), "app-manager.png")
+    write(mark("steam.png"), "steam.png")
+    write(mark("heroic.png"), "heroic.png")
+    write(glyph_restart(), "reboot-host.png")
+    for platform in ("windows", "macos", "linux"):
+        write(glyph_monitor_for(platform), "desktop-%s.png" % platform)
+    for name in DISTROS:
+        write(glyph_monitor_for(distro_mark(name)), "desktop-%s.png" % name)
+    return made
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--lang", default="en",
                         help="language code; must have locales/<code>.json")
     parser.add_argument("--wordless-only", action="store_true")
+    parser.add_argument("--template", action="store_true",
+                        help="rebuild assets/tiles/_template (canvases for "
+                             "hand-lettering a language we cannot render)")
     args = parser.parse_args(argv)
 
     if not FONT:
         print("No suitable bold font found. Looked for:\n  " +
               "\n  ".join(FONTS), file=sys.stderr)
         return 2
+
+    if args.template:
+        out = os.path.join(TILES, "_template")
+        os.makedirs(out, exist_ok=True)
+        made = build_template(out)
+        print("template: %d canvases in %s" % (len(made), out))
+        return 0
 
     wordless_dir = os.path.join(TILES, "_wordless")
     os.makedirs(wordless_dir, exist_ok=True)
