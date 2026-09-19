@@ -20,13 +20,13 @@ from . import artwork, privilege, state
 from .engine import (EngineError, art_choose, art_search, backup_diff, browse,
                      check_auth, get_state, list_backups, mutate, run_plan,
                      save_auth)
-from . import scanjob
+from . import scanjob, updates
 from .render import (LOCK_NOTE, app_page, applied_page, artwork_page,
                      render_elevating,
                      backups_page, confirm_page, connect_page, error_page,
                      explain_page, grid_page, hidden_page, is_protected, page,
                      picker_page, render_browsable, render_fields, render_flags,
-                     report_page, scanning_page)
+                     report_page, scanning_page, settings_page)
 
 log = logging.getLogger("sunshine-apps-ui")
 
@@ -119,6 +119,13 @@ class PlanHandler(BaseHTTPRequestHandler):
             self.end_headers()
             if self.command != "HEAD":
                 self.wfile.write(body)
+            return
+
+        if parts.path == "/settings":
+            answer = _LAST_CHECK.pop(self.token, None)
+            self._send(200, settings_page(self.token, prefs=state.prefs(),
+                                          answer=answer,
+                                          via_sunshine=self.via_sunshine))
             return
 
         if parts.path == "/report":
@@ -618,6 +625,34 @@ class PlanHandler(BaseHTTPRequestHandler):
             self._send(404, error_page("Not found."))
             return
 
+        if parts.path.startswith("/settings/"):
+            fields = self._form()
+            what = parts.path.split("/", 2)[2]
+
+            if what == "theme":
+                choice = (fields.get("theme") or ["system"])[0]
+                if choice in ("system", "light", "dark"):
+                    state.set_pref("theme", choice)
+            elif what == "channel":
+                # Checkboxes only arrive when ticked, so their absence is the
+                # answer for the ones that were not.
+                dev = "dev_builds" in fields
+                state.set_pref("dev_builds", dev)
+                if dev:
+                    state.set_pref("stable_if_no_newer_dev",
+                                   "stable_if_no_newer_dev" in fields)
+            elif what == "check":
+                prefs = state.prefs()
+                _LAST_CHECK[self.token] = updates.check(
+                    dev=bool(prefs.get("dev_builds", False)),
+                    stable_if_no_newer_dev=bool(
+                        prefs.get("stable_if_no_newer_dev", True)))
+            else:
+                self._send(404, error_page("Not found.", token=self.token))
+                return
+            self._redirect("/settings")
+            return
+
         if parts.path == "/app":
             fields = self._form()
             op = (fields.get("op") or [""])[0]
@@ -841,6 +876,11 @@ class PlanHandler(BaseHTTPRequestHandler):
         self.send_header("Location", ("/?" if ok else "/connect?") + urlencode(params))
         self.send_header("Content-Length", "0")
         self.end_headers()
+
+
+# The result of the last check, waiting for the redirect that shows it. Keyed
+# by token so a second session cannot read the first one's answer.
+_LAST_CHECK: Dict[str, Any] = {}
 
 
 def _describe_platform() -> str:

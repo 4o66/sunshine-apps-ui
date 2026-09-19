@@ -23,6 +23,30 @@ def _version_chip() -> str:
     return f'<span class="ver">{_e(version_display())}</span>'
 
 
+def theme() -> str:
+    """light, dark, or system -- what the person chose, system unless asked.
+
+    Read here rather than passed through fifteen page functions: it is one
+    small file, read once per page, and a page that renders in the wrong
+    colours because a caller forgot an argument is a worse trade.
+    """
+    try:
+        from . import state
+
+        chosen = str(state.prefs().get("theme", "system")).lower()
+    except Exception:              # noqa: BLE001 - colours, never a failure
+        return "system"
+    return chosen if chosen in ("light", "dark", "system") else "system"
+
+
+def _html(theme_name: Optional[str] = None) -> str:
+    """The opening <html>, carrying the choice for the CSS to act on."""
+    chosen = theme_name if theme_name is not None else theme()
+    if chosen in ("light", "dark"):
+        return f'<html lang="en" data-theme="{chosen}">'
+    return '<html lang="en">'
+
+
 def _title(part: str = "") -> str:
     """A window title that says what program this is, then which page.
 
@@ -77,7 +101,7 @@ _CSS = """
 --shadow-md:0 4px 6px -1px rgba(0,0,0,.1),0 2px 4px -1px rgba(0,0,0,.06);
 --mono:'SF Mono','Monaco','Inconsolata','Fira Code','Courier New',monospace;
 }
-@media(prefers-color-scheme:dark){:root{
+@media(prefers-color-scheme:dark){:root:not([data-theme="light"]){
 --primary-hover:#3d8bfd;--accent-hover:#fd9843;
 --bg-base:#212529;--bg-subtle:#2c3034;--bg-muted:#383d41;--surface:#2c3034;
 --border:#495057;--border-strong:#6c757d;
@@ -85,6 +109,14 @@ _CSS = """
 --shadow-sm:0 1px 2px 0 rgba(0,0,0,.3);
 --shadow-md:0 4px 6px -1px rgba(0,0,0,.4),0 2px 4px -1px rgba(0,0,0,.3);
 }}
+:root[data-theme="dark"]{
+--primary-hover:#3d8bfd;--accent-hover:#fd9843;
+--bg-base:#212529;--bg-subtle:#2c3034;--bg-muted:#383d41;--surface:#2c3034;
+--border:#495057;--border-strong:#6c757d;
+--text:#f8f9fa;--text-muted:#adb5bd;--text-subtle:#6c757d;
+--shadow-sm:0 1px 2px 0 rgba(0,0,0,.3);
+--shadow-md:0 4px 6px -1px rgba(0,0,0,.4),0 2px 4px -1px rgba(0,0,0,.3);
+}
 *{box-sizing:border-box}
 body{margin:0;min-height:100vh;background:var(--bg-base);color:var(--text);
 font:1rem/1.5 system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif}
@@ -98,6 +130,10 @@ display:flex;align-items:baseline;gap:.6rem;flex-wrap:wrap}
 font-family:var(--mono);letter-spacing:.01em}
 .navbar .ro{margin-left:.6rem;color:var(--navbar-text-muted);font-size:.82rem;
 border:1px solid var(--navbar-text-muted);border-radius:999px;padding:2px 10px}
+.navbar .gear{margin-left:.9rem;color:var(--navbar-text);text-decoration:none;
+font-size:.85rem;font-weight:500;border:1px solid var(--navbar-text-muted);
+border-radius:999px;padding:3px 12px;white-space:nowrap}
+.navbar .gear:hover{background:rgba(0,0,0,.08)}
 
 .wrap{max-width:1100px;margin:0 auto;padding:1.5rem 1rem 4rem}
 h1{font-size:1.35rem;margin:0 0 .25rem}
@@ -306,7 +342,7 @@ def confirm_page(doc: Dict[str, Any], token: str, via_sunshine: bool = False,
                         f'<a class="btn" href="/?token={_e(token)}">Back</a></div>')
 
     return f"""<!doctype html>
-<html lang="en"><head><meta charset="utf-8">
+{_html()}<head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{_title('Apply changes')}</title><style>{_CSS}</style></head>
 <body>
@@ -336,7 +372,7 @@ def applied_page(token: str, via_sunshine: bool = False) -> str:
         detail = ("Sunshine reloaded its app list. Any stream in progress has "
                   "disconnected and will show the new games within 30 seconds.")
     return f"""<!doctype html>
-<html lang="en"><head><meta charset="utf-8">
+{_html()}<head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{_title('Applied')}</title><style>{_CSS}</style></head>
 <body>
@@ -395,7 +431,7 @@ def page(doc: Dict[str, Any], log: str = "", token: str = "",
                      f'<pre>{_e(log.strip())}</pre></details>')
 
     return f"""<!doctype html>
-<html lang="en"><head><meta charset="utf-8">
+{_html()}<head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{_title()}</title><style>{_CSS}</style></head>
 <body>
@@ -424,7 +460,7 @@ def error_page(message: str, detail: str = "", token: str = "",
     q = f"?token={_e(token)}" if token else ""
     extra = f"<pre>{_e(detail)}</pre>" if detail else ""
     return f"""<!doctype html>
-<html lang="en"><head><meta charset="utf-8">
+{_html()}<head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{_title()}</title><style>{_CSS}</style></head>
 <body>
@@ -506,7 +542,7 @@ def backups_page(copies: List[Dict[str, Any]], token: str,
                if error else "")
 
     return f"""<!doctype html>
-<html lang="en"><head><meta charset="utf-8">
+{_html()}<head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{_title('Restore a copy')}</title>
 <style>{_CSS}{_BACKUPS_CSS}</style></head>
@@ -611,7 +647,7 @@ def _tile(entry: Dict[str, Any], token: str, *, is_new: bool = False,
 def connect_page(token: str, message: str = "", username: str = "") -> str:
     """The credentials form on its own page, reachable from the grid."""
     return f"""<!doctype html>
-<html lang="en"><head><meta charset="utf-8">
+{_html()}<head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{_title('Connect to Sunshine')}</title><style>{_CSS}</style></head>
 <body>
@@ -630,7 +666,7 @@ def render_elevating(token: str) -> str:
     has to exist for as long as the prompt does.
     """
     return f"""<!doctype html>
-<html lang="en"><head><meta charset="utf-8">
+{_html()}<head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{_title("Administrator")}</title><style>{_CSS}</style></head>
 <body><div class="wrap">
@@ -655,6 +691,128 @@ def _version_label() -> str:
         return version.display()
     except Exception:              # noqa: BLE001 - a label, never a failure
         return version.RELEASE
+
+
+SETTINGS_CSS = """
+.setting{border-bottom:1px solid var(--border);padding:1rem 0}
+.setting:last-child{border-bottom:0}
+.setting h3{margin:0 0 .2rem;font-size:1rem}
+.setting .why{margin:0 0 .7rem}
+.choices{display:flex;gap:.5rem;flex-wrap:wrap}
+.choices button{background:var(--bg-subtle);color:var(--text);
+border:1px solid var(--border);border-radius:var(--radius-md);
+padding:.5rem 1rem;font:inherit;font-size:.9rem;cursor:pointer}
+.choices button.on{background:var(--primary);border-color:var(--primary);color:#fff}
+.toggle{display:flex;align-items:flex-start;gap:.6rem;margin:.4rem 0}
+.toggle input{margin-top:.25rem;width:1.05rem;height:1.05rem;accent-color:var(--primary)}
+.toggle .body{flex:1}
+.toggle label{font-weight:500}
+.toggle .why{margin:.1rem 0 0;font-size:.85rem}
+.toggle.nested{margin-left:1.7rem}
+.toggle.off{opacity:.5}
+.result{margin:.8rem 0 0;padding:.7rem .9rem;border-radius:var(--radius-md);
+background:var(--bg-subtle);border:1px solid var(--border);font-size:.9rem}
+.result.available{border-left:3px solid var(--success)}
+.result.unreachable{border-left:3px solid var(--warning)}
+"""
+
+
+def settings_page(token: str, *, prefs: Dict[str, Any],
+                  answer: Optional[Any] = None,
+                  via_sunshine: bool = False) -> str:
+    """Everything that is a preference rather than a change to the app list.
+
+    Kept off the grid deliberately -- Sean's instruction, 2026-09-19, "set apart
+    from the grid". The grid is a list of things that will happen to apps.json;
+    none of this touches it, and mixing the two invites somebody to press
+    Apply expecting their theme to be saved.
+    """
+    q = f"?token={_e(token)}" if token else ""
+    chosen = str(prefs.get("theme", "system")).lower()
+    dev = bool(prefs.get("dev_builds", False))
+    fall_back = bool(prefs.get("stable_if_no_newer_dev", True))
+
+    themes = "".join(
+        f'<button type="submit" name="theme" value="{key}" '
+        f'class="{"on" if chosen == key else ""}">{label}</button>'
+        for key, label in (("system", "Follow the system"),
+                           ("light", "Light"), ("dark", "Dark")))
+
+    found = ""
+    if answer is not None:
+        extra = ""
+        if answer.state == "available" and answer.release is not None:
+            extra = (f'<div class="actions" style="margin:.7rem 0 0">'
+                     f'<a class="btn" href="{_e(answer.release.url)}" '
+                     f'target="_blank" rel="noopener noreferrer">'
+                     f'What changed</a></div>'
+                     f'<p class="why" style="margin:.6rem 0 0">Installing it '
+                     f'from here is not built yet: there is no package to '
+                     f'install. See <code>docs/packaging.md</code>.</p>')
+        found = (f'<div class="result {_e(answer.state)}">{_e(answer.message)}'
+                 f'{extra}</div>')
+
+    return f"""<!doctype html>
+{_html()}<head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{_title("Settings")}</title><style>{_CSS}{SETTINGS_CSS}</style></head>
+<body>
+<div class="navbar"><span class="brand">Sunshine</span><span class="sep">/</span>
+<span class="where">app manager</span>{_version_chip()}</div>
+<div class="wrap">
+<h1>Settings</h1>
+<p class="sub">None of this touches your app list.</p>
+
+<section>
+  <div class="setting">
+    <h3>Appearance</h3>
+    <p class="why">Following the system is the default. On a television, where
+    there is no system to follow, pick the one that suits the room.</p>
+    <form method="post" action="/settings/theme{q}">
+      <div class="choices">{themes}</div>
+    </form>
+  </div>
+
+  <div class="setting">
+    <h3>Updates</h3>
+    <p class="why">Checked only when you ask. Nothing is downloaded or
+    installed without you saying so.</p>
+    <form method="post" action="/settings/check{q}">
+      <button class="btn" type="submit">Check for updates</button>
+    </form>
+    {found}
+  </div>
+
+  <div class="setting">
+    <h3>Which builds</h3>
+    <form method="post" action="/settings/channel{q}" id="channel">
+      <div class="toggle">
+        <input type="checkbox" id="dev" name="dev_builds" value="1"
+               {"checked" if dev else ""} onchange="this.form.submit()">
+        <div class="body">
+          <label for="dev">Offer development builds</label>
+          <p class="why">Newer, and sometimes broken. Off means only finished
+          releases.</p>
+        </div>
+      </div>
+      <div class="toggle nested {"" if dev else "off"}">
+        <input type="checkbox" id="fall" name="stable_if_no_newer_dev" value="1"
+               {"checked" if fall_back else ""} {"" if dev else "disabled"}
+               onchange="this.form.submit()">
+        <div class="body">
+          <label for="fall">Move to the finished release when it is newer</label>
+          <p class="why">A release is where a development build was heading, so
+          this leaves you on the finished one rather than stranded on an older
+          preview. Only applies while development builds are on.</p>
+        </div>
+      </div>
+      <noscript><button class="btn sec" type="submit">Save</button></noscript>
+    </form>
+  </div>
+</section>
+
+<div class="actions"><a class="btn sec" href="/{q}">Back to the apps</a></div>
+</div></body></html>"""
 
 
 def report_page(token: str, via_sunshine: bool = False,
@@ -708,7 +866,7 @@ def report_page(token: str, via_sunshine: bool = False,
              f'</ul></section>')
 
     return f"""<!doctype html>
-<html lang="en"><head><meta charset="utf-8">
+{_html()}<head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{_title("Report a bug")}</title><style>{_CSS}
 .qr{{background:#fff;padding:12px;border-radius:var(--radius-md);
@@ -760,7 +918,7 @@ def scanning_page(token: str, status: Dict[str, Any]) -> str:
 elapsed. Steam is quick; Heroic reads its whole library and takes the longest.</p>
 </div></div></section>"""
     return f"""<!doctype html>
-<html lang="en"><head><meta charset="utf-8">
+{_html()}<head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{_title("Scanning")}</title><style>{_CSS}
 .scanning{{display:flex;gap:1rem;align-items:center}}
@@ -1024,12 +1182,12 @@ def grid_page(state: Dict[str, Any], token: str, *, new_ids: Optional[set] = Non
                        f'<p class="why">{_e(rights.detail)}</p>{queued_note}{offer}</section>')
 
     return f"""<!doctype html>
-<html lang="en"><head><meta charset="utf-8">
+{_html()}<head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{_title()}</title><style>{_CSS}{_GRID_CSS}</style></head>
 <body>
 <div class="navbar"><span class="brand">Sunshine</span><span class="sep">/</span>
-<span class="where">app manager</span>{_version_chip()}</div>
+<span class="where">app manager</span>{_version_chip()}<a class="gear" href="/settings?token={_e(token)}">Settings</a></div>
 <div class="wrap">
 <h1>{len(apps)} application{'' if len(apps) == 1 else 's'}</h1>
 <p class="sub"><code>{_e(state.get("apps_json", ""))}</code></p>
@@ -1201,7 +1359,7 @@ def picker_page(listing: Dict[str, Any], token: str, *, key: str, field: str,
               f'<p class="crumb">{counted}</p>')
 
     return f"""<!doctype html>
-<html lang="en"><head><meta charset="utf-8">
+{_html()}<head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{_title('Choose ' + _e(label))}</title>
 <style>{_CSS}{_APP_CSS}{_PICKER_CSS}</style></head>
@@ -1265,7 +1423,7 @@ def hidden_page(entry: Dict[str, Any], token: str, queued: bool = False) -> str:
                   f'<a class="btn sec" href="/?token={_e(token)}">Back</a></div></form>')
 
     return f"""<!doctype html>
-<html lang="en"><head><meta charset="utf-8">
+{_html()}<head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{_title(_e(name))}</title><style>{_CSS}{_APP_CSS}{_GRID_CSS}</style></head>
 <body>
@@ -1365,7 +1523,7 @@ def artwork_page(candidates: List[Dict[str, Any]], token: str, *, key: str,
             f'<button class="btn sec" type="submit">Search</button></form>')
 
     return f"""<!doctype html>
-<html lang="en"><head><meta charset="utf-8">
+{_html()}<head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{_title('Artwork for ' + _e(label))}</title>
 <style>{_CSS}{_APP_CSS}{_ARTWORK_CSS}</style></head>
@@ -1499,7 +1657,7 @@ def app_page(entry: Dict[str, Any], token: str, *, is_new: bool = False,
                  f'&name={_eq(name)}&token={_e(token)}">Delete</a></div>')
 
     return f"""<!doctype html>
-<html lang="en"><head><meta charset="utf-8">
+{_html()}<head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{_title(_e(name or "New application"))}</title>
 <style>{_CSS}{_APP_CSS}</style></head>
@@ -1539,7 +1697,7 @@ def explain_page(op: str, entry: Dict[str, Any], token: str) -> str:
     title, body, button = _EXPLAIN[op]
     name = entry.get("name") or ""
     return f"""<!doctype html>
-<html lang="en"><head><meta charset="utf-8">
+{_html()}<head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{_title(_e(title))}</title><style>{_CSS}{_APP_CSS}</style></head>
 <body>

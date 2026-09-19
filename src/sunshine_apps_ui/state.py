@@ -205,6 +205,13 @@ def prefs() -> Dict[str, Any]:
     return value if isinstance(value, dict) else {}
 
 
+def set_pref(name: str, value: Any) -> None:
+    """Remember one preference. Preferences are not changes to apps.json."""
+    current = prefs()
+    current[str(name)] = value
+    _write(PREFS_FILE, current)
+
+
 def should_explain(op: str) -> bool:
     """Explain by default; only silence for an operation once asked to."""
     if op not in EXPLAINED:
