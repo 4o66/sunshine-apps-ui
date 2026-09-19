@@ -80,6 +80,29 @@ app whole and writes the whole file back. The one thing to know is that
 deleting an app there is not recorded as a deletion, so the next scan offers it
 back.
 
+## Why the tiles are named `#1 Desktop` and `Zz Steam`
+
+Both Sunshine's own list and Moonlight's grid present applications in
+alphabetical order, and neither offers a way to arrange them by hand. The name
+*is* the sort key, so the prefix is how a tile is put where it belongs.
+
+- **`#1`** puts a tile first. `#` sorts before letters and digits, so
+  `#1 Desktop` leads the grid — which is where the thing you fall back to
+  belongs, especially on a television where the first tile is the one already
+  under the cursor.
+- **`Zz`** puts a tile last. The launchers and the utilities — Steam, Heroic,
+  Reboot Host, and this manager itself — are things you reach for occasionally,
+  and they would otherwise sit in the middle of your games, in whatever order
+  the alphabet happened to put them.
+
+What is left in between, sorted normally, is your actual library. That is the
+point of the scheme: the games are the content, and everything we add gets out
+of their way at one end or the other.
+
+The prefixes are part of the generated name, so renaming a tile in the
+interface — or in Sunshine's own web UI — keeps whatever you call it. A scan
+will report the difference and leave it alone.
+
 ## Why a web UI and not a desktop app
 
 Two reasons, and the second is the real one.
