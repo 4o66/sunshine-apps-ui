@@ -78,6 +78,9 @@ before it is committed.
 | Heroic | the Heroic shield | Heroic Games Launcher `public/icon.png` (GPL-3.0) |
 | Desktop | a monitor, with the host's platform on the screen | ours |
 | Restart | a circular arrow | ours |
+| Desktop, on macOS | the Apple mark | rendered from Apple's own published path (apple.com global nav) |
+| Desktop, on Linux | the distribution's logo | read from the machine (`os-release` `LOGO=`) |
+| Desktop, elsewhere | four panes, or a penguin | ours |
 
 Both borrowed marks come from GPL-3.0 projects, which is compatible with this
 one. That covers the copyright in the artwork. The **trademarks** are not ours
@@ -113,8 +116,13 @@ this and nothing is fetched: the machine already has its own logo, and every
 distribution gets the right one without us keeping a list.
 
 Fall back to the penguin we ship when there is no `LOGO=`, when the icon cannot
-be found, or when Pillow is not available to composite it. Windows is four
-panes and macOS an apple, both drawn here rather than shipping a brand asset.
+be found, or when Pillow is not available to composite it. The penguin is drawn
+for this project.
+
+Windows is four panes, drawn here. **macOS is Apple's own mark**, rendered from
+the path Apple publishes in the global navigation on `apple.com` — the same
+nominative basis as Steam's and Heroic's marks, and recorded in the README with
+them.
 
 ## Rebuilding
 
