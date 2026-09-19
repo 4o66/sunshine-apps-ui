@@ -324,6 +324,34 @@ def _provide_interpreter(where, wanted: Optional[bool], confirm=None) -> List[st
     return [f"Interpreter   {os.path.join(where['install'], 'python', 'python.exe')}"]
 
 
+def _provide_window(where) -> List[str]:
+    """Build the WebView2 window, if this machine can have one.
+
+    Never fatal, and never asked about. Unlike the interpreter this is not a
+    choice between working and not working: the browser path is there either
+    way, so a machine that cannot build this simply keeps what it had. What is
+    worth saying is which one it ended up with, because that is the difference
+    between the app appearing in a second and a half and in three and a half.
+    """
+    if os.name != "nt":
+        return []
+    from . import winhost
+
+    if not winhost.runtime_version():
+        return ["Window        a browser (no WebView2 runtime on this machine)"]
+    if winhost.is_current(where["install"]):
+        return ["Window        already built and working; leaving it alone."]
+    if not winhost.compiler():
+        return ["Window        a browser (no C# compiler found; it is normally "
+                "part of Windows)"]
+    try:
+        winhost.build(where["install"], log=lambda line: None)
+    except Exception as e:                   # noqa: BLE001 - never fail install
+        return ["", f"The app window was not built: {e}",
+                "Everything else is installed; this machine will use a browser."]
+    return [f"Window        {os.path.join(where['install'], 'host', 'AppWindow.exe')}"]
+
+
 def _replace_interpreter(where, interpreter) -> List[str]:
     try:
         interpreter.provision(where["install"], log=lambda line: None)
@@ -395,6 +423,7 @@ def install(prefix: Optional[str] = None, *,
     messages.append(f"Installed to {where['install']}")
     messages.append(f"Command     {where['command']}")
     messages.extend(_provide_interpreter(where, with_interpreter, confirm))
+    messages.extend(_provide_window(where))
     shortcut = _start_menu_shortcut(where)
     if shortcut:
         messages.append(f"Start menu   {shortcut}")

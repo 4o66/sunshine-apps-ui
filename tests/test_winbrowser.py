@@ -17,6 +17,7 @@ import os
 import shutil
 import sys
 import tempfile
+import time
 import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "src"))
@@ -289,22 +290,62 @@ class HelperLoopTest(unittest.TestCase):
     def payload(self, parent):
         return json.dumps({"url": "http://x/", "profile": r"C:\p", "parent": parent})
 
+    def showing(self, answers):
+        """job_is_showing answers these in order, then repeats the last."""
+        self.asked = []
+
+        def ask(job):
+            index = min(len(self.asked), len(answers) - 1)
+            self.asked.append(answers[index])
+            return answers[index]
+
+        winbrowser.job_is_showing = ask
+
+    def test_it_waits_for_the_window_to_appear(self):
+        """A window is not on screen the instant its process exists.
+
+        The helper used to ask once, immediately, and take down anything that
+        was not already showing -- which no window could satisfy. Found on the
+        rig on 2026-09-18: the launcher said "Opened with helper" and nothing
+        ever appeared, with a window that puts itself on screen in 0.2 s.
+        """
+        self.showing([False] * 5 + [True, False])
+        winbrowser._job_has_processes = lambda job: True
+        winbrowser.process_alive = lambda pid: True
+        self.assertEqual(winbrowser.helper_main(self.payload(4321)), 0)
+        self.assertGreater(len(self.asked), 5,
+                           "it gave up before the window could appear")
+        self.assertTrue(self.job.terminated)
+
+    def test_it_gives_up_when_the_window_never_comes(self):
+        """But not by waiting the whole timeout: an empty job is an answer."""
+        self.showing([False])
+        winbrowser._job_has_processes = lambda job: False
+        winbrowser.process_alive = lambda pid: True
+        started = time.monotonic()
+        self.assertEqual(winbrowser.helper_main(self.payload(4321)), 0)
+        self.assertLess(time.monotonic() - started, 5.0,
+                        "it sat through the whole appear timeout")
+        self.assertTrue(self.job.terminated)
+
     def test_it_returns_when_the_browser_window_is_gone(self):
-        winbrowser.job_is_showing = lambda job: False
+        self.showing([True, False])
+        winbrowser._job_has_processes = lambda job: True
         winbrowser.process_alive = lambda pid: True
         self.assertEqual(winbrowser.helper_main(self.payload(4321)), 0)
         self.assertTrue(self.job.terminated, "the job must be torn down on the way out")
 
     def test_it_returns_when_the_launcher_is_gone(self):
         """Otherwise an elevated launcher that is killed leaves a browser nobody holds."""
-        winbrowser.job_is_showing = lambda job: True
+        self.showing([True])
+        winbrowser._job_has_processes = lambda job: True
         winbrowser.process_alive = lambda pid: False
         self.assertEqual(winbrowser.helper_main(self.payload(4321)), 0)
 
     def test_a_parent_of_zero_means_nobody_to_follow(self):
         """Not "the launcher is already gone", which is what a pid of 0 would say."""
-        calls = []
-        winbrowser.job_is_showing = lambda job: calls.append(1) or len(calls) < 2
+        self.showing([True, False])
+        winbrowser._job_has_processes = lambda job: True
         winbrowser.process_alive = lambda pid: self.fail("0 is not a pid to ask about")
         self.assertEqual(winbrowser.helper_main(self.payload(0)), 0)
 

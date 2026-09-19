@@ -17,13 +17,20 @@ Elevated, the same flaw gets them administrator. The bind address, the token and
 the origin checks are no longer three layers over a small prize; they are the
 only things between a bug here and rights nothing else on the desktop has.
 
-**The browser never inherits those rights.** A browser is a far larger surface
-than this server is -- a general-purpose program with a JIT, a network stack and
-extensions -- and running one as administrator would give away everything the
-elevation was for. When the launcher is elevated it does not start the browser
-itself: it asks the task scheduler for a medium-integrity helper, and the helper
-starts the browser. Measured: launcher High, helper Medium, browser Medium, with
-its sandboxed children at Low.
+**The window never inherits those rights.** Whatever renders the page is a far
+larger surface than this server is -- a general-purpose engine with a JIT, a
+network stack and, in a browser's case, extensions -- and running one as
+administrator would give away everything the elevation was for. When the
+launcher is elevated it does not start the window itself: it asks the task
+scheduler for a medium-integrity helper, and the helper starts it. Measured:
+launcher High, helper Medium, browser Medium, with its sandboxed children at Low.
+
+**This holds for our own window too**, which is the one on Windows by default
+now (`winhost.py`, issue #25). It is the same path -- the helper starts it, and
+nothing about it is exempt. Measured on the rig 2026-09-18 with an elevated
+launcher: launcher High (S-1-16-12288), window process Medium (S-1-16-8192),
+with WebView2's own children below that. A window that could only be opened by
+giving it administrator would not be worth having.
 
 Two things that looked like they did this and do not, recorded so nobody
 re-derives them: `ShellExecuteW` and `Shell.Application`'s ShellExecute both

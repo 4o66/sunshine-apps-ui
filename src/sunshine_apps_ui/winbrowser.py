@@ -74,7 +74,7 @@ user_pref("trailhead.firstrun.didSeeAboutWelcome", true);
 class Browser(NamedTuple):
     name: str
     path: str
-    kind: str          # "app" | "kiosk-chromium" | "kiosk-firefox"
+    kind: str          # "webview2" | "app" | "kiosk-chromium" | "kiosk-firefox"
 
     def command(self, url: str, profile: str, streamed: bool = True) -> List[str]:
         """The command line, which depends on where this will be looked at.
@@ -84,6 +84,12 @@ class Browser(NamedTuple):
         window you cannot move or close is hostile -- so it fills the screen and
         keeps its frame. Sean's rule, 2026-09-17.
         """
+        if self.kind == "webview2":
+            # Our own window (winhost). It takes the profile under the same
+            # name a Chromium browser does, deliberately: that is the string
+            # the launcher recognises its own windows by.
+            return [self.path, f"--user-data-dir={profile}",
+                    "--fullscreen" if streamed else "--windowed", url]
         if self.kind == "app":
             window = "--start-fullscreen" if streamed else "--start-maximized"
             return [self.path, f"--user-data-dir={profile}", "--no-first-run",
@@ -140,8 +146,18 @@ def _registered(executable: str) -> str:
 
 
 def find_browsers() -> List[Browser]:
-    """Every browser we can drive, best first."""
+    """Every window we can open, best first.
+
+    Our own comes first when it is there: it is on screen in a third of a
+    second against a browser's three and a half, and needs none of the flag
+    table below. It is simply absent on a machine with no WebView2 runtime or
+    where the build did not happen, and then this is exactly what it always
+    was -- which is the whole reason the browser path stays.
+    """
     found: List[Browser] = []
+    ours = _own_window()
+    if ours is not None:
+        found.append(ours)
     for name, kind, paths in _candidates():
         for path in paths:
             if path and os.path.isfile(path):
@@ -152,6 +168,18 @@ def find_browsers() -> List[Browser]:
             if registered:
                 found.append(Browser(name, registered, kind))
     return found
+
+
+def _own_window() -> Optional[Browser]:
+    """The window we built at install time, if it is here and usable."""
+    try:
+        from . import winhost
+        if not winhost.available():
+            return None
+        return Browser("our own window", winhost.host_exe(winhost.install_root()),
+                       "webview2")
+    except Exception:                    # noqa: BLE001 - never block the browser
+        return None
 
 
 def seed_firefox_profile(profile: str) -> None:
@@ -729,6 +757,11 @@ def job_is_occupied(job: "KillOnCloseJob") -> bool:
     return _job_has_processes(job)
 
 
+# For the window to exist, not merely the process. The launcher allows the
+# same; the helper did not, and that was a bug -- see helper_main.
+APPEAR_TIMEOUT = 30.0
+
+
 def helper_main(payload: str) -> int:
     """Run as the medium-integrity child: own the job, hold the browser.
 
@@ -755,6 +788,23 @@ def helper_main(payload: str) -> int:
         except OSError:
             pid_file = ""
     try:
+        # Wait for a window to appear before treating its absence as "the
+        # window has been closed". Without this the helper asks the instant
+        # after starting it, before any process has had time to put anything on
+        # screen, sees nothing, and takes down the window it has just opened.
+        #
+        # Found on the rig on 2026-09-18 with the WebView2 window, which puts a
+        # window up in a fifth of a second and still lost this race every time:
+        # the launcher reported "Opened with helper" and nothing ever appeared.
+        # The bug is not the window's -- nothing could have won it -- and it is
+        # only on the elevated path, because the launcher's own loop has always
+        # had the wait this one was missing.
+        appeared = time.monotonic() + APPEAR_TIMEOUT
+        while time.monotonic() < appeared and not job_is_showing(job):
+            if not job_is_occupied(job):
+                break            # it exited outright; there is nothing coming
+            time.sleep(0.1)
+
         while True:
             # Firefox and Opera exit the process we started and respawn, so the
             # pid we have is not the browser for long. The job knows who is

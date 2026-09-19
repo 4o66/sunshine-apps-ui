@@ -95,6 +95,13 @@ or sitting at the machine itself. Either way the page is drawn on the host, by
 the host. A browser in `--app` mode gets there with no toolkit; a terminal UI
 would still need a window in that session and is miserable with a thumbstick.
 
+On Windows the page is shown in a window of our own instead (`winhost.py`): a
+WebView2 control in a WinForms window, compiled on the machine by the `csc.exe`
+that is part of Windows, from source shipped in the package. It puts a window
+on screen in a quarter of a second where a browser took nearly three, and it
+closes in a tenth. Nothing depends on it -- no compiler, no WebView2 runtime,
+or a build that fails, and the browser path runs exactly as it did.
+
 Which is why the listener binds `127.0.0.1` and why that costs nothing. It only
 ever has to be reachable from the machine it runs on, because both ways of
 using it put you on that machine. See [docs/security.md](docs/security.md).

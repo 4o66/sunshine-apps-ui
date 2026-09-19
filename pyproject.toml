@@ -37,5 +37,6 @@ Companion = "https://github.com/4o66/bazzite-sunshine-manager"
 where = ["src"]
 
 [tool.setuptools.package-data]
-# The dirty-guard script is served at runtime, so it must be installed.
-"sunshine_apps_ui" = ["assets/*"]
+# The dirty-guard script is served at runtime; the C# window is compiled at
+# install time from the source shipped here, so both have to be installed.
+"sunshine_apps_ui" = ["assets/*", "host/*.cs"]
