@@ -112,6 +112,14 @@ def main(argv=None) -> int:
         from .launcher import launch
         return launch()
 
+    # The window itself, started by the launcher as a child process. Handled
+    # before argparse: its arguments are the window's, not this program's, and
+    # they include a URL that argparse would try to interpret.
+    from .gtkhost import WINDOW_FLAG
+    if raw[0] == WINDOW_FLAG:
+        from . import gtkhost
+        return gtkhost.main(raw[1:])
+
     args = parser.parse_args(argv)
 
     if args.browser_helper:

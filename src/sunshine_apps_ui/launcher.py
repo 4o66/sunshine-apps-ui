@@ -353,10 +353,33 @@ def stop_previous() -> None:
 # ------------------------------------------------------------ the browser ---
 
 
-def _spawn(command: List[str]) -> Optional[subprocess.Popen]:
+def _die_with_us() -> None:
+    """Ask Linux to signal this child when we die, however we die.
+
+    The equivalent of the Windows job object, which takes the window down with
+    the launcher even if the launcher is killed outright. A handler cannot do
+    this: SIGKILL runs no handler, and Sunshine ending an app is not always
+    polite. Set in the child between fork and exec.
+    """
+    try:
+        import ctypes
+
+        PR_SET_PDEATHSIG = 1
+        ctypes.CDLL("libc.so.6", use_errno=True).prctl(
+            PR_SET_PDEATHSIG, signal.SIGTERM, 0, 0, 0)
+    except Exception:              # noqa: BLE001 - a nicety, never a blocker
+        pass
+
+
+def _spawn(command: List[str], env: Optional[dict] = None,
+           die_with_us: bool = False) -> Optional[subprocess.Popen]:
+    before = None
+    if die_with_us and sys.platform.startswith("linux"):
+        before = _die_with_us
     try:
         return subprocess.Popen(command, stdout=subprocess.DEVNULL,
-                                stderr=subprocess.DEVNULL)
+                                stderr=subprocess.DEVNULL, env=env,
+                                preexec_fn=before)   # noqa: S606 - see _die_with_us
     except (OSError, subprocess.SubprocessError):
         return None
 
@@ -378,16 +401,36 @@ def _as_url(path: str) -> str:
 _HELPER_HOLDS_IT = "helper"
 
 
-def open_browser(target: str, profile: str,
-                 as_file: bool = False) -> Tuple[Optional[subprocess.Popen], str]:
+OUR_WINDOW = "our own window"
+
+
+def open_browser(target: str, profile: str, as_file: bool = False,
+                 own_window: bool = True) -> Tuple[Optional[subprocess.Popen], str]:
     """Open *target* as a window of its own. Returns (process, how).
 
     *target* is a URL, or a path to a local page when as_file is set -- which is
     how the window appears before the server it will show has started.
+
+    *own_window* is how the caller asks for a browser specifically, having
+    already tried ours and watched it fail.
     """
     url = _as_url(target) if as_file else target
     if WINDOWS:
         return _open_browser_windows(url, profile)
+
+    # Our own window first, where the toolkit for one exists. It is absent on
+    # a machine without GTK 4 and WebKitGTK, and then this is exactly what it
+    # always was -- which is why the browser path below stays.
+    from . import gtkhost, winbrowser
+    if own_window and gtkhost.available():
+        # Our own window is this package, so it needs to be able to import
+        # it: sys.path does not survive into a child, and without this the
+        # window says "No module named sunshine_apps_ui" and exits 1.
+        process = _spawn(gtkhost.command(
+            url, profile, streamed=winbrowser.launched_by_sunshine()),
+            env=server_environment(), die_with_us=True)
+        if process:
+            return process, OUR_WINDOW
 
     for app in FLATPAK_BROWSERS:
         if _flatpak_installed(app):
@@ -516,6 +559,32 @@ def _read_url(log_file: str, server: subprocess.Popen) -> str:
     return ""
 
 
+def _leave_on_signal() -> None:
+    """Make a termination signal an orderly exit, so the teardown happens.
+
+    Without this, SIGTERM kills the launcher where it stands: the ``finally``
+    that closes the window and stops the server never runs, and both are left
+    behind. Measured on Bazzite -- terminating the launcher left the window on
+    screen with nothing holding it.
+
+    Sunshine ends an app by signalling it, so this is the ordinary way this
+    program exits, not an edge case.
+    """
+    def leave(signum, frame):      # noqa: ARG001 - the handler's signature
+        raise SystemExit(0)
+
+    for name in ("SIGTERM", "SIGHUP"):
+        number = getattr(signal, name, None)
+        if number is None:
+            continue
+        try:
+            signal.signal(number, leave)
+        except (OSError, ValueError):
+            # Not the main thread, or not a signal this platform has. The
+            # teardown is still done on every ordinary exit.
+            pass
+
+
 def launch(argv: Optional[List[str]] = None) -> int:
     """Open a window at once, start the server behind it, and stay until one goes.
 
@@ -529,6 +598,7 @@ def launch(argv: Optional[List[str]] = None) -> int:
     token are chosen here and handed over: the token in a file, because argv is
     readable by every process on the machine.
     """
+    _leave_on_signal()
     stop_previous()
     profile = profile_dir()
     os.makedirs(profile, exist_ok=True)
@@ -547,8 +617,8 @@ def launch(argv: Optional[List[str]] = None) -> int:
     ours: List[int] = []
     server = None
     try:
-        browser, how = open_browser(write_starting_page(url), profile,
-                                    as_file=True)
+        page = write_starting_page(url)
+        browser, how = open_browser(page, profile, as_file=True)
         environment = server_environment()
         with filemode.open_private(log_file) as handle:
             server = subprocess.Popen(
@@ -567,6 +637,27 @@ def launch(argv: Optional[List[str]] = None) -> int:
             if browser is not None and browser.poll() is not None:
                 break
             time.sleep(0.5)
+
+        # Our own window can still fail after we have started it: the toolkit
+        # is there but will not run, a display goes away, a library is half
+        # installed. It exits rather than hanging, and the launcher would
+        # otherwise see "nothing on screen" and take everything down, leaving
+        # a tile that appears to do nothing at all. A browser is exactly the
+        # fallback we kept the browser path for.
+        if (how == OUR_WINDOW and browser is not None
+                and browser.poll() is not None and not browser_is_up(profile)):
+            print(f"Our own window exited ({browser.returncode}); "
+                  f"falling back to a browser.", file=sys.stderr)
+            browser, how = open_browser(page, profile, as_file=True,
+                                        own_window=False)
+            if not browser and how != _HELPER_HOLDS_IT:
+                return _no_browser(url, server)
+            print(f"Opened with {how}", file=sys.stderr)
+            deadline = time.monotonic() + APPEAR_TIMEOUT
+            while time.monotonic() < deadline and not browser_is_up(profile):
+                if browser is not None and browser.poll() is not None:
+                    break
+                time.sleep(0.5)
         # Which processes are ours, for the teardown that cannot use the job --
         # asked once, here, rather than once a second. On Windows with a job or
         # a helper this is not needed at all.
