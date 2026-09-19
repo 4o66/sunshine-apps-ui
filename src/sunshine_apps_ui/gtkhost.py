@@ -49,17 +49,18 @@ def _typelib_dirs() -> List[str]:
     return configured + list(TYPELIB_DIRS)
 
 
-def available() -> bool:
-    """Is there a toolkit here to make a window out of?
+def toolkit_present() -> bool:
+    """Is the toolkit installed? Asked without needing a display.
 
-    Deliberately cheap: this runs on every launch, before the window, and the
-    person is waiting for it.
+    Separate from `available` because the installer asks this over ssh, where
+    there is no display and the answer would otherwise be "use a browser" on a
+    machine that will do better than that the moment someone sits at it.
+
+    Deliberately cheap -- `available` runs on every launch, before the window,
+    and the person is waiting for it. Files on disk, not an import: importing
+    gi costs a third of a second.
     """
-    if os.name == "nt" or not os.environ.get("DISPLAY") and not os.environ.get(
-            "WAYLAND_DISPLAY"):
-        # No display means no window, whatever is installed. Sunshine's own
-        # session always has one; a bare ssh session does not, and should get
-        # the browser's own answer about that rather than a GTK backtrace.
+    if os.name == "nt":
         return False
     try:
         import importlib.util
@@ -70,6 +71,62 @@ def available() -> bool:
     directories = _typelib_dirs()
     return all(any(os.path.isfile(os.path.join(d, name)) for d in directories)
                for name in TYPELIBS)
+
+
+def available() -> bool:
+    """Is there a toolkit here, and somewhere to put a window?"""
+    if not os.environ.get("DISPLAY") and not os.environ.get("WAYLAND_DISPLAY"):
+        # No display means no window, whatever is installed. Sunshine's own
+        # session always has one; a bare ssh session does not, and should get
+        # the browser's own answer about that rather than a GTK backtrace.
+        return False
+    return toolkit_present()
+
+
+# What to install, per packaging family, when the toolkit is not here.
+#
+# Measured in containers on 2026-09-18, which is the only reason this list is
+# specific: on Fedora and Arch the typelibs come with the runtime library, so
+# a desktop already has them and nothing needs saying. On Debian and Ubuntu
+# they are separate `gir1.2-*` packages that the library does not pull in --
+# installing libwebkitgtk-6.0-4 alone leaves no typelib at all -- so those
+# machines use a browser until someone asks for otherwise.
+PACKAGES = {
+    "debian": ("apt install", "gir1.2-gtk-4.0 gir1.2-webkit-6.0"),
+    "fedora": ("dnf install", "gtk4 webkitgtk6.0 python3-gobject"),
+    "arch": ("pacman -S", "gtk4 webkitgtk-6.0 python-gobject"),
+    "suse": ("zypper install",
+             "typelib-1_0-Gtk-4_0 typelib-1_0-WebKit-6_0 python3-gobject"),
+}
+
+
+def _family() -> str:
+    """Which packaging family this is, from the machine's own description."""
+    try:
+        with open("/etc/os-release", encoding="utf-8") as handle:
+            fields = dict(
+                line.rstrip("\n").split("=", 1) for line in handle
+                if "=" in line and not line.startswith("#"))
+    except OSError:
+        return ""
+    names = " ".join(fields.get(key, "").strip('"').lower()
+                     for key in ("ID", "ID_LIKE"))
+    for family in ("debian", "fedora", "arch", "suse"):
+        if family in names:
+            return family
+    # Ubuntu says ID=ubuntu, ID_LIKE=debian, so the loop catches it; this is
+    # for anything that names neither.
+    return ""
+
+
+def how_to_install() -> str:
+    """One line telling someone how to get a window, or "" if we cannot say."""
+    family = _family()
+    if family not in PACKAGES:
+        return ("install the GTK 4 and WebKitGTK 6.0 introspection typelibs "
+                "for your distribution")
+    command, packages = PACKAGES[family]
+    return f"sudo {command} {packages}"
 
 
 def command(url: str, profile: str, streamed: bool = True) -> List[str]:

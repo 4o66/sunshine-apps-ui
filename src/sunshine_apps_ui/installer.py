@@ -334,7 +334,7 @@ def _provide_window(where) -> List[str]:
     between the app appearing in a second and a half and in three and a half.
     """
     if os.name != "nt":
-        return []
+        return _provide_window_linux()
     from . import winhost
 
     if not winhost.runtime_version():
@@ -350,6 +350,26 @@ def _provide_window(where) -> List[str]:
         return ["", f"The app window was not built: {e}",
                 "Everything else is installed; this machine will use a browser."]
     return [f"Window        {os.path.join(where['install'], 'host', 'AppWindow.exe')}"]
+
+
+def _provide_window_linux() -> List[str]:
+    """Say which window this machine will use, and how to get the better one.
+
+    Nothing is installed here: on Linux that is the package manager's business
+    and root's, and this install needs neither. But which window you get is
+    worth knowing, and on Debian and Ubuntu it turns on two packages nobody
+    would guess at -- the WebKitGTK library alone leaves no typelib, so the
+    manager quietly uses a browser on a machine that could do better.
+    """
+    if os.name == "nt":
+        return []
+    from . import gtkhost
+
+    if gtkhost.toolkit_present():
+        return ["Window        our own (GTK 4 + WebKitGTK)"]
+    how = gtkhost.how_to_install()
+    return ["Window        a browser (no GTK 4 / WebKitGTK typelibs here)",
+            f"              for a faster window: {how}"]
 
 
 def _replace_interpreter(where, interpreter) -> List[str]:

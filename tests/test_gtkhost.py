@@ -109,6 +109,84 @@ class AvailableTest(unittest.TestCase):
             self.assertFalse(gtkhost.available())
 
 
+class WhichPackagesTest(unittest.TestCase):
+    """What to tell someone whose machine has no toolkit.
+
+    Measured in containers on 2026-09-18: on Fedora and Arch the typelibs come
+    with the runtime library, so a desktop already has them. On Debian 12 and
+    Ubuntu 22.04/24.04 they do not -- installing libwebkitgtk-6.0-4 alone
+    leaves no typelib at all -- so those machines use a browser until somebody
+    installs two packages they would never guess at.
+    """
+
+    def family(self, text):
+        import io
+        return mock.patch("builtins.open", mock.mock_open(read_data=text))
+
+    def test_ubuntu_is_told_about_the_gir_packages(self):
+        with self.family('ID=ubuntu\nID_LIKE=debian\n'):
+            line = gtkhost.how_to_install()
+        self.assertIn("apt install", line)
+        self.assertIn("gir1.2-webkit-6.0", line)
+        self.assertIn("gir1.2-gtk-4.0", line)
+
+    def test_debian_gets_the_same_answer(self):
+        with self.family('ID=debian\n'):
+            self.assertIn("gir1.2-webkit-6.0", gtkhost.how_to_install())
+
+    def test_each_family_gets_a_command_with_a_verb(self):
+        for ident, expected in (("fedora", "dnf install"), ("arch", "pacman -S"),
+                                ("opensuse-tumbleweed", "zypper install")):
+            with self.family("ID=%s\nID_LIKE=%s\n" % (ident, ident.split("-")[0])):
+                line = gtkhost.how_to_install()
+            self.assertIn(expected, line, ident)
+            self.assertTrue(line.startswith("sudo "), line)
+
+    def test_something_unrecognised_still_says_what_is_needed(self):
+        with self.family("ID=plan9\n"):
+            line = gtkhost.how_to_install()
+        self.assertIn("GTK 4", line)
+        self.assertIn("WebKitGTK", line)
+        self.assertNotIn("sudo", line, "do not invent a package manager")
+
+    def test_no_os_release_at_all_is_not_an_error(self):
+        with mock.patch("builtins.open", side_effect=OSError):
+            self.assertIn("GTK 4", gtkhost.how_to_install())
+
+
+class TheInstallerSaysWhichWindowYouGetTest(unittest.TestCase):
+    def test_it_says_so_when_the_toolkit_is_there(self):
+        from sunshine_apps_ui import installer
+        with mock.patch.object(gtkhost, "toolkit_present", return_value=True):
+            lines = installer._provide_window_linux()
+        self.assertEqual(len(lines), 1)
+        self.assertIn("our own", lines[0])
+
+    def test_it_names_the_packages_when_it_is_not(self):
+        from sunshine_apps_ui import installer
+        with mock.patch.object(gtkhost, "toolkit_present", return_value=False), \
+                mock.patch.object(gtkhost, "how_to_install",
+                                  return_value="sudo apt install things"):
+            lines = installer._provide_window_linux()
+        self.assertIn("a browser", lines[0])
+        self.assertIn("sudo apt install things", lines[1])
+
+    def test_it_does_not_need_a_display_to_answer(self):
+        """The install is usually run over ssh, where there is no display.
+
+        Asking `available()` here would report "a browser" for every machine
+        installed remotely, including ones that will open our window the
+        moment somebody sits at them.
+        """
+        from sunshine_apps_ui import installer
+        environ = {k: v for k, v in os.environ.items()
+                   if k not in ("DISPLAY", "WAYLAND_DISPLAY")}
+        with mock.patch.dict(os.environ, environ, clear=True), \
+                mock.patch.object(gtkhost, "toolkit_present", return_value=True):
+            lines = installer._provide_window_linux()
+        self.assertIn("our own", lines[0])
+
+
 class WhatIsOursTest(unittest.TestCase):
     """The window has no address bar, so a link that leaves it strands you."""
 
