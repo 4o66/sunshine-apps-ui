@@ -400,7 +400,10 @@ def browser_is_up(profile: str) -> bool:
 
     from . import winbrowser
     if _JOB is not None:
-        return winbrowser.job_is_occupied(_JOB)
+        # A window on screen, not a process still running. Edge leaves
+        # background processes behind when its window closes, and waiting for
+        # those meant the window went and nothing else did.
+        return winbrowser.job_is_showing(_JOB)
 
     pid = winbrowser.read_helper_pid(profile)
     if pid:
@@ -476,8 +479,10 @@ def launch(argv: Optional[List[str]] = None) -> int:
         # up, which would shut the server down under a live page. And the
         # server can stop on its own -- it does exactly that after applying --
         # which would leave the window showing a page that no longer loads.
+        # A quarter of a second, because the question is now free and the
+        # answer is what decides how long closing the window takes.
         while browser_is_up(profile) and server.poll() is None:
-            time.sleep(1)
+            time.sleep(0.25)
         return 0
     finally:
         _shut_down(server, browser, ours)

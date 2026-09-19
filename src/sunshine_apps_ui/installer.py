@@ -123,6 +123,26 @@ def _windows_launcher(install_dir: str) -> str:
 UNINSTALL_KEY = r"Software\Microsoft\Windows\CurrentVersion\Uninstall\sunshine-apps-ui"
 
 
+def windowless_command(where) -> str:
+    """How to start the interface with no console window anywhere.
+
+    A .cmd always opens one, and pythonw.exe never does. Sean, seeing the
+    result of the .cmd: "closing the gui windows left the console launch helper
+    open. This cannot happen. There needs to be one window."
+
+    The .cmd stays: it is the right entry point for a terminal, where --scan and
+    --uninstall are run and their output is the point.
+    """
+    if os.name != "nt":
+        return where["command"]
+    # os.path for the existence check -- it has to be a path this filesystem can
+    # open, and on Windows the two modules are the same one anyway.
+    quiet = os.path.join(where["install"], "python", "pythonw.exe")
+    if os.path.isfile(quiet):
+        return f'"{quiet}" -m sunshine_apps_ui'
+    return f'"{where["command"]}"'
+
+
 def _start_menu_shortcut(where) -> str:
     """A way to open it at the machine, not only from a stream.
 
@@ -143,10 +163,19 @@ def _start_menu_shortcut(where) -> str:
         return ""
     link = os.path.join(programs, "Sunshine App Manager.lnk")
     icon = os.path.join(where["install"], "assets", "poster.png")
+    # pythonw, so opening this from the Start menu produces one window: the
+    # interface. A .cmd target puts a console beside it that outlives nothing
+    # and confuses everything.
+    quiet = os.path.join(where["install"], "python", "pythonw.exe")
+    if os.path.isfile(quiet):
+        target, arguments = quiet, "-m sunshine_apps_ui"
+    else:
+        target, arguments = where["command"], ""
     script = (
         "$shell = New-Object -ComObject WScript.Shell; "
         f"$link = $shell.CreateShortcut('{link}'); "
-        f"$link.TargetPath = '{where['command']}'; "
+        f"$link.TargetPath = '{target}'; "
+        f"$link.Arguments = '{arguments}'; "
         f"$link.WorkingDirectory = '{where['install']}'; "
         "$link.Description = 'Manage the apps Sunshine offers'; "
         + (f"$link.IconLocation = '{icon}'; " if os.path.isfile(icon) else "")

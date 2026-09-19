@@ -150,13 +150,15 @@ def _apps_ui(home: str) -> tuple[str, str]:
         # Windows keeps a program in one directory and has no bin/ convention,
         # so the installed command is a .cmd inside the install itself. Asked of
         # the installer rather than rebuilt here, so the two cannot disagree.
-        from ...installer import paths
+        from ...installer import paths, windowless_command
         where = paths()
         poster = os.path.join(where["install"], "assets", "poster.png")
-        command = where["command"]
-        if os.path.isfile(command):
-            # Quoted: it lives under a path with a space in it more often than not.
-            return (f'"{command}"', poster if os.path.isfile(poster) else "")
+        if os.path.isfile(where["command"]):
+            # pythonw where there is one: a tile that opens a console window
+            # beside the interface is two windows where a person expects one,
+            # and on a television the console is simply in the way.
+            return (windowless_command(where),
+                    poster if os.path.isfile(poster) else "")
         return ("", "")
 
     # os.path.join, not an f-string: on Windows a hand-built "/" path produces

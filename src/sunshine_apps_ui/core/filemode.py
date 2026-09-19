@@ -273,6 +273,18 @@ def open_private(path: str):
     return os.fdopen(handle, "w", encoding="utf-8")
 
 
+def append_private(path: str):
+    """Open a file to append to, readable only by its owner. Creates it if needed."""
+    flags = (os.O_WRONLY | os.O_CREAT | os.O_APPEND
+             | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_BINARY", 0))
+    handle = os.open(path, flags, 0o600)
+    if not on_windows():
+        os.chmod(path, 0o600)
+    else:
+        _lock_down_windows(path)
+    return os.fdopen(handle, "a", encoding="utf-8")
+
+
 def write_private(path: str, text: str) -> str:
     """Write a secret, private from the moment it exists.
 

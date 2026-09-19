@@ -28,7 +28,14 @@ def _scan(conf_dir: str, options, *, dry_run: bool, reload: bool) -> int:
     return 0
 
 
+def _ensure_streams() -> None:
+    """Kept as the name the tests use; the work happens at package import."""
+    from . import _repair_streams
+    _repair_streams()
+
+
 def main(argv=None) -> int:
+    _ensure_streams()
     parser = argparse.ArgumentParser(
         prog="sunshine-apps-ui",
         description="Manage the applications Sunshine offers.",

@@ -649,12 +649,83 @@ def stop_helper(profile: str) -> bool:
         kernel32.CloseHandle(handle)
 
 
-def job_is_occupied(job: "KillOnCloseJob") -> bool:
-    """Does the job still hold anything? Microseconds, and exact.
+def job_pids(job: "KillOnCloseJob") -> List[int]:
+    """Every process currently in the job."""
+    import ctypes
+    from ctypes import wintypes
 
-    This is the question the launcher was answering by enumerating every
-    process on the machine through WMI, at two and a half seconds a time.
+    class ID_LIST(ctypes.Structure):
+        _fields_ = [("NumberOfAssignedProcesses", wintypes.DWORD),
+                    ("NumberOfProcessIdsInList", wintypes.DWORD),
+                    ("ProcessIdList", ctypes.c_size_t * 512)]
+
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.QueryInformationJobObject.argtypes = [
+        wintypes.HANDLE, ctypes.c_int, ctypes.c_void_p, wintypes.DWORD,
+        ctypes.POINTER(wintypes.DWORD)]
+    kernel32.QueryInformationJobObject.restype = wintypes.BOOL
+
+    info = ID_LIST()
+    returned = wintypes.DWORD()
+    JobObjectBasicProcessIdList = 3
+    if not kernel32.QueryInformationJobObject(
+            job.handle, JobObjectBasicProcessIdList, ctypes.byref(info),
+            ctypes.sizeof(info), ctypes.byref(returned)):
+        return []
+    count = min(info.NumberOfProcessIdsInList, 512)
+    return [int(info.ProcessIdList[i]) for i in range(count)]
+
+
+def has_visible_window(pids) -> bool:
+    """Does any of those processes have a window on screen?
+
+    The question that matters, and not the one asked before. "Is anything from
+    the browser still running" stays true after the window is closed: Edge
+    leaves background and crash-handler processes behind, so the launcher waited
+    for them for ever -- the window went, the console stayed, and the stream
+    never ended. Measured on the rig: six seconds after closing the window,
+    five msedge, two python and two cmd were still alive.
+
+    A window closing is what a person means by closing the program, so that is
+    what is watched.
     """
+    import ctypes
+    from ctypes import wintypes
+
+    wanted = set(pids)
+    if not wanted:
+        return False
+
+    user32 = ctypes.WinDLL("user32", use_last_error=True)
+    user32.IsWindowVisible.argtypes = [wintypes.HWND]
+    user32.GetWindowThreadProcessId.argtypes = [wintypes.HWND,
+                                                ctypes.POINTER(wintypes.DWORD)]
+    ENUMPROC = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+    user32.EnumWindows.argtypes = [ENUMPROC, wintypes.LPARAM]
+
+    found = []
+
+    def visit(hwnd, _lparam):
+        if not user32.IsWindowVisible(hwnd):
+            return True
+        owner = wintypes.DWORD()
+        user32.GetWindowThreadProcessId(hwnd, ctypes.byref(owner))
+        if owner.value in wanted:
+            found.append(hwnd)
+            return False          # one is enough
+        return True
+
+    user32.EnumWindows(ENUMPROC(visit), 0)
+    return bool(found)
+
+
+def job_is_showing(job: "KillOnCloseJob") -> bool:
+    """Is the browser still on screen? Not merely still running."""
+    return has_visible_window(job_pids(job))
+
+
+def job_is_occupied(job: "KillOnCloseJob") -> bool:
+    """Does the job still hold anything at all?"""
     return _job_has_processes(job)
 
 
@@ -688,14 +759,16 @@ def helper_main(payload: str) -> int:
             # Firefox and Opera exit the process we started and respawn, so the
             # pid we have is not the browser for long. The job knows who is
             # left; ask it rather than trusting that pid.
-            if not _job_has_processes(job):
+            # The window, not the processes: Edge keeps some alive after it
+            # closes, and waiting for those kept the whole thing up.
+            if not job_is_showing(job):
                 break
             # And go when the launcher goes, however it went. A parent of 0 or
             # None means nobody asked us to follow one -- not "the launcher is
             # already gone", which is what treating it as a pid would say.
             if isinstance(parent, int) and parent > 0 and not process_alive(parent):
                 break
-            time.sleep(1.0)
+            time.sleep(0.25)
     except KeyboardInterrupt:
         pass
     finally:

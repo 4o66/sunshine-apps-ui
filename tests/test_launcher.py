@@ -432,3 +432,109 @@ class ServerRecordTest(unittest.TestCase):
         launcher.remember_server(Process())
         self.assertTrue(launcher._stop_recorded_server())
         self.assertEqual(self.ended, [[4242]])
+
+
+class NoConsoleStreamsTest(unittest.TestCase):
+    """Started by pythonw, a process has no stdout and no stderr at all.
+
+    They are None rather than closed, so the first print() raises
+    AttributeError and the program dies before doing anything. That is what
+    happened when the Start menu shortcut was pointed at pythonw: the shortcut
+    ran, no window appeared, and nothing was left behind to say why.
+    """
+
+    def setUp(self):
+        self.real_out, self.real_err = sys.stdout, sys.stderr
+        self.state = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.state, True)
+        self._previous = os.environ.get("XDG_STATE_HOME")
+        os.environ["XDG_STATE_HOME"] = self.state
+
+    def tearDown(self):
+        sys.stdout, sys.stderr = self.real_out, self.real_err
+        if self._previous is None:
+            os.environ.pop("XDG_STATE_HOME", None)
+        else:
+            os.environ["XDG_STATE_HOME"] = self._previous
+
+    def test_printing_works_after_it_runs(self):
+        from sunshine_apps_ui.__main__ import _ensure_streams
+        sys.stdout = None
+        sys.stderr = None
+        _ensure_streams()
+        print("this must not raise")
+        print("nor this", file=sys.stderr)
+        self.assertIsNotNone(sys.stdout)
+        self.assertIsNotNone(sys.stderr)
+
+    def test_what_is_written_goes_somewhere_readable(self):
+        from sunshine_apps_ui.__main__ import _ensure_streams
+        from sunshine_apps_ui import places
+        sys.stdout = None
+        sys.stderr = None
+        _ensure_streams()
+        print("a line worth keeping", file=sys.stderr)
+        sys.stderr.flush()
+        written = open(os.path.join(places.state_dir(), "launcher.log")).read()
+        self.assertIn("a line worth keeping", written)
+
+    @unittest.skipIf(os.name == "nt", "POSIX modes; Windows is an ACL")
+    def test_that_file_is_private_because_it_carries_the_url(self):
+        from sunshine_apps_ui.__main__ import _ensure_streams
+        from sunshine_apps_ui import places
+        sys.stdout = None
+        sys.stderr = None
+        _ensure_streams()
+        sys.stderr.flush()
+        import stat as stat_module
+        mode = os.stat(os.path.join(places.state_dir(), "launcher.log")).st_mode
+        self.assertEqual(stat_module.S_IMODE(mode), 0o600)
+
+    def test_a_real_console_is_left_alone(self):
+        from sunshine_apps_ui.__main__ import _ensure_streams
+        before_out, before_err = sys.stdout, sys.stderr
+        _ensure_streams()
+        self.assertIs(sys.stdout, before_out)
+        self.assertIs(sys.stderr, before_err)
+
+
+class ImportsSurviveWithoutStreamsTest(unittest.TestCase):
+    """Nothing may touch stdout or stderr while being imported.
+
+    pythonw.exe gives a process neither, and core.utils asked
+    sys.stderr.isatty() at import time -- so the whole program died with
+    AttributeError before main(). From the outside: the Start menu shortcut did
+    nothing whatsoever and left nothing behind to say why. Found on the rig by
+    writing a probe to a file, because there was no stderr to read.
+    """
+
+    def test_the_package_imports_with_both_streams_taken_away(self):
+        import subprocess
+        here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        code = (
+            "import sys\n"
+            "sys.stdout = None\n"
+            "sys.stderr = None\n"
+            "import sunshine_apps_ui\n"
+            "import sunshine_apps_ui.__main__\n"
+            "from sunshine_apps_ui.core import utils\n"
+            "utils.log('this must not raise either')\n"
+            "with open(r'%s', 'w') as handle:\n"
+            "    handle.write('survived')\n"
+        )
+        marker = os.path.join(tempfile.mkdtemp(), "marker")
+        environment = dict(os.environ, PYTHONPATH=os.path.join(here, "src"),
+                           XDG_STATE_HOME=tempfile.mkdtemp())
+        result = subprocess.run([sys.executable, "-c", code % marker.replace("\\", "\\\\")],
+                                capture_output=True, text=True, env=environment)
+        self.assertTrue(os.path.exists(marker),
+                        f"import died without streams:\n{result.stderr}")
+
+    def test_colour_is_off_when_there_is_no_terminal_to_colour(self):
+        from sunshine_apps_ui.core import utils
+        real = sys.stderr
+        try:
+            sys.stderr = None
+            self.assertFalse(utils._stderr_is_a_terminal())
+        finally:
+            sys.stderr = real

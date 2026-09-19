@@ -283,5 +283,59 @@ class StartMenuShortcutTest(unittest.TestCase):
         self.assertEqual(installer._start_menu_shortcut(self.where), "")
         self.assertEqual(installer._remove_start_menu_shortcut(), [])
 
+
+class OneWindowTest(unittest.TestCase):
+    """There must be one window: the interface.
+
+    Sean, 2026-09-18: "closing the gui windows left the console launch helper
+    open. This cannot happen. There needs to be one window." A .cmd always
+    brings a console with it; pythonw.exe never does.
+    """
+
+    def setUp(self):
+        self.real_name = os.name
+        self.tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.tmp, True)
+        os.name = "nt"
+        self.where = {"install": self.tmp,
+                      "command": os.path.join(self.tmp, "sunshine-apps-ui.cmd")}
+
+    def tearDown(self):
+        os.name = self.real_name
+
+    def place_pythonw(self):
+        os.makedirs(os.path.join(self.tmp, "python"), exist_ok=True)
+        path = os.path.join(self.tmp, "python", "pythonw.exe")
+        open(path, "w").close()
+        return path
+
+    def test_it_uses_pythonw_when_one_was_shipped(self):
+        self.place_pythonw()
+        command = installer.windowless_command(self.where)
+        self.assertIn("pythonw.exe", command)
+        self.assertIn("-m sunshine_apps_ui", command)
+        self.assertNotIn(".cmd", command)
+
+    def test_it_falls_back_to_the_cmd_when_there_is_no_interpreter(self):
+        """Better a console than nothing at all."""
+        command = installer.windowless_command(self.where)
+        self.assertIn(".cmd", command)
+
+    def test_the_path_is_quoted_because_it_has_spaces_in_practice(self):
+        self.place_pythonw()
+        self.assertTrue(installer.windowless_command(self.where).startswith('"'))
+
+    def test_the_cmd_still_exists_for_a_terminal(self):
+        """--scan and --uninstall are run there, and their output is the point."""
+        self.place_pythonw()
+        self.assertTrue(self.where["command"].endswith(".cmd"))
+
+    def test_off_windows_nothing_changes(self):
+        os.name = self.real_name
+        if os.name == "nt":
+            self.skipTest("this asserts the POSIX no-op")
+        self.assertEqual(installer.windowless_command(self.where),
+                         self.where["command"])
+
 if __name__ == "__main__":
     unittest.main()

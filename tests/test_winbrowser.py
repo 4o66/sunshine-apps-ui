@@ -262,6 +262,7 @@ class HelperLoopTest(unittest.TestCase):
     def setUp(self):
         self.real_start = winbrowser.start_browser
         self.real_has = winbrowser._job_has_processes
+        self.real_showing = winbrowser.job_is_showing
         self.real_alive = winbrowser.process_alive
 
         class FakeJob:
@@ -282,27 +283,28 @@ class HelperLoopTest(unittest.TestCase):
     def tearDown(self):
         winbrowser.start_browser = self.real_start
         winbrowser._job_has_processes = self.real_has
+        winbrowser.job_is_showing = self.real_showing
         winbrowser.process_alive = self.real_alive
 
     def payload(self, parent):
         return json.dumps({"url": "http://x/", "profile": r"C:\p", "parent": parent})
 
-    def test_it_returns_when_the_browser_is_gone(self):
-        winbrowser._job_has_processes = lambda job: False
+    def test_it_returns_when_the_browser_window_is_gone(self):
+        winbrowser.job_is_showing = lambda job: False
         winbrowser.process_alive = lambda pid: True
         self.assertEqual(winbrowser.helper_main(self.payload(4321)), 0)
         self.assertTrue(self.job.terminated, "the job must be torn down on the way out")
 
     def test_it_returns_when_the_launcher_is_gone(self):
         """Otherwise an elevated launcher that is killed leaves a browser nobody holds."""
-        winbrowser._job_has_processes = lambda job: True
+        winbrowser.job_is_showing = lambda job: True
         winbrowser.process_alive = lambda pid: False
         self.assertEqual(winbrowser.helper_main(self.payload(4321)), 0)
 
     def test_a_parent_of_zero_means_nobody_to_follow(self):
         """Not "the launcher is already gone", which is what a pid of 0 would say."""
         calls = []
-        winbrowser._job_has_processes = lambda job: calls.append(1) or len(calls) < 2
+        winbrowser.job_is_showing = lambda job: calls.append(1) or len(calls) < 2
         winbrowser.process_alive = lambda pid: self.fail("0 is not a pid to ask about")
         self.assertEqual(winbrowser.helper_main(self.payload(0)), 0)
 
@@ -358,6 +360,7 @@ class CheapLivenessTest(unittest.TestCase):
         self.real_read = winbrowser.read_helper_pid
         self.real_alive = winbrowser.process_alive
         self.real_occupied = winbrowser.job_is_occupied
+        self.real_showing = winbrowser.job_is_showing
         launcher.WINDOWS = True
         launcher.browsers = lambda: self.fail("the expensive path was taken")
 
@@ -368,12 +371,16 @@ class CheapLivenessTest(unittest.TestCase):
         winbrowser.read_helper_pid = self.real_read
         winbrowser.process_alive = self.real_alive
         winbrowser.job_is_occupied = self.real_occupied
+        winbrowser.job_is_showing = self.real_showing
 
-    def test_when_we_hold_the_job_the_job_is_asked(self):
+    def test_when_we_hold_the_job_the_window_is_what_is_asked_about(self):
+        """Not "is anything still running": Edge leaves processes behind when
+        its window closes, and waiting for those left the console open and the
+        stream connected after the person had closed the window."""
         self.launcher._JOB = object()
-        winbrowser.job_is_occupied = lambda job: True
+        winbrowser.job_is_showing = lambda job: True
         self.assertTrue(self.launcher.browser_is_up(r"C:\p"))
-        winbrowser.job_is_occupied = lambda job: False
+        winbrowser.job_is_showing = lambda job: False
         self.assertFalse(self.launcher.browser_is_up(r"C:\p"))
 
     def test_when_a_helper_holds_it_the_helper_is_watched(self):
