@@ -832,6 +832,19 @@ class ScanRoutesTest(ServerTest):
         _, body = self.get(f"/scan/status?token={self.token}")
         self.assertNotIn("lines", json.loads(body))
 
+    def test_the_watcher_script_is_served(self):
+        """It cannot be inline: these pages are sent with script-src 'self'."""
+        _, body = self.get(f"/scanning.js?token={self.token}")
+        self.assertIn("data-scan-status", body)
+
+    def test_the_policy_allows_the_page_to_ask_how_the_scan_is_going(self):
+        """default-src 'none' with no connect-src blocks the fetch silently."""
+        response = urllib.request.urlopen(
+            f"http://127.0.0.1:{self.port}/scanning?token={self.token}")
+        policy = response.headers.get("Content-Security-Policy")
+        self.assertIn("connect-src 'self'", policy)
+        self.assertIn("script-src 'self'", policy)
+
     def test_neither_route_answers_without_a_token(self):
         for path in ("/scan/status", "/scanning"):
             _, body = self.get(path)

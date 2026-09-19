@@ -72,10 +72,13 @@ class PlanHandler(BaseHTTPRequestHandler):
         # img-src is needed for the tile artwork, which /art serves from this
         # same origin. Without it default-src 'none' blocks every tile and the
         # browser never even issues the request.
+        # connect-src is for the scanning page, which asks this server how the
+        # scan is getting on. Without it default-src 'none' blocks the fetch
+        # and the page sits at "0.0s elapsed" looking exactly like a hang.
         self.send_header("Content-Security-Policy",
                          "default-src 'none'; style-src 'unsafe-inline'; img-src 'self'; "
-                         "script-src 'self'; form-action 'self'; frame-ancestors 'none'; "
-                         "base-uri 'none'")
+                         "script-src 'self'; connect-src 'self'; form-action 'self'; "
+                         "frame-ancestors 'none'; base-uri 'none'")
         self.end_headers()
         if self.command != "HEAD":
             self.wfile.write(raw)
@@ -199,6 +202,10 @@ class PlanHandler(BaseHTTPRequestHandler):
                                       auth_ok=auth_ok, pending=queued,
                                       auth_detail=detail, restore=restore,
                                       rights=self.rights))
+            return
+
+        if parts.path == "/scanning.js":
+            self._send_asset("scanning.js", "text/javascript; charset=utf-8")
             return
 
         if parts.path == "/app.js":

@@ -182,15 +182,41 @@ class ScanningPageTest(unittest.TestCase):
     def test_it_says_something_before_the_first_line_arrives(self):
         self.assertIn("Starting...", self.page())
 
-    def test_it_goes_to_the_grid_when_the_scan_stops(self):
+    def test_the_watcher_is_not_an_inline_script(self):
+        """The pages are sent with script-src 'self'; inline is refused, silently.
+
+        The first version of this page was inline. It rendered, showed the
+        scan's first line, and then sat at "0.0s elapsed" for ever, which is
+        indistinguishable from the hang the page exists to rule out.
+        """
         html = self.page()
-        self.assertIn("location.replace('/?scanned=1&token=tok-123')", html)
-        self.assertIn("if (!s.running)", html)
+        self.assertNotIn("<script>", html)
+        self.assertIn('<script src="/scanning.js?token=tok-123"', html)
+
+    def test_it_tells_the_watcher_where_to_look_and_where_to_go(self):
+        html = self.page()
+        self.assertIn('data-scan-status="/scan/status?token=tok-123"', html)
+        self.assertIn("data-scan-done=", html)
+        self.assertIn("scanned=1", html)
 
     def test_it_polls_a_url_that_does_not_start_another_scan(self):
         html = self.page()
         self.assertIn("/scan/status?token=tok-123", html)
         self.assertNotIn("scan=1", html)
+
+    def test_the_watcher_reads_both_urls_from_the_page(self):
+        """No token in the script, so there is one copy of it and one escaping."""
+        import os.path
+        from sunshine_apps_ui import render as r
+        path = os.path.join(os.path.dirname(os.path.abspath(r.__file__)),
+                            "assets", "scanning.js")
+        source = open(path, encoding="utf-8").read()
+        self.assertIn("data-scan-status", source)
+        self.assertIn("data-scan-done", source)
+        self.assertIn("location.replace", source)
+        code = "\n".join(l for l in source.splitlines()
+                          if not l.strip().startswith("//"))
+        self.assertNotIn("token", code, "the token does not belong in the script")
 
     def test_it_reloads_itself_without_javascript(self):
         """And at its own URL, so a refresh watches rather than restarts."""
