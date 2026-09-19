@@ -623,6 +623,26 @@ def connect_page(token: str, message: str = "", username: str = "") -> str:
 </div></body></html>"""
 
 
+def render_elevating(token: str) -> str:
+    """Shown while Windows asks whether to allow it.
+
+    The new instance replaces this one as any relaunch does, so this page only
+    has to exist for as long as the prompt does.
+    """
+    return f"""<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{_title("Administrator")}</title><style>{_CSS}</style></head>
+<body><div class="wrap">
+<section class="ok"><h2>Windows is asking</h2>
+<p class="why">Allow it, and the manager opens again with the rights it needs to
+write <code>apps.json</code>. This window closes on its own.</p>
+<p class="why">Refusing is a fine answer: everything except saving works
+without it.</p></section>
+<div class="actions"><a class="btn sec" href="/?token={_e(token)}">Back</a></div>
+</div></body></html>"""
+
+
 def grid_page(state: Dict[str, Any], token: str, *, new_ids: Optional[set] = None,
               scanned: bool = False, auth_ok: bool = True,
               pending: Optional[List[Dict[str, Any]]] = None,
@@ -842,8 +862,28 @@ def grid_page(state: Dict[str, Any], token: str, *, new_ids: Optional[set] = Non
     # write, after a dozen changes are queued. See privilege.py.
     rights_note = ""
     if read_only:
+        # An offer, where there is one to make. Saying "you cannot do this" and
+        # stopping is what made this warn and then do nothing: the change was
+        # taken, queued, and left with no way to apply it.
+        offer = ""
+        try:
+            from .privilege import can_ask_for_elevation
+            if can_ask_for_elevation():
+                offer = (f'<div class="actions">'
+                         f'<form method="post" action="/elevate?token={_e(token)}" '
+                         f'style="display:inline">'
+                         f'<button class="btn" type="submit">Run as administrator</button>'
+                         f'</form></div>')
+        except Exception:                        # noqa: BLE001 - never break the page
+            offer = ""
+        queued_note = ""
+        if queued:
+            queued_note = (f'<p class="why"><b>{queued} change'
+                           f'{"" if queued == 1 else "s"} '
+                           f'{"is" if queued == 1 else "are"} waiting</b> and cannot '
+                           f'be applied until then. Nothing has been lost.</p>')
         rights_note = (f'<section class="err"><h2>{_e(rights.headline or "Changes cannot be saved")}</h2>'
-                       f'<p class="why">{_e(rights.detail)}</p></section>')
+                       f'<p class="why">{_e(rights.detail)}</p>{queued_note}{offer}</section>')
 
     return f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8">

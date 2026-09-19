@@ -20,6 +20,7 @@ from .engine import (EngineError, art_choose, art_search, backup_diff, browse,
                      check_auth, get_state, list_backups, mutate, run_plan,
                      save_auth)
 from .render import (LOCK_NOTE, app_page, applied_page, artwork_page,
+                     render_elevating,
                      backups_page, confirm_page, connect_page, error_page,
                      explain_page, grid_page, hidden_page, is_protected, page,
                      picker_page, render_browsable, render_fields, render_flags)
@@ -707,17 +708,45 @@ class PlanHandler(BaseHTTPRequestHandler):
             self._redirect("/")
             return
 
+        if parts.path == "/elevate":
+            # Asking Windows for the rights this was not given. The new
+            # instance ends this one on its way up, the way every relaunch
+            # does, so there is nothing to tear down here.
+            from . import winbrowser
+            if privilege.can_ask_for_elevation() and winbrowser.relaunch_elevated():
+                self._send(200, render_elevating(self.token))
+            else:
+                # Refusing the prompt is an answer, not a failure.
+                self._redirect("/")
+            return
+
         if parts.path == "/apply":
             pending = state.queue()
             if not pending:
                 self._redirect("/")
                 return
             try:
-                ok, message = mutate(self.conf_dir, pending, reload=True)
+                ok, message, results = mutate(self.conf_dir, pending, reload=True)
             except EngineError as e:
-                ok, message = False, str(e)
+                # Nothing was attempted, so the queue is still worth keeping.
+                ok, message, results = False, str(e), []
+
+            # Everything that was attempted leaves the queue, whether or not it
+            # worked. Keeping a refused operation sounds kinder and is not: the
+            # file was written either way, so a queued operation that referred
+            # to the old contents is now stale, and re-applying it does nothing
+            # for ever. That is the jam Sean hit -- "Applied 0 of 2" on every
+            # press, after the first press had really applied one of them.
+            refused = []
+            for op, result in zip(pending, results):
+                state.drop_qid(str(op.get("qid", "")))
+                if not result.get("ok"):
+                    refused.append(f'{result.get("name") or result.get("op")}: '
+                                   f'{result.get("error")}')
+            if refused:
+                self._redirect("/", apply_error="; ".join(refused)[:300])
+                return
             if ok:
-                state.clear_queue()
                 type(self).applied = True
                 self._redirect("/applied")
                 if self.via_sunshine:

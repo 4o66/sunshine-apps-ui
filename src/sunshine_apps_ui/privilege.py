@@ -165,6 +165,17 @@ def check(conf_dir: str) -> Privilege:
         "Changes cannot be saved")
 
 
+def can_ask_for_elevation() -> bool:
+    """Is 'run as administrator' a thing we can offer here?
+
+    Only on Windows, and only when we do not already have it. Elsewhere the
+    config directory belongs to the user and elevation is not the answer to
+    anything -- a POSIX failure to write is a permissions problem to fix, not a
+    privilege to ask for.
+    """
+    return bool(sys.platform.startswith("win")) and is_elevated() is False
+
+
 def startup_line(state: Privilege, conf_dir: str) -> str:
     """One line for the log, said at startup rather than at the first write."""
     if state.can_write:

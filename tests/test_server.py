@@ -9,6 +9,7 @@ import tempfile
 import threading
 import time
 import unittest
+from typing import Dict
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -100,10 +101,24 @@ class FakeEngine:
         self._maybe_fail("run_plan")
         return self.plan, "log line"
 
+    # Per-operation outcomes the fake should report, keyed by qid. Anything not
+    # named here succeeds. Set by a test that wants a refusal.
+    refuse: Dict[str, str] = {}
+
     def mutate(self, conf_dir, ops, reload=True):
         self._maybe_fail("mutate")
         self.applied.append(list(ops))
-        return True, f"Applied {len(ops)} change(s)"
+        results = []
+        for op in ops:
+            why = self.refuse.get(str(op.get("qid", "")))
+            if why:
+                results.append({"op": op.get("op"), "ok": False,
+                                "name": op.get("name"), "error": why})
+            else:
+                results.append({"op": op.get("op"), "ok": True,
+                                "name": op.get("name")})
+        ok = all(r["ok"] for r in results)
+        return ok, f"Applied {sum(1 for r in results if r['ok'])} change(s)", results
 
     def browse(self, conf_dir, path="", kind="any"):
         self._maybe_fail("browse")
@@ -1822,3 +1837,67 @@ class ReadOnlyGridTest(ServerTest):
         self.assertIn("2 applications", body)
         self.assertIn("Portal 2", body)
         self.assertIn("Rescan", body)
+
+
+class QueueDrainsEvenWhenSomethingIsRefusedTest(ServerTest):
+    """The queue must not keep operations that were already attempted.
+
+    Sean's report, 2026-09-18: "write changes: give the warning then does
+    nothing". His log says exactly what happened:
+
+        Applied 1 of 2 change(s)                      <- the delete really happened
+        Skipped delete: 'Desktop' is no longer where it was
+        Skipped hide:   'Steam Big Picture' is no longer where it was
+        Applied 0 of 2 change(s)                      <- and for ever after
+
+    One of two operations was refused, so mutate reported failure, so the queue
+    was not cleared -- including the operation that had genuinely been applied.
+    That one then referred to a file that had changed under it, went stale, and
+    every later apply did nothing at all while still writing a backup.
+    """
+
+    def queue_two(self):
+        from sunshine_apps_ui import state as st
+        st.enqueue({"op": "delete", "index": 1, "name": "Portal 2"})
+        st.enqueue({"op": "hide", "index": 2, "name": "Desktop"})
+        return st.queue()
+
+    def test_a_refusal_does_not_keep_the_applied_one_queued(self):
+        from sunshine_apps_ui import state as st
+        queued = self.queue_two()
+        self.engine.refuse = {str(queued[1]["qid"]): "hiding it is the same as deleting it"}
+        self.post({}, token=self.token, path="/apply")
+        self.assertEqual(st.queue(), [], "the queue jams if anything is left behind")
+
+    def test_the_refusal_is_reported_rather_than_swallowed(self):
+        queued = self.queue_two()
+        self.engine.refuse = {str(queued[1]["qid"]): "hiding it is the same as deleting it"}
+        _, headers = self.post({}, token=self.token, path="/apply")
+        # Carried on the redirect, which is where the grid reads it from.
+        self.assertIn("apply_error", headers["Location"])
+        self.assertIn("hiding+it+is+the+same", headers["Location"])
+
+    def test_a_second_apply_has_nothing_left_to_do(self):
+        """The press that used to say "Applied 0 of 2"."""
+        queued = self.queue_two()
+        self.engine.refuse = {str(queued[1]["qid"]): "refused"}
+        self.post({}, token=self.token, path="/apply")
+        before = len(self.engine.applied)
+        self.post({}, token=self.token, path="/apply")
+        self.assertEqual(len(self.engine.applied), before,
+                         "an empty queue must not reach the engine at all")
+
+    def test_everything_working_still_clears_and_reports(self):
+        from sunshine_apps_ui import state as st
+        self.queue_two()
+        self.engine.refuse = {}
+        self.post({}, token=self.token, path="/apply")
+        self.assertEqual(st.queue(), [])
+
+    def test_a_failure_to_write_at_all_keeps_the_queue(self):
+        """Nothing was attempted, so there is nothing to forget."""
+        from sunshine_apps_ui import state as st
+        self.queue_two()
+        self.engine.fails = {"mutate": "apps.json could not be written"}
+        self.post({}, token=self.token, path="/apply")
+        self.assertEqual(len(st.queue()), 2)

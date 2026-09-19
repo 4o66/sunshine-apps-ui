@@ -496,6 +496,31 @@ def _read_request(payload: str) -> Optional[Dict]:
     return request if isinstance(request, dict) else None
 
 
+def relaunch_elevated() -> bool:
+    """Start the manager again, as administrator, and let it replace us.
+
+    The "runas" verb is what raises the UAC prompt; there is no other way to
+    gain rights a process was not given. Nothing is torn down here: the new
+    instance runs stop_previous() as every launch does, which ends this server
+    and this browser. A relaunch is already a thing this program knows how to
+    do; this one just happens to be elevated.
+    """
+    import ctypes
+
+    from .installer import paths
+
+    command = paths()["command"]
+    if not os.path.isfile(command):
+        return False
+    shell32 = ctypes.WinDLL("shell32", use_last_error=True)
+    shell32.ShellExecuteW.restype = ctypes.c_void_p
+    SW_SHOWNORMAL = 1
+    result = shell32.ShellExecuteW(None, "runas", command, None, None, SW_SHOWNORMAL)
+    # Above 32 means it started. 1223 is ERROR_CANCELLED: the UAC prompt was
+    # refused, which is an answer rather than a failure.
+    return int(result or 0) > 32
+
+
 def helper_pid_path(profile: str) -> str:
     """Where the helper records that it is the one holding the browser."""
     return os.path.join(os.path.dirname(profile), "browser-helper.pid")

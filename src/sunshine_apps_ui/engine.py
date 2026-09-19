@@ -69,10 +69,18 @@ def run_plan(conf_dir: str, opts: Optional[Dict[str, Any]] = None
 
 
 def mutate(conf_dir: str, ops: List[Dict[str, Any]], *,
-           reload: bool = True) -> Tuple[bool, str]:
-    ok, message, _ = _wrap(api.mutate, conf_dir, ops, reload)
+           reload: bool = True) -> Tuple[bool, str, List[Dict[str, Any]]]:
+    """Apply the queue. Returns (everything worked, message, per-operation results).
+
+    The results are returned rather than dropped because "did it all work" is
+    not enough to decide what to do with the queue afterwards. A run where one
+    of two operations is refused still wrote the other one, and leaving both
+    queued jammed the queue permanently: the applied one goes stale, and every
+    later apply then does nothing at all.
+    """
+    ok, message, results = _wrap(api.mutate, conf_dir, ops, reload)
     forget_state()
-    return ok, message
+    return ok, message, results
 
 
 def browse(conf_dir: str, path: str = "", kind: str = "any") -> Dict[str, Any]:
