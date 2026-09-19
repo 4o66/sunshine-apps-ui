@@ -26,7 +26,7 @@ from .render import (LOCK_NOTE, app_page, applied_page, artwork_page,
                      backups_page, confirm_page, connect_page, error_page,
                      explain_page, grid_page, hidden_page, is_protected, page,
                      picker_page, render_browsable, render_fields, render_flags,
-                     scanning_page)
+                     report_page, scanning_page)
 
 log = logging.getLogger("sunshine-apps-ui")
 
@@ -119,6 +119,11 @@ class PlanHandler(BaseHTTPRequestHandler):
             self.end_headers()
             if self.command != "HEAD":
                 self.wfile.write(body)
+            return
+
+        if parts.path == "/report":
+            self._send(200, report_page(self.token, self.via_sunshine,
+                                        _describe_platform()))
             return
 
         if parts.path == "/scan/status":
@@ -836,6 +841,15 @@ class PlanHandler(BaseHTTPRequestHandler):
         self.send_header("Location", ("/?" if ok else "/connect?") + urlencode(params))
         self.send_header("Content-Length", "0")
         self.end_headers()
+
+
+def _describe_platform() -> str:
+    """Enough for a bug report, and nothing that identifies the machine."""
+    import platform
+
+    system = platform.system() or "unknown"
+    release = platform.release() or ""
+    return f"{system} {release}".strip()
 
 
 def serve(token: str, conf_dir: str,

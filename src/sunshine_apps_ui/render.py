@@ -643,6 +643,88 @@ without it.</p></section>
 </div></body></html>"""
 
 
+# Where bugs go. One place, so the link on the page and the code in the QR
+# cannot drift apart -- they are both this string.
+ISSUES_URL = "https://github.com/4o66/sunshine-apps-ui/issues"
+
+
+def _version_label() -> str:
+    from . import version
+
+    try:
+        return version.display()
+    except Exception:              # noqa: BLE001 - a label, never a failure
+        return version.RELEASE
+
+
+def report_page(token: str, via_sunshine: bool = False,
+                platform: str = "") -> str:
+    """Where to report a bug, in the two ways this is ever looked at.
+
+    **On a television, through Moonlight, there is no way to get a URL out.**
+    No keyboard, no address bar, nothing to copy into. So the address is a QR
+    code: the phone already in your hand is the way off the screen.
+
+    **At the machine there is a pointer**, so the first thing is a link, and
+    following it opens the real browser rather than taking this window there --
+    our own window hands anything that is not ours to the desktop, and a
+    browser gets ``target="_blank"``. Either way the manager stays where it is.
+
+    Both are always on the page: the detection only decides which comes first,
+    so being wrong about it costs nothing.
+    """
+    from . import qr
+
+    code = f'<div class="qr">{qr.svg(ISSUES_URL)}</div>'
+    address = f'<p class="why"><code>{_e(ISSUES_URL)}</code></p>'
+    link = (f'<div class="actions"><a class="btn" href="{_e(ISSUES_URL)}" '
+            f'target="_blank" rel="noopener noreferrer">'
+            f'Open the issues page</a></div>')
+
+    if via_sunshine:
+        first = (f'<section class="ok"><h2>Scan this with your phone</h2>'
+                 f'<p class="why">There is no way to type a web address into a '
+                 f'stream, so here it is as a code. It goes to the issues page '
+                 f'for this program.</p>{code}{address}</section>'
+                 f'<section><h2>Or, at the machine itself</h2>{link}</section>')
+    else:
+        first = (f'<section class="ok"><h2>Report a bug</h2>'
+                 f'<p class="why">This opens the issues page in your usual '
+                 f'browser. The manager stays open behind it.</p>'
+                 f'{link}{address}</section>'
+                 f'<section><h2>Or scan it with your phone</h2>{code}</section>')
+
+    # What to put in the report. Asking someone at a television to go and find
+    # a version string is asking them not to bother.
+    opened = ("through Sunshine, on a stream" if via_sunshine
+              else "at the machine")
+    facts = (f'<section><h2>Worth mentioning in the report</h2><ul>'
+             f'<li><span class="name">Version</span>'
+             f'<span class="sel">{_e(_version_label())}</span></li>'
+             f'<li><span class="name">Running on</span>'
+             f'<span class="sel">{_e(platform or "unknown")}</span></li>'
+             f'<li><span class="name">Opened</span>'
+             f'<span class="sel">{opened}</span></li>'
+             f'</ul></section>')
+
+    return f"""<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{_title("Report a bug")}</title><style>{_CSS}
+.qr{{background:#fff;padding:12px;border-radius:var(--radius-md);
+display:inline-block;line-height:0;margin:.25rem 0 .9rem}}
+.qr svg{{display:block;width:min(46vw,260px);height:auto}}
+</style></head>
+<body>
+<div class="navbar"><span class="brand">Sunshine</span><span class="sep">/</span>
+<span class="where">app manager</span>{_version_chip()}</div>
+<div class="wrap">
+{first}
+{facts}
+<div class="actions"><a class="btn sec" href="/?token={_e(token)}">Back to the apps</a></div>
+</div></body></html>"""
+
+
 def scanning_page(token: str, status: Dict[str, Any]) -> str:
     """Shown while a scan runs, which on a real library is the best part of a minute.
 
@@ -954,7 +1036,8 @@ def grid_page(state: Dict[str, Any], token: str, *, new_ids: Optional[set] = Non
 {rights_note}{auth_note}{restore_note}
 <div class="actions">{apply_button}{discard_button}
 <a class="btn{'' if not queued else ' sec'}" href="/?scan=1&token={_e(token)}">Rescan</a>
-<a class="btn sec" href="/backups?token={_e(token)}">Restore a copy</a></div>
+<a class="btn sec" href="/backups?token={_e(token)}">Restore a copy</a>
+<a class="btn sec" href="/report?token={_e(token)}">Report a bug</a></div>
 {legend}
 <div class="grid">{"".join(tiles)}</div>
 </div></body></html>"""

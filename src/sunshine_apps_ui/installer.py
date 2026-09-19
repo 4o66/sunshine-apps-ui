@@ -143,6 +143,122 @@ def windowless_command(where) -> str:
     return f'"{where["command"]}"'
 
 
+# Sunshine's own entry on Bazzite, read off the machine:
+#   Categories=RemoteAccess;Network;
+#   Keywords=gamestream;stream;moonlight;remote play;
+# Sean's instruction: sit in the same category as Sunshine, so the two are
+# found together rather than this turning up under "Other".
+DESKTOP_CATEGORIES = "RemoteAccess;Network;"
+DESKTOP_KEYWORDS = "sunshine;gamestream;moonlight;apps;games;"
+DESKTOP_FILE = "sunshine-apps-ui.desktop"
+
+
+def _icon_files(where) -> dict:
+    """Square icons for the menus, derived from the artwork already shipped.
+
+    `assets/poster.png` is the picture Sunshine shows on the tile -- portrait,
+    because a tile is portrait. A menu wants a square, so the tiles at the top
+    of it are cropped out. Nothing is designed here: a new icon is issue #20,
+    and when it lands this picks it up by dropping `assets/icon.png` in beside
+    the poster.
+
+    Pillow does the work, and Pillow is not on every Linux machine. Without it
+    there is simply no icon, which costs a menu entry its picture and nothing
+    else.
+    """
+    assets = os.path.join(where["install"], "assets")
+    chosen = os.path.join(assets, "icon.png")
+    made = {}
+    try:
+        from PIL import Image
+    except ImportError:
+        return {"png": chosen if os.path.isfile(chosen) else ""}
+
+    source = chosen if os.path.isfile(chosen) else os.path.join(assets, "poster.png")
+    if not os.path.isfile(source):
+        return {}
+    try:
+        with Image.open(source) as art:
+            art = art.convert("RGBA")
+            side = min(art.size)
+            # The top square: on the shipped poster that is the grid of tiles,
+            # with the caption below it left out.
+            square = art.crop((0, 0, side, side)).resize((256, 256),
+                                                         Image.LANCZOS)
+            png = os.path.join(assets, "menu-icon.png")
+            square.save(png)
+            made["png"] = png
+            if os.name == "nt":
+                ico = os.path.join(assets, "menu-icon.ico")
+                square.save(ico, sizes=[(16, 16), (24, 24), (32, 32),
+                                        (48, 48), (64, 64), (128, 128),
+                                        (256, 256)])
+                made["ico"] = ico
+    except Exception:                    # noqa: BLE001 - a picture, not the program
+        return {}
+    return made
+
+
+def _desktop_entry(where) -> List[str]:
+    """The Linux equivalent of the Start menu shortcut.
+
+    A `.desktop` file in the per-user applications directory, which every
+    desktop reads: KDE on Bazzite, GNOME, and anything else that follows the
+    freedesktop menu specification. No root, nothing outside `~`.
+    """
+    if os.name == "nt":
+        return []
+    applications = os.path.join(places.data_home(), "applications")
+    try:
+        os.makedirs(applications, exist_ok=True)
+    except OSError as e:
+        return [f"No menu entry: {applications} could not be made ({e})."]
+
+    icon = _icon_files(where).get("png", "")
+    path = os.path.join(applications, DESKTOP_FILE)
+    entry = "\n".join([
+        "[Desktop Entry]",
+        "Type=Application",
+        "Version=1.0",
+        "Name=Sunshine App Manager",
+        "GenericName=Game library manager",
+        "Comment=Manage the apps Sunshine offers",
+        f"Exec={where['command']}",
+        f"Icon={icon or 'applications-games'}",
+        "Terminal=false",
+        f"Categories={DESKTOP_CATEGORIES}",
+        f"Keywords={DESKTOP_KEYWORDS}",
+        "StartupNotify=true",
+        "",
+    ])
+    try:
+        with open(path, "w", encoding="utf-8") as handle:
+            handle.write(entry)
+        os.chmod(path, 0o644)
+    except OSError as e:
+        return [f"No menu entry: {path} could not be written ({e})."]
+
+    # Politely ask the desktop to notice. Absent on a minimal install, and its
+    # absence only means the entry appears at the next login instead.
+    updater = shutil.which("update-desktop-database")
+    if updater:
+        try:
+            subprocess.run([updater, applications], capture_output=True,
+                           timeout=30)
+        except (OSError, subprocess.SubprocessError):
+            pass
+    return [f"Menu entry    {path}"]
+
+
+def _remove_desktop_entry() -> List[str]:
+    if os.name == "nt":
+        return []
+    path = os.path.join(places.data_home(), "applications", DESKTOP_FILE)
+    if os.path.isfile(path) and _remove(path):
+        return ["Removed the menu entry."]
+    return []
+
+
 def _start_menu_shortcut(where) -> str:
     """A way to open it at the machine, not only from a stream.
 
@@ -162,7 +278,9 @@ def _start_menu_shortcut(where) -> str:
     if not os.path.isdir(programs):
         return ""
     link = os.path.join(programs, "Sunshine App Manager.lnk")
-    icon = os.path.join(where["install"], "assets", "poster.png")
+    # A .lnk cannot take a .png: Windows wants an .ico or a binary with icon
+    # resources, and a PNG here left the shortcut showing pythonw's snake.
+    icon = _icon_files(where).get("ico", "")
     # pythonw, so opening this from the Start menu produces one window: the
     # interface. A .cmd target puts a console beside it that outlives nothing
     # and confuses everything.
@@ -365,6 +483,16 @@ def _provide_window_linux() -> List[str]:
         return []
     from . import gtkhost
 
+    if gtkhost.toolkit_present() and not gtkhost.sandbox_can_run():
+        # The toolkit is here and would work but for the machine's policy.
+        # Saying which policy matters: without it this reads as "your distro
+        # is unsupported", and it is not -- it is one switch.
+        return ["Window        a browser (WebKitGTK's sandbox cannot start "
+                "here)",
+                "              unprivileged user namespaces are restricted on "
+                "this system, which",
+                "              WebKitGTK requires. Ubuntu 24.04 does this by "
+                "default."]
     if gtkhost.toolkit_present():
         return ["Window        our own (GTK 4 + WebKitGTK)"]
     how = gtkhost.how_to_install()
@@ -444,6 +572,7 @@ def install(prefix: Optional[str] = None, *,
     messages.append(f"Command     {where['command']}")
     messages.extend(_provide_interpreter(where, with_interpreter, confirm))
     messages.extend(_provide_window(where))
+    messages.extend(_desktop_entry(where))
     shortcut = _start_menu_shortcut(where)
     if shortcut:
         messages.append(f"Start menu   {shortcut}")
@@ -591,6 +720,7 @@ def uninstall(prefix: Optional[str] = None, *, keep_state: bool = False,
     messages.extend(_remove_browser_task())
     messages.extend(_unregister_with_windows())
     messages.extend(_remove_start_menu_shortcut())
+    messages.extend(_remove_desktop_entry())
 
     if not keep_tile:
         # The tile goes first, while the engine is still installed to remove it

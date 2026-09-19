@@ -187,6 +187,75 @@ class TheInstallerSaysWhichWindowYouGetTest(unittest.TestCase):
         self.assertIn("our own", lines[0])
 
 
+class TheSandboxWebKitInsistsOnTest(unittest.TestCase):
+    """WebKitGTK aborts the whole process when it cannot have its sandbox.
+
+    Measured 2026-09-19: on Ubuntu 24.04 the window died with
+
+        bwrap: setting up uid map: Permission denied
+        ERROR: Failed to fully launch dbus-proxy
+
+    because unprivileged user namespaces are restricted there by default.
+    Debian 13 and Arch allow them and the window works. This is not a failure
+    that can be caught -- the process aborts -- so it has to be asked about
+    beforehand, and the answer is to use a browser.
+    """
+
+    def switches(self, **files):
+        real = open
+
+        def fake(path, *args, **kwargs):
+            if path in files:
+                if files[path] is None:
+                    raise OSError("no such knob")
+                import io
+                return io.StringIO(files[path])
+            return real(path, *args, **kwargs)
+
+        return mock.patch("builtins.open", fake)
+
+    def test_ubuntus_restriction_is_recognised(self):
+        with self.switches(**{
+                "/proc/sys/kernel/apparmor_restrict_unprivileged_userns": "1\n",
+                "/proc/sys/kernel/unprivileged_userns_clone": None}):
+            self.assertFalse(gtkhost.sandbox_can_run())
+
+    def test_debians_older_knob_is_recognised_the_other_way_round(self):
+        with self.switches(**{
+                "/proc/sys/kernel/apparmor_restrict_unprivileged_userns": None,
+                "/proc/sys/kernel/unprivileged_userns_clone": "0\n"}):
+            self.assertFalse(gtkhost.sandbox_can_run())
+
+    def test_a_machine_that_allows_them_is_fine(self):
+        with self.switches(**{
+                "/proc/sys/kernel/apparmor_restrict_unprivileged_userns": "0\n",
+                "/proc/sys/kernel/unprivileged_userns_clone": "1\n"}):
+            self.assertTrue(gtkhost.sandbox_can_run())
+
+    def test_no_knobs_at_all_means_no_restriction(self):
+        with self.switches(**{
+                "/proc/sys/kernel/apparmor_restrict_unprivileged_userns": None,
+                "/proc/sys/kernel/unprivileged_userns_clone": None}):
+            self.assertTrue(gtkhost.sandbox_can_run())
+
+    def test_the_window_is_not_offered_where_the_sandbox_cannot_run(self):
+        with mock.patch.object(gtkhost, "toolkit_present", return_value=True), \
+                mock.patch.object(gtkhost, "sandbox_can_run", return_value=False), \
+                mock.patch.dict(os.environ, {"WAYLAND_DISPLAY": "wayland-0"}):
+            self.assertFalse(gtkhost.available())
+
+    def test_the_installer_says_which_policy_it_is(self):
+        """Otherwise it reads as "your distribution is unsupported"."""
+        from sunshine_apps_ui import installer
+        with mock.patch.object(gtkhost, "toolkit_present", return_value=True), \
+                mock.patch.object(gtkhost, "sandbox_can_run", return_value=False):
+            lines = installer._provide_window_linux()
+        text = " ".join(lines)
+        self.assertIn("a browser", text)
+        self.assertIn("user namespaces", text)
+        self.assertIn("Ubuntu 24.04", text)
+
+
 class WhatIsOursTest(unittest.TestCase):
     """The window has no address bar, so a link that leaves it strands you."""
 

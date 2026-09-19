@@ -73,14 +73,54 @@ def toolkit_present() -> bool:
                for name in TYPELIBS)
 
 
+# WebKitGTK runs its web process inside a bubblewrap sandbox, and bubblewrap
+# needs an unprivileged user namespace. Where it cannot have one, WebKit does
+# not degrade -- it aborts the whole process:
+#
+#     bwrap: setting up uid map: Permission denied
+#     ERROR: Failed to fully launch dbus-proxy: Child process exited with code 1
+#
+# Ubuntu 24.04 restricts unprivileged user namespaces by default. Measured on
+# 2026-09-19: Ubuntu 24.04 denies it, Debian 13 and Arch allow it, and the
+# window works on both of those.
+USERNS_SWITCHES = (
+    # Ubuntu's AppArmor restriction: 1 means unconfined programs may not.
+    ("/proc/sys/kernel/apparmor_restrict_unprivileged_userns", "1"),
+    # Debian's older knob, the other way round: 0 means they may not.
+    ("/proc/sys/kernel/unprivileged_userns_clone", "0"),
+)
+
+
+def sandbox_can_run() -> bool:
+    """Can WebKit have the sandbox it insists on?
+
+    Asked before the window is started, because the alternative is not a
+    failure we can catch: the process aborts. A browser is a perfectly good
+    answer on such a machine, and this is how we get there without a crash
+    first.
+
+    A file read, so it costs nothing on every launch. An AppArmor profile
+    could still permit a particular program where the switch says otherwise;
+    being wrong in that direction costs a faster window, not a working one.
+    """
+    for path, blocking in USERNS_SWITCHES:
+        try:
+            with open(path, encoding="utf-8") as handle:
+                if handle.read().strip() == blocking:
+                    return False
+        except OSError:
+            continue          # the knob is absent, which means no restriction
+    return True
+
+
 def available() -> bool:
-    """Is there a toolkit here, and somewhere to put a window?"""
+    """Is there a toolkit here, somewhere to put a window, and a sandbox?"""
     if not os.environ.get("DISPLAY") and not os.environ.get("WAYLAND_DISPLAY"):
         # No display means no window, whatever is installed. Sunshine's own
         # session always has one; a bare ssh session does not, and should get
         # the browser's own answer about that rather than a GTK backtrace.
         return False
-    return toolkit_present()
+    return toolkit_present() and sandbox_can_run()
 
 
 # What to install, per packaging family, when the toolkit is not here.
@@ -182,21 +222,36 @@ def main(argv: Optional[List[str]] = None) -> int:
     try:
         import gi
         gi.require_version("Gtk", "4.0")
+        gi.require_version("Gdk", "4.0")
         gi.require_version("WebKit", "6.0")
-        from gi.repository import Gdk, Gio, Gtk, WebKit
+        # Gdk's version is pinned as well: imported without one it can resolve
+        # to GTK 3's Gdk on a machine that has both, and then the colour handed
+        # to a GTK 4 widget belongs to a different library.
+        from gi.repository import Gdk, Gio, GLib, Gtk, WebKit
     except (ImportError, ValueError) as e:
         print(f"No GTK 4 / WebKitGTK 6 here ({e}); a browser will be used "
               f"instead.", file=__import__("sys").stderr)
         return EXIT_NO_TOOLKIT
 
-    # NON_UNIQUE because a second manager must be a second window, not a
-    # message to the first. The launcher ends the previous one deliberately;
-    # handing over to it would resurrect what was just closed.
-    app = Gtk.Application(application_id="net.getonward.SunshineAppsUi",
-                          flags=Gio.ApplicationFlags.NON_UNIQUE)
+    # A plain window and a main loop, not Gtk.Application.
+    #
+    # Gtk.Application registers itself on the session bus before it will
+    # activate, and on an Ubuntu 24.04 machine that registration failed --
+    # "GDBus.Error...NoReply: Message recipient disconnected from message bus"
+    # -- so `activate` never fired and no window ever appeared, on a box where
+    # Debian and Arch were fine. Nothing here wants what GtkApplication offers:
+    # no uniqueness (a second manager must be a second window), no desktop
+    # actions, no session registration. Doing without it removes a dependency
+    # on a bus that may not answer.
+    if not Gtk.init_check():
+        print("GTK is here but will not start; a browser will be used instead.",
+              file=__import__("sys").stderr)
+        return EXIT_NO_TOOLKIT
 
-    def on_activate(application):
-        window = Gtk.ApplicationWindow(application=application)
+    loop = GLib.MainLoop()
+
+    def build():
+        window = Gtk.Window()
         window.set_title("App Manager")
         window.set_default_size(1280, 800)
 
@@ -242,6 +297,12 @@ def main(argv: Optional[List[str]] = None) -> int:
             return False
 
         view.connect("decide-policy", decide)
+
+        def closed(*_):
+            loop.quit()
+            return False
+
+        window.connect("close-request", closed)
         window.set_child(view)
         # Sean's rule, 2026-09-17: streamed through Moonlight nothing should
         # frame the page; opened at the machine, a window you cannot move or
@@ -253,5 +314,6 @@ def main(argv: Optional[List[str]] = None) -> int:
         view.load_uri(url)
         window.present()
 
-    app.connect("activate", on_activate)
-    return app.run([])
+    build()
+    loop.run()
+    return 0

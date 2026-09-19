@@ -36,6 +36,18 @@ def state_dir() -> str:
     return os.path.join(state_home(), "sunshine-apps-ui")
 
 
+def data_home() -> str:
+    """Where a user's own application data belongs -- menu entries included.
+
+    ``XDG_DATA_HOME`` or ``~/.local/share``, which is where every Linux desktop
+    looks for a ``.desktop`` file it did not install itself.
+    """
+    override = os.getenv("XDG_DATA_HOME")
+    if override:
+        return override
+    return os.path.expanduser(os.path.join("~", ".local", "share"))
+
+
 def programs_home() -> str:
     """Where a per-user install of a program belongs.
 

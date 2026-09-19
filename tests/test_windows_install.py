@@ -17,6 +17,7 @@ import shutil
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "src"))
 
@@ -259,14 +260,25 @@ class StartMenuShortcutTest(unittest.TestCase):
         self.assertIn(self.where["command"], self.scripts[0])
         self.assertIn("WScript.Shell", self.scripts[0])
 
-    def test_it_uses_the_poster_as_its_icon_when_there_is_one(self):
-        os.makedirs(os.path.join(self.tmp, "assets"))
-        open(os.path.join(self.tmp, "assets", "poster.png"), "w").close()
-        installer._start_menu_shortcut(self.where)
+    def test_its_icon_is_an_ico_because_a_lnk_cannot_use_a_png(self):
+        """It used to point at the .png, so the shortcut showed pythonw's snake.
+
+        Windows wants an .ico or a binary carrying icon resources. The .ico is
+        made from the shipped artwork at install time (installer._icon_files).
+        """
+        os.makedirs(os.path.join(self.tmp, "assets"), exist_ok=True)
+        icon = os.path.join(self.tmp, "assets", "menu-icon.ico")
+        open(icon, "wb").close()          # the shortcut only uses one that exists
+        with mock.patch.object(installer, "_icon_files",
+                               return_value={"ico": icon}):
+            installer._start_menu_shortcut(self.where)
         self.assertIn("IconLocation", self.scripts[0])
+        self.assertIn("menu-icon.ico", self.scripts[0])
+        self.assertNotIn("poster.png", self.scripts[0])
 
     def test_no_icon_is_not_a_failure(self):
-        installer._start_menu_shortcut(self.where)
+        with mock.patch.object(installer, "_icon_files", return_value={}):
+            installer._start_menu_shortcut(self.where)
         self.assertNotIn("IconLocation", self.scripts[0])
 
     def test_uninstalling_takes_it_back(self):
