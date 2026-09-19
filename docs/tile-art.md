@@ -141,6 +141,33 @@ the path Apple publishes in the global navigation on `apple.com` — the same
 nominative basis as Steam's and Heroic's marks, and recorded in the README with
 them.
 
+## Check the marks before every major release
+
+**Logos change.** Fedora's changed in 2021, Ubuntu's in 2022, Windows' in 2021,
+and a tile carrying last decade's mark looks like abandonware. Before cutting a
+major or minor release, look at each mark we ship and confirm it is still the
+current one:
+
+| mark | where it comes from | licence |
+|---|---|---|
+| Steam roundel | Sunshine's own `steam.png` | GPL-3.0 (LizardByte) |
+| Heroic shield | Heroic Games Launcher `public/icon.png` | GPL-3.0 |
+| Apple | the path Apple publishes in apple.com's global nav | trademark, nominative use |
+| Windows | four panes, drawn here | ours |
+| Tux | Larry Ewing, Simon Budig, Garrett LeSage | Attribution |
+| Arch | Arch "Crystal" icon | GPL |
+| Debian | Debian OpenLogo (swirl) | CC BY-SA 3.0 |
+| Fedora | Fedora icon (2021) | public domain |
+| Linux Mint | logo without wordmark | CC BY 3.0 |
+| Ubuntu | logo, no wordmark (2022) | GPL-3.0 |
+
+openSUSE is deliberately absent: the available artwork is GFDL, which is a poor
+fit for bundling, and an openSUSE desktop carries its own icon, which step 1
+finds.
+
+This check is in `docs/releasing.md` as part of cutting a release, so it is not
+a thing to remember unaided.
+
 ## Rebuilding
 
 `scripts/make-tiles.py` produces every file in `assets/tiles/` from the values

@@ -49,6 +49,11 @@ collaborators, and stay as they are when the repository goes public.
 
 ## Cutting a release
 
+0. **Check the tile artwork.** Logos change -- Fedora's in 2021, Ubuntu's in
+   2022, Windows' in 2021 -- and a tile carrying last decade's mark looks like
+   abandonware. `docs/tile-art.md` lists every mark we ship and where it came
+   from; confirm each is still current, and rebuild with
+   `scripts/make-tiles.py` if any has moved on.
 1. Agree the bump, by the rule above.
 2. Set `RELEASE` to the new number and `CHANNEL = ""` in `version.py`. The word
    "dev" and the build number both disappear from everything that shows a
