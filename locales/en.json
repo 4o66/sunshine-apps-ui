@@ -1,0 +1,88 @@
+{
+  "_comment": [
+    "The English catalogue, and the template for every other language.",
+    "Copy this file to <code>.json (a BCP 47 code: fr, pt-BR, zh-Hans) and",
+    "translate the values. Keys are never translated. See locales/README.md."
+  ],
+  "_meta": {
+    "code": "en",
+    "name": "English",
+    "name_in_english": "English",
+    "direction": "ltr"
+  },
+
+  "tiles": {
+    "_comment": "The captions rendered into tile artwork. Keep them short: a tile is 600px wide and a long name shrinks until it fits.",
+    "app_manager": "Sunshine App Manager",
+    "steam": "Steam",
+    "heroic": "Heroic",
+    "desktop": "Desktop",
+    "desktop_low_res": "Desktop\n(Low Res)",
+    "reboot_host": "Reboot Host"
+  },
+
+  "names": {
+    "_comment": "The names of the entries written into apps.json. The #1 and Zz prefixes are sort keys, not decoration -- see the README -- so keep them.",
+    "desktop": "#1 Desktop",
+    "steam": "Zz Steam",
+    "heroic": "Zz Heroic",
+    "app_manager": "Zz App Manager",
+    "reboot_host": "Zz Reboot Host"
+  },
+
+  "ui": {
+    "_comment": "The interface. Anything shown to a person belongs here.",
+    "apps_heading_one": "1 application",
+    "apps_heading_many": "{count} applications",
+    "rescan": "Rescan",
+    "apply_one": "Apply 1 change",
+    "apply_many": "Apply {count} changes",
+    "discard": "Discard",
+    "restore_a_copy": "Restore a copy",
+    "report_a_bug": "Report a bug",
+    "settings": "Settings",
+    "back_to_the_apps": "Back to the apps",
+    "add_an_application": "Add an application"
+  },
+
+  "scanning": {
+    "heading": "Scanning your libraries",
+    "starting": "Starting...",
+    "elapsed": "{seconds}s elapsed. Steam is quick; Heroic reads its whole library and takes the longest.",
+    "stopped": "The scan stopped",
+    "stop_watching": "Stop watching"
+  },
+
+  "settings": {
+    "heading": "Settings",
+    "nothing_touches_your_list": "None of this touches your app list.",
+    "appearance": "Appearance",
+    "appearance_why": "Following the system is the default. On a television, where there is no system to follow, pick the one that suits the room.",
+    "follow_the_system": "Follow the system",
+    "light": "Light",
+    "dark": "Dark",
+    "updates": "Updates",
+    "updates_why": "Checked only when you ask. Nothing is downloaded or installed without you saying so.",
+    "check_for_updates": "Check for updates",
+    "which_builds": "Which builds",
+    "offer_development_builds": "Offer development builds",
+    "offer_development_builds_why": "Newer, and sometimes broken. Off means only finished releases.",
+    "move_to_finished_release": "Move to the finished release when it is newer",
+    "move_to_finished_release_why": "A release is where a development build was heading, so this leaves you on the finished one rather than stranded on an older preview. Only applies while development builds are on."
+  },
+
+  "report": {
+    "scan_this": "Scan this with your phone",
+    "scan_this_why": "There is no way to type a web address into a stream, so here it is as a code. It goes to the issues page for this program.",
+    "or_at_the_machine": "Or, at the machine itself",
+    "open_the_issues_page": "Open the issues page",
+    "report_a_bug_why": "This opens the issues page in your usual browser. The manager stays open behind it.",
+    "or_scan_it": "Or scan it with your phone",
+    "worth_mentioning": "Worth mentioning in the report",
+    "version": "Version",
+    "running_on": "Running on",
+    "opened": "Opened",
+    "opened_via_sunshine": "through Sunshine, on a stream",
+    "opened_at_the_machine": "at the machine"
+  }
+}
