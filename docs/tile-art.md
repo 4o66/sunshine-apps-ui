@@ -80,7 +80,8 @@ before it is committed.
 | Restart | a circular arrow | ours |
 | Desktop, on macOS | the Apple mark | rendered from Apple's own published path (apple.com global nav) |
 | Desktop, on Linux | the distribution's logo | read from the machine (`os-release` `LOGO=`) |
-| Desktop, elsewhere | four panes, or a penguin | ours |
+| Desktop, on Windows | four panes | ours |
+| Desktop, fallback | Tux | Larry Ewing, Simon Budig, Garrett LeSage (Attribution) |
 
 Both borrowed marks come from GPL-3.0 projects, which is compatible with this
 one. That covers the copyright in the artwork. The **trademarks** are not ours
@@ -108,16 +109,32 @@ on the monitor's screen, fitted into **30 × 30 units** of the monitor's 100-uni
 grid and centred in the screen area, which is inset from the bezel so nothing
 crosses it.
 
-**On Linux the distribution's own logo is used, taken from the machine.**
-`/etc/os-release` carries a `LOGO=` key — `LOGO=bazzite-logo` on Bazzite — and
-the icon is already installed under `/usr/share/icons/hicolor/<size>/`, usually
-as `<logo>-icon.png`. Read the largest one available. Nothing is shipped for
-this and nothing is fetched: the machine already has its own logo, and every
-distribution gets the right one without us keeping a list.
+**On Linux the distribution's own logo is used, taken from the machine.** It is
+already installed; we neither ship it nor fetch it. Finding it takes a chain,
+because distributions do not agree:
 
-Fall back to the penguin we ship when there is no `LOGO=`, when the icon cannot
-be found, or when Pillow is not available to composite it. The penguin is drawn
-for this project.
+1. `LOGO=` in `/etc/os-release`, then look for `<logo>.svg`, `<logo>.png` or
+   `<logo>-icon.png` under `/usr/share/icons/hicolor/<size>/apps/` and
+   `/usr/share/pixmaps/`. Prefer the plain name over `-text` and `-dark`
+   variants, and the largest size available.
+2. Failing that, the same search for `<ID>-logo.*` and `<ID>.*`, where `ID` is
+   the `ID=` field. This is what catches Debian.
+3. Failing that, the penguin.
+
+Measured on 2026-09-19, which is why the chain has three links and not one:
+
+| distribution | `LOGO=` | icon present | found by |
+|---|---|---|---|
+| Bazzite (desktop) | `bazzite-logo` | yes | step 1 |
+| Ubuntu 24.04 | `ubuntu-logo` | yes | step 1 |
+| Arch | `archlinux-logo` | yes | step 1 |
+| Debian 13 | **absent** | `debian-logo.png` | step 2 |
+| Fedora 43 (cloud) | `fedora-logo-icon` | **no** | step 3 |
+
+The Fedora row is the useful one: a minimal or cloud install may name a logo it
+does not have. A desktop install has it — Bazzite is Fedora and does. The
+penguin is not a rare path to be hand-waved; it is what a server-shaped machine
+gets.
 
 Windows is four panes, drawn here. **macOS is Apple's own mark**, rendered from
 the path Apple publishes in the global navigation on `apple.com` — the same
