@@ -94,6 +94,10 @@ def main(argv=None) -> int:
     parser.add_argument("--without-interpreter", dest="interpreter",
                         action="store_false",
                         help="do not; use whatever Python is on PATH")
+    parser.add_argument("--token-file", default="",
+                        help="internal: read the session token from this file, "
+                             "which is then deleted. The launcher mints it so "
+                             "it can open the window before this has started")
     parser.add_argument("--browser-helper", default="",
                         help="internal: hold the browser at medium integrity, so "
                              "an elevated launcher never hands it those rights")
@@ -196,7 +200,22 @@ def main(argv=None) -> int:
         return _scan(conf_dir, options, dry_run=args.dry_run,
                      reload=not args.no_reload)
 
-    token = security.new_token()
+    token = ""
+    if args.token_file:
+        # Minted by the launcher, so it could put the URL in front of someone
+        # before this process existed. In a file rather than an argument
+        # because argv is readable by every process on the machine.
+        try:
+            with open(args.token_file, "r", encoding="utf-8") as handle:
+                token = handle.read().strip()
+        except OSError as e:
+            print(f"error: could not read the token: {e}", file=sys.stderr)
+            return 2
+        try:
+            os.unlink(args.token_file)
+        except OSError:
+            pass
+    token = token or security.new_token()
     try:
         httpd = serve(token, conf_dir, options, args.port)
     except OSError as e:

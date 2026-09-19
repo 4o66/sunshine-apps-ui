@@ -20,6 +20,8 @@ import sys
 import time
 from typing import List, Optional, Sequence, Tuple
 
+from . import security
+
 WINDOWS = os.name == "nt"
 
 # Chromium keys its single-instance lock on the profile directory, so giving
@@ -53,8 +55,73 @@ PROFILE_PATTERN = (r"(--user-data-dir=|--profile )[^ ]*sunshine-apps-ui"
 SERVER_PATTERN = r"sunshine_apps_ui .*--port"
 
 
-def server_command(port: str = "0") -> List[str]:
-    return [sys.executable, "-m", "sunshine_apps_ui", "--serve", "--port", port]
+def server_command(port: str = "0", token_file: str = "") -> List[str]:
+    command = [sys.executable, "-m", "sunshine_apps_ui", "--serve", "--port", port]
+    if token_file:
+        command += ["--token-file", token_file]
+    return command
+
+
+def free_port() -> int:
+    """A port nothing is using, chosen before the server exists.
+
+    So that the URL can be known -- and a window opened on it -- while the
+    server is still starting. Something else could take it in the moment
+    between closing this socket and the server binding; the server says so if
+    that happens, and the next launch picks another.
+    """
+    import socket
+
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+        probe.bind((security.BIND_HOST, 0))
+        return int(probe.getsockname()[1])
+
+
+STARTING_PAGE = """<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>App Manager</title>
+<style>
+:root{{color-scheme:light dark}}
+body{{margin:0;height:100vh;display:flex;align-items:center;justify-content:center;
+background:#212529;color:#f8f9fa;
+font:1rem/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}}
+.box{{text-align:center}}
+.ring{{width:44px;height:44px;margin:0 auto 1rem;border-radius:50%;
+border:3px solid rgba(255,255,255,.18);border-top-color:#ffc400;
+animation:spin 900ms linear infinite}}
+@keyframes spin{{to{{transform:rotate(360deg)}}}}
+p{{margin:0;color:#adb5bd;font-size:.95rem}}
+</style></head>
+<body><div class="box"><div class="ring"></div><p>Starting the app manager...</p></div>
+<script>
+// The server is coming up beside this page. Ask until it answers, then go --
+// no-cors because we only need to know that something replied, not to read it.
+const target = {url!r};
+async function ready() {{
+  try {{ await fetch(target, {{mode: 'no-cors', cache: 'no-store'}}); return true; }}
+  catch (e) {{ return false; }}
+}}
+(async function poll() {{
+  for (let i = 0; i < 600; i++) {{
+    if (await ready()) {{ location.replace(target); return; }}
+    await new Promise(r => setTimeout(r, 100));
+  }}
+  document.querySelector('p').textContent =
+    'The app manager did not start. Its log is in the state directory.';
+  document.querySelector('.ring').style.display = 'none';
+}})();
+</script></body></html>
+"""
+
+
+def write_starting_page(url: str) -> str:
+    """A page to show while the server starts, so a window appears at once."""
+    from . import places
+    directory = places.state_dir()
+    os.makedirs(directory, exist_ok=True)
+    path = os.path.join(directory, "starting.html")
+    with open(path, "w", encoding="utf-8") as handle:
+        handle.write(STARTING_PAGE.format(url=url))
+    return path
 
 
 def package_path() -> str:
@@ -301,13 +368,24 @@ def _flatpak_installed(app: str) -> bool:
                           capture_output=True).returncode == 0
 
 
+def _as_url(path: str) -> str:
+    from urllib.request import pathname2url
+    return "file:" + pathname2url(os.path.abspath(path))
+
+
 # Set when the browser is held by a medium-integrity helper rather than by us,
 # which is how an elevated launcher avoids handing its rights to a browser.
 _HELPER_HOLDS_IT = "helper"
 
 
-def open_browser(url: str, profile: str) -> Tuple[Optional[subprocess.Popen], str]:
-    """Open *url* as a window of its own. Returns (process, how)."""
+def open_browser(target: str, profile: str,
+                 as_file: bool = False) -> Tuple[Optional[subprocess.Popen], str]:
+    """Open *target* as a window of its own. Returns (process, how).
+
+    *target* is a URL, or a path to a local page when as_file is set -- which is
+    how the window appears before the server it will show has started.
+    """
+    url = _as_url(target) if as_file else target
     if WINDOWS:
         return _open_browser_windows(url, profile)
 
@@ -416,6 +494,13 @@ def browser_is_up(profile: str) -> bool:
 
 
 def _read_url(log_file: str, server: subprocess.Popen) -> str:
+    """The URL the server printed, from its log.
+
+    No longer how the launcher finds it -- the launcher chooses the port and
+    the token itself now, so that a window can be opened before the server
+    exists. Kept because it is still how a person finds the URL of a server
+    started by hand, and because --serve prints it for exactly that reason.
+    """
     deadline = time.monotonic() + START_TIMEOUT
     while time.monotonic() < deadline:
         try:
@@ -432,29 +517,45 @@ def _read_url(log_file: str, server: subprocess.Popen) -> str:
 
 
 def launch(argv: Optional[List[str]] = None) -> int:
-    """Start the server, open a window on it, and stay until one of them goes."""
+    """Open a window at once, start the server behind it, and stay until one goes.
+
+    The window comes first deliberately. Sean, timing it: "it needs to open
+    nearly instantly, even if just to show a spinning please wait." Most of the
+    wait is the browser starting, which happens whatever we do -- so the
+    browser is started first, on a page that spins, and the server comes up
+    beside it. The page goes to the real one as soon as anything answers.
+
+    That means knowing the URL before the server exists, so the port and the
+    token are chosen here and handed over: the token in a file, because argv is
+    readable by every process on the machine.
+    """
     stop_previous()
     profile = profile_dir()
     os.makedirs(profile, exist_ok=True)
     log_file = log_path()
 
-    environment = server_environment()
-
+    from . import places
     from .core import filemode
-    with filemode.open_private(log_file) as handle:
-        server = subprocess.Popen(server_command(), stdout=handle,
-                                  stderr=subprocess.STDOUT, env=environment)
-    remember_server(server)
+
+    port = free_port()
+    token = security.new_token()
+    url = f"http://{security.BIND_HOST}:{port}/?token={token}"
+    token_file = os.path.join(places.state_dir(), "session-token")
+    filemode.write_private(token_file, token)
 
     browser = None
     ours: List[int] = []
+    server = None
     try:
-        url = _read_url(log_file, server)
-        if not url:
-            print(f"The interface did not start; see {log_file}", file=sys.stderr)
-            return 1
+        browser, how = open_browser(write_starting_page(url), profile,
+                                    as_file=True)
+        environment = server_environment()
+        with filemode.open_private(log_file) as handle:
+            server = subprocess.Popen(
+                server_command(str(port), token_file), stdout=handle,
+                stderr=subprocess.STDOUT, env=environment)
+        remember_server(server)
 
-        browser, how = open_browser(url, profile)
         if not browser and how != _HELPER_HOLDS_IT:
             return _no_browser(url, server)
         print(f"Opened with {how}", file=sys.stderr)
@@ -509,7 +610,7 @@ def _no_browser(url: str, server: subprocess.Popen) -> int:
     return 0
 
 
-def _shut_down(server: subprocess.Popen,
+def _shut_down(server: Optional[subprocess.Popen],
                browser: Optional[subprocess.Popen],
                ours: Optional[Sequence[int]] = None) -> None:
     """Take down whichever of the two is still up.
@@ -540,7 +641,9 @@ def _shut_down(server: subprocess.Popen,
     # By profile as well, for the reason at the top: ending the launcher does
     # not end the browser it started.
     _end(ours if ours is not None else browsers())
-    if server.poll() is None:
+    # The server may never have been started: the window is opened first now,
+    # and anything that goes wrong before it exists still comes through here.
+    if server is not None and server.poll() is None:
         try:
             server.terminate()
             server.wait(timeout=5)

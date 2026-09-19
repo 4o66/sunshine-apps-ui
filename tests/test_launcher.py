@@ -538,3 +538,58 @@ class ImportsSurviveWithoutStreamsTest(unittest.TestCase):
             self.assertFalse(utils._stderr_is_a_terminal())
         finally:
             sys.stderr = real
+
+
+class WindowFirstTest(unittest.TestCase):
+    """The window opens before the server, so something appears at once.
+
+    Sean: "it needs to open nearly instantly, even if just to show a spinning
+    please wait." Most of the wait is the browser starting, which happens
+    whatever we do -- so the browser starts first, on a page that spins, and
+    the server comes up beside it.
+    """
+
+    def setUp(self):
+        self.state = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.state, True)
+        self._previous = os.environ.get("XDG_STATE_HOME")
+        os.environ["XDG_STATE_HOME"] = self.state
+
+    def tearDown(self):
+        if self._previous is None:
+            os.environ.pop("XDG_STATE_HOME", None)
+        else:
+            os.environ["XDG_STATE_HOME"] = self._previous
+
+    def test_a_port_is_chosen_before_anything_binds_it(self):
+        port = launcher.free_port()
+        self.assertGreater(port, 0)
+        self.assertLess(port, 65536)
+        # And it really is free: something else can take it right now.
+        import socket
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+            probe.bind(("127.0.0.1", port))
+
+    def test_the_starting_page_carries_the_url_it_will_go_to(self):
+        url = "http://127.0.0.1:41234/?token=abc"
+        path = launcher.write_starting_page(url)
+        page = open(path, encoding="utf-8").read()
+        self.assertIn(url, page)
+        self.assertIn("Starting the app manager", page)
+
+    def test_it_says_something_rather_than_nothing_if_the_server_never_comes(self):
+        page = open(launcher.write_starting_page("http://127.0.0.1:1/?token=x"),
+                    encoding="utf-8").read()
+        self.assertIn("did not start", page)
+
+    def test_the_token_reaches_the_server_in_a_file_not_an_argument(self):
+        """argv is readable by every process on the machine."""
+        command = launcher.server_command("41234", "/state/session-token")
+        self.assertIn("--token-file", command)
+        self.assertIn("/state/session-token", command)
+        self.assertFalse(any("token=" in part for part in command))
+
+    def test_a_local_page_is_handed_over_as_a_file_url(self):
+        as_url = launcher._as_url(os.path.join(self.state, "starting.html"))
+        self.assertTrue(as_url.startswith("file:"))
+        self.assertIn("starting.html", as_url)
