@@ -7,6 +7,7 @@ about ownership markers, tombstones and Sunshine's own defaults live beside the
 reconciler, and one implementation of them is enough.
 """
 
+import json
 import logging
 import os
 import threading
@@ -19,11 +20,13 @@ from . import artwork, privilege, state
 from .engine import (EngineError, art_choose, art_search, backup_diff, browse,
                      check_auth, get_state, list_backups, mutate, run_plan,
                      save_auth)
+from . import scanjob
 from .render import (LOCK_NOTE, app_page, applied_page, artwork_page,
                      render_elevating,
                      backups_page, confirm_page, connect_page, error_page,
                      explain_page, grid_page, hidden_page, is_protected, page,
-                     picker_page, render_browsable, render_fields, render_flags)
+                     picker_page, render_browsable, render_fields, render_flags,
+                     scanning_page)
 
 log = logging.getLogger("sunshine-apps-ui")
 
@@ -115,6 +118,49 @@ class PlanHandler(BaseHTTPRequestHandler):
                 self.wfile.write(body)
             return
 
+        if parts.path == "/scan/status":
+            # Only what the page shows: the whole log would make a poll
+            # every 400 ms carry the scan twice over.
+            status = scanjob.job.status()
+            self._send(200, json.dumps({
+                "running": status["running"], "elapsed": status["elapsed"],
+                "latest": status["latest"], "error": status["error"],
+                "staged": status["staged"], "run": status["run"]}),
+                "application/json; charset=utf-8")
+            return
+
+        if parts.path == "/scanning":
+            status = scanjob.job.status()
+            if not status["running"] and status["ran"]:
+                # It finished while the page was being asked for. Nothing to
+                # watch; go where the result is.
+                self._redirect("/", scanned="1")
+                return
+            self._send(200, scanning_page(self.token, status))
+            return
+
+        if "scan" in query and parts.path in ("/", "/index.html"):
+            # A scan stages what it found onto the grid as pending changes,
+            # rather than holding them aside to be applied by a second,
+            # invisible route. Everything that will happen is now one list.
+            #
+            # It runs on a thread and this returns at once: the page that
+            # watches it is the indicator Sean asked for after pressing Rescan
+            # and seeing nothing move for fifty seconds.
+            conf_dir, opts = self.conf_dir, self.importer_opts
+
+            def work() -> int:
+                doc, _ = run_plan(conf_dir, opts)
+                staged = state.stage_plan(doc.get("plan", {}) or {})
+                log.info("scan staged %d change(s)", staged)
+                return staged
+
+            if not scanjob.job.start(work, on_error=lambda why:
+                                     log.warning("scan failed: %s", why)):
+                log.info("a scan was already running; watching that one")
+            self._redirect("/scanning")
+            return
+
         if parts.path in ("/", "/index.html"):
             try:
                 current = get_state(self.conf_dir)
@@ -122,17 +168,11 @@ class PlanHandler(BaseHTTPRequestHandler):
                 self._send(500, error_page("Could not read the app list.",
                                            str(e), token=self.token))
                 return
-            scanned = "scan" in query
-            if scanned:
-                # A scan stages what it found onto the grid as pending changes,
-                # rather than holding them aside to be applied by a second,
-                # invisible route. Everything that will happen is now one list.
-                try:
-                    doc, _ = run_plan(self.conf_dir, self.importer_opts)
-                    staged = state.stage_plan(doc.get("plan", {}) or {})
-                    log.info("scan staged %d change(s)", staged)
-                except EngineError as e:
-                    log.warning("scan failed: %s", e)
+            # "scanned" is a scan that has finished -- the flag the scanning
+            # page comes back with. "scan" is a request to run one, and that
+            # no longer happens on this thread: it took the best part of a
+            # minute and returned nothing at all until it was over.
+            scanned = "scanned" in query
             auth_ok, auth_message = self._auth_state()
             # A credential problem is one thing; Sunshine failing for another
             # reason is a different thing and should not send you to a login.

@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-import os, sys, re, json, tempfile, shutil, time
+import os, sys, re, json, tempfile, shutil, threading, time
 
 def _stderr_is_a_terminal() -> bool:
     """Whether to colour the output, asked without assuming there is any.
@@ -20,12 +20,41 @@ is_tty = _stderr_is_a_terminal() or (os.getenv("FORCE_COLOR","0")=="1")
 Y = "\033[33m" if is_tty else ""
 R = "\033[0m"  if is_tty else ""
 
+# Anything that wants to hear the scan as it happens. The importers already
+# say what they are doing -- "Building Heroic metadata cache from ..." is the
+# 49 seconds nobody could see -- so a listener here is the whole of showing it.
+_watchers = []
+_watchers_lock = threading.Lock()
+
+
+def watch(listener):
+    """Hear every log line until unwatch(). Used by the interface's scan page."""
+    with _watchers_lock:
+        _watchers.append(listener)
+
+
+def unwatch(listener):
+    with _watchers_lock:
+        try:
+            _watchers.remove(listener)
+        except ValueError:
+            pass
+
+
 def log(msg: str):
     ts = time.strftime("%H:%M:%S")
+    line = f"[{ts}] {msg}"
+    with _watchers_lock:
+        listening = list(_watchers)
+    for listener in listening:
+        try:
+            listener(line)
+        except Exception:        # noqa: BLE001 - a watcher must never break a scan
+            pass
     stream = getattr(sys, "stderr", None) or getattr(sys, "stdout", None)
     if stream is None:
         return          # nowhere to say it; not a reason to fail
-    print(f"[{ts}] {msg}", file=stream)
+    print(line, file=stream)
 
 def yn(s: str) -> str:
     return f"{Y}{s}{R}"

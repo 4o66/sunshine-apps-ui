@@ -196,6 +196,21 @@ class ServerTest(unittest.TestCase):
             os.environ["XDG_STATE_HOME"] = self._previous_state_home
         shutil.rmtree(self.state_dir, ignore_errors=True)
 
+    def scan(self, wait=20.0):
+        """Ask for a scan, wait for the thread, and return the grid it produced.
+
+        A scan no longer happens on the request thread: asking for one now
+        returns the page that watches it. Tests that care what a scan *found*
+        have to wait for it, which is what the interface does too.
+        """
+        from sunshine_apps_ui import scanjob
+        self.get(f"/?scan=1&token={self.token}")
+        deadline = time.monotonic() + wait
+        while scanjob.job.running() and time.monotonic() < deadline:
+            time.sleep(0.01)
+        self.assertFalse(scanjob.job.running(), "the scan never finished")
+        return self.get(f"/?scanned=1&token={self.token}")
+
     def get(self, path="/", token=None, headers=None):
         url = f"http://127.0.0.1:{self.port}{path}"
         if token:
@@ -672,7 +687,7 @@ class GridTest(ServerTest):
         os.environ["XDG_STATE_HOME"] = d
         try:
             from sunshine_apps_ui import state as st
-            _, body = self.get(f"/?scan=1&token={self.token}")
+            _, body = self.scan()
             self.assertIn(">NEW<", body)
             self.assertIn("ghost found", body)
             self.assertEqual([o["op"] for o in st.queue()], ["adopt"])
@@ -691,8 +706,8 @@ class GridTest(ServerTest):
         os.environ["XDG_STATE_HOME"] = d
         try:
             from sunshine_apps_ui import state as st
-            self.get(f"/?scan=1&token={self.token}")
-            self.get(f"/?scan=1&token={self.token}")
+            self.scan()
+            self.scan()
             self.assertEqual(len(st.queue()), 1)
         finally:
             if old is None:
@@ -775,6 +790,65 @@ class GridTest(ServerTest):
         _, body = self.get(token=self.token)
         self.assertNotIn("Apply 0", body)
         self.assertNotIn(">Apply ", body)
+
+
+class ScanRoutesTest(ServerTest):
+    """Asking for a scan, and watching the one that is running.
+
+    The scan used to happen on this thread and the answer arrived fifty
+    seconds later with nothing in between.
+    """
+
+    def test_asking_for_a_scan_does_not_return_the_grid(self):
+        """It returns the page that watches the scan, at its own address."""
+        opener = urllib.request.build_opener(NoRedirect)
+        request = urllib.request.Request(
+            f"http://127.0.0.1:{self.port}/?scan=1&token={self.token}")
+        try:
+            response = opener.open(request)
+            status, location = response.status, response.headers.get("Location")
+        except urllib.error.HTTPError as e:
+            status, location = e.code, e.headers.get("Location")
+        self.assertEqual(status, 303)
+        self.assertTrue(location.startswith("/scanning"), location)
+
+    def test_the_watching_page_does_not_start_a_scan(self):
+        """A refresh while scanning must watch, not launch another."""
+        from sunshine_apps_ui import scanjob
+        runs_before = scanjob.job.status()["run"]
+        self.get(f"/scanning?token={self.token}")
+        self.get(f"/scanning?token={self.token}")
+        self.assertEqual(scanjob.job.status()["run"], runs_before)
+
+    def test_the_status_is_json_and_says_whether_it_is_running(self):
+        _, body = self.get(f"/scan/status?token={self.token}")
+        status = json.loads(body)
+        self.assertIn("running", status)
+        self.assertIn("latest", status)
+        self.assertIn("elapsed", status)
+
+    def test_the_status_does_not_carry_the_whole_log_on_every_poll(self):
+        """It is asked every 400 ms; the log would send the scan twice over."""
+        _, body = self.get(f"/scan/status?token={self.token}")
+        self.assertNotIn("lines", json.loads(body))
+
+    def test_neither_route_answers_without_a_token(self):
+        for path in ("/scan/status", "/scanning"):
+            _, body = self.get(path)
+            self.assertIn("Not found", body)
+
+    def test_a_finished_scan_sends_the_watcher_to_the_grid(self):
+        opener = urllib.request.build_opener(NoRedirect)
+        self.scan()                      # leaves the job finished, not running
+        request = urllib.request.Request(
+            f"http://127.0.0.1:{self.port}/scanning?token={self.token}")
+        try:
+            response = opener.open(request)
+            status, location = response.status, response.headers.get("Location")
+        except urllib.error.HTTPError as e:
+            status, location = e.code, e.headers.get("Location")
+        self.assertEqual(status, 303)
+        self.assertIn("scanned=1", location)
 
 
 class ArtworkTest(ServerTest):

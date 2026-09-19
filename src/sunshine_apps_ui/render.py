@@ -643,6 +643,75 @@ without it.</p></section>
 </div></body></html>"""
 
 
+def scanning_page(token: str, status: Dict[str, Any]) -> str:
+    """Shown while a scan runs, which on a real library is the best part of a minute.
+
+    It says what the scan is doing, taken from the lines the importers already
+    write, because "please wait" for fifty seconds is indistinguishable from
+    nothing happening -- which is exactly how it was read.
+
+    It reloads itself without JavaScript too. The page is its own URL rather
+    than ``/?scan``, so a refresh watches the scan instead of starting another.
+    """
+    q = f"?token={_eq(token)}" if token else ""
+    # Built here, not in the script: the token is escaped once, by the same
+    # rule as every other link on the page.
+    done = f"/?scanned=1&token={_eq(token)}" if token else "/?scanned=1"
+    latest = status.get("latest") or "Starting..."
+    error = status.get("error") or ""
+    body = f"""<section class="ok"><h2>Scanning your libraries</h2>
+<div class="scanning"><div class="ring" aria-hidden="true"></div>
+<div><p class="why" id="scan-latest">{_e(latest)}</p>
+<p class="why dim"><span id="scan-elapsed">{_e(status.get('elapsed', 0))}</span>s
+elapsed. Steam is quick; Heroic reads its whole library and takes the longest.</p>
+</div></div></section>"""
+    if error:
+        body = (f"""<section class="err"><h2>The scan stopped</h2>
+<p class="why">{_e(error)}</p></section>""")
+    return f"""<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{_title("Scanning")}</title><style>{_CSS}
+.scanning{{display:flex;gap:1rem;align-items:center}}
+.ring{{width:34px;height:34px;flex:0 0 34px;border-radius:50%;
+border:3px solid rgba(255,255,255,.18);border-top-color:#ffc400;
+animation:spin 900ms linear infinite}}
+@keyframes spin{{to{{transform:rotate(360deg)}}}}
+.dim{{opacity:.7;font-size:.9rem}}
+#scan-latest{{font-variant-numeric:tabular-nums}}
+</style>
+<noscript><meta http-equiv="refresh" content="2"></noscript>
+</head>
+<body>
+<div class="navbar"><span class="brand">Sunshine</span><span class="sep">/</span>
+<span class="where">app manager</span>{_version_chip()}</div>
+<div class="wrap">{body}
+<div class="actions"><a class="btn sec" href="/{q}">Stop watching</a></div>
+</div>
+<script>
+// The scan is on a thread; this only watches it. When it stops, go to the
+// grid, which is where what it found has been staged.
+(async function watch() {{
+  const latest = document.getElementById('scan-latest');
+  const elapsed = document.getElementById('scan-elapsed');
+  for (;;) {{
+    await new Promise(r => setTimeout(r, 400));
+    let s;
+    try {{
+      const response = await fetch('/scan/status{q}', {{cache: 'no-store'}});
+      s = await response.json();
+    }} catch (e) {{ continue; }}          // a scan busy enough to miss a poll is still a scan
+    if (latest && s.latest) latest.textContent = s.latest;
+    if (elapsed) elapsed.textContent = s.elapsed;
+    if (!s.running) {{
+      location.replace('{done}');
+      return;
+    }}
+  }}
+}})();
+</script></body></html>"""
+
+
 def grid_page(state: Dict[str, Any], token: str, *, new_ids: Optional[set] = None,
               scanned: bool = False, auth_ok: bool = True,
               pending: Optional[List[Dict[str, Any]]] = None,

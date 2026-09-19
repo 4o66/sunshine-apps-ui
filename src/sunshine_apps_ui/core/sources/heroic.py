@@ -6,6 +6,8 @@
 import os
 import re
 import json
+import time
+
 import glob
 import threading
 from pathlib import Path
@@ -15,6 +17,10 @@ from ..utils import log, read_json, slugify, yn
 from ..images import download_temp, stretch_png_600x900, sgdb_search_by_name
 from ..image_downloader import ImageDownloader
 from ..reconcile import tag
+
+# How often the Heroic cache build says where it has got to. Short enough that
+# the line visibly moves, long enough that saying so is not most of the work.
+PROGRESS_EVERY = 1.5
 
 
 def import_heroic(home: str, conf_dir: str, images_dir: str, settings: Dict[str, Any],
@@ -230,12 +236,24 @@ def import_heroic(home: str, conf_dir: str, images_dir: str, settings: Dict[str,
             image_cache: Dict[str, str] = {}
             scanned = 0
 
+            # This is the longest thing a scan does -- fourteen thousand files
+            # and the best part of a minute on a real library -- and it used to
+            # say nothing between its first line and its last. The interface
+            # shows the most recent line, so a line that moves is the
+            # difference between a scan and a hung program.
+            next_note = time.monotonic() + PROGRESS_EVERY
+
             for jf in app_root.rglob("*.json"):
                 try:
                     data = json.loads(jf.read_text(encoding="utf-8", errors="ignore"))
                     scanned += 1
                 except Exception:
                     continue
+
+                now = time.monotonic()
+                if now >= next_note:
+                    next_note = now + PROGRESS_EVERY
+                    log(f"Reading Heroic's library: {scanned} files so far...")
 
                 # Single pass: extract both titles and image URLs
                 for _, node in _walk_json(data):
