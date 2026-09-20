@@ -987,8 +987,9 @@ def _offer_artwork(token: str, code: str) -> None:
             return
     _ART[token] = {"state": "none",
                    "message": (f"Nobody has made tiles for {wanted} yet, so the "
-                               f"wordless set is used. docs/i18n.md is how to "
-                               f"add them.")}
+                               f"wordless set is used. Adding a language is a "
+                               f"file and a pull request; the link above says "
+                               f"how.")}
 
 
 def _check_artwork(token: str) -> None:

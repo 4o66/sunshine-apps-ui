@@ -11,6 +11,42 @@ WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
 PARTICULAR PURPOSE. See the GNU General Public License for more details.
 
 
+Artwork
+-------
+
+Most of the artwork here was drawn for this project and is GPL-3.0-or-later
+with the rest of it: the three-cover mark, the monitor and the television, the
+reboot arrow, the Windows panes, and every tile background.
+
+The rest is other people's, vendored into assets/marks/ and rendered into the
+tiles under assets/tiles/. It is redistributed with this program under the
+terms below.
+
+    Steam roundel      from Sunshine's own steam.png (LizardByte)  GPL-3.0
+    Heroic shield      Heroic Games Launcher, public/icon.png      GPL-3.0
+    Tux                Larry Ewing, Simon Budig, Garrett LeSage    Attribution
+    Arch "Crystal"     Arch Linux                                  GPL
+    Debian swirl       Debian OpenLogo                             CC BY-SA 3.0
+    Fedora icon        Fedora                                      public domain
+    Linux Mint mark    Linux Mint                                  CC BY 3.0
+    Ubuntu circle      Canonical                                   GPL-3.0
+
+The Apple mark is not vendored as artwork but rendered from the path Apple
+publishes in the global navigation on apple.com. It is used nominatively, to
+say that a tile starts the desktop of a Mac, and for nothing else.
+
+These are trademarks of their respective owners -- Valve Corporation, the
+Heroic Games Launcher project, Linus Torvalds, Apple Inc., Microsoft
+Corporation, and each distribution's project or company. They are used only to
+identify the software or platform a tile launches. No affiliation with,
+sponsorship by, or endorsement from any of them is claimed or implied. If you
+own one of these marks and would rather it were not used here, open an issue
+and it will be removed.
+
+docs/tile-art.md records how each one is used, and carries a reminder to check
+before each major release that a mark is still the current one.
+
+
 Upstream
 --------
 

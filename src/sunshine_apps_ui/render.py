@@ -580,9 +580,14 @@ background:var(--bg-subtle);border:2px solid transparent;box-shadow:var(--shadow
 .tile .fallback{width:100%;height:100%;display:flex;align-items:center;
 justify-content:center;padding:.6rem;text-align:center;font-weight:600;
 font-size:.9rem;color:var(--text-muted);background:var(--bg-muted)}
-.tile .cap{position:absolute;left:0;right:0;bottom:0;padding:.45rem .55rem;
-font-size:.82rem;font-weight:600;color:#fff;
-background:linear-gradient(transparent,rgba(0,0,0,.85))}
+/* The scrim has to cover however many lines the name takes. It used to be as
+   short as one line, so "#2 Low Res Desktop" and "Zz Steam Big Picture" --
+   both of which we started writing when Sunshine's own tiles were adopted --
+   wrapped onto a second line that sat on bare artwork, on top of the words
+   already painted there. */
+.tile .cap{position:absolute;left:0;right:0;bottom:0;padding:2.1rem .55rem .45rem;
+font-size:.82rem;font-weight:600;color:#fff;line-height:1.25;
+background:linear-gradient(transparent,rgba(0,0,0,.97) 40%,rgba(0,0,0,.97))}
 .tile.new{border-color:var(--success)}
 .tile.pending{border-color:var(--warning)}
 .tile.pending .flag{background:var(--warning);color:#1a1a1a}
@@ -687,6 +692,10 @@ without it.</p></section>
 # Where bugs go. One place, so the link on the page and the code in the QR
 # cannot drift apart -- they are both this string.
 ISSUES_URL = "https://github.com/4o66/sunshine-apps-ui/issues"
+# Documentation lives in the repository and not in an install: a release
+# archive carries no docs/ directory, so naming a local path in the interface
+# would send somebody looking for a file that is not on their machine.
+DOCS_URL = "https://github.com/4o66/sunshine-apps-ui/blob/main/docs"
 
 
 def _version_label() -> str:
@@ -723,6 +732,12 @@ background:var(--bg-subtle);border:1px solid var(--border);font-size:.9rem}
 border:1px solid var(--border);border-radius:var(--radius-md);
 padding:.5rem .7rem;font:inherit;font-size:.9rem;max-width:100%}
 .setting select:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+/* A link inside explanatory text was the same small muted grey as the text
+   around it, underlined in the browser default -- legible on a desk, not from
+   a sofa. */
+.setting .why a{color:var(--primary);font-weight:600;text-decoration:underline;
+text-underline-offset:2px}
+.setting .why a:hover{color:var(--primary-hover,var(--primary))}
 .setting form + .why{margin:.5rem 0 .7rem}
 """
 
@@ -740,6 +755,7 @@ def settings_page(token: str, *, prefs: Dict[str, Any],
     Apply expecting their theme to be saved.
     """
     q = f"?token={_e(token)}" if token else ""
+    docs = _e(DOCS_URL)
     chosen = str(prefs.get("theme", "system")).lower()
     dev = bool(prefs.get("dev_builds", False))
     fall_back = bool(prefs.get("stable_if_no_newer_dev", True))
@@ -760,7 +776,9 @@ def settings_page(token: str, *, prefs: Dict[str, Any],
                      f'What changed</a></div>'
                      f'<p class="why" style="margin:.6rem 0 0">Installing it '
                      f'from here is not built yet: there is no package to '
-                     f'install. See <code>docs/packaging.md</code>.</p>')
+                     f'install. <a href="{_e(DOCS_URL)}/packaging.md" '
+                     f'target="_blank" rel="noopener noreferrer">Why, and what '
+                     f'updating means today</a>.</p>')
         found = (f'<div class="result {_e(answer.state)}">{_e(answer.message)}'
                  f'{extra}</div>')
 
@@ -838,8 +856,9 @@ def settings_page(token: str, *, prefs: Dict[str, Any],
     <h3>Language</h3>
     <p class="why">Which language the words on the tiles are in. The interface
     itself is English for now; the strings are ready to be translated and a
-    language is a file and a pull request &mdash; see
-    <code>docs/i18n.md</code>.</p>
+    language is a file and a pull request &mdash;
+    <a href="{docs}/i18n.md" target="_blank" rel="noopener noreferrer">how to
+    add one</a>.</p>
     <form method="post" action="/settings/language{q}">
       <select name="language" onchange="this.form.submit()">{options}</select>
       <noscript><button class="btn sec" type="submit">Save</button></noscript>

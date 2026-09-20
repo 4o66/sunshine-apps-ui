@@ -123,32 +123,34 @@ on the monitor's screen, fitted into **30 × 30 units** of the monitor's 100-uni
 grid and centred in the screen area, which is inset from the bezel so nothing
 crosses it.
 
-**On Linux the distribution's own logo is used, taken from the machine.** It is
-already installed; we neither ship it nor fetch it. Finding it takes a chain,
-because distributions do not agree:
+**On Linux the distribution's own logo is used, from the set we vendor.** The
+lookup is two steps and then a fallback:
 
-1. `LOGO=` in `/etc/os-release`, then look for `<logo>.svg`, `<logo>.png` or
-   `<logo>-icon.png` under `/usr/share/icons/hicolor/<size>/apps/` and
-   `/usr/share/pixmaps/`. Prefer the plain name over `-text` and `-dark`
-   variants, and the largest size available.
-2. Failing that, the same search for `<ID>-logo.*` and `<ID>.*`, where `ID` is
-   the `ID=` field. This is what catches Debian.
-3. Failing that, the penguin.
+1. `ID=` in `/etc/os-release`, matched against `desktop-<id>.png` in the tile
+   set. `ID=bazzite` gets `desktop-bazzite.png`.
+2. Failing that, `desktop-linux.png` — the penguin, which is right anywhere.
 
-Measured on 2026-09-19, which is why the chain has three links and not one:
+**It used to read the logo off the machine**, through `LOGO=` in `os-release`
+and a hunt under `/usr/share/icons/hicolor` and `/usr/share/pixmaps`. That is
+gone, and this is why: tiles are now rendered here and shipped, so there is no
+compositing on the host, no dependency on Pillow being installed there, and
+every machine of a given distribution gets the same tile rather than whichever
+icon pack happened to be installed. The measurements that justified vendoring
+are worth keeping, because they are what the old chain ran into, taken
+2026-09-19:
 
-| distribution | `LOGO=` | icon present | found by |
-|---|---|---|---|
-| Bazzite (desktop) | `bazzite-logo` | yes | step 1 |
-| Ubuntu 24.04 | `ubuntu-logo` | yes | step 1 |
-| Arch | `archlinux-logo` | yes | step 1 |
-| Debian 13 | **absent** | `debian-logo.png` | step 2 |
-| Fedora 43 (cloud) | `fedora-logo-icon` | **no** | step 3 |
+| distribution | `LOGO=` | icon present on the machine |
+|---|---|---|
+| Bazzite (desktop) | `bazzite-logo` | yes |
+| Ubuntu 24.04 | `ubuntu-logo` | yes |
+| Arch | `archlinux-logo` | yes |
+| Debian 13 | **absent** | `debian-logo.png`, under another name |
+| Fedora 43 (cloud) | `fedora-logo-icon` | **no** |
 
-The Fedora row is the useful one: a minimal or cloud install may name a logo it
-does not have. A desktop install has it — Bazzite is Fedora and does. The
-penguin is not a rare path to be hand-waved; it is what a server-shaped machine
-gets.
+Two of five machines could not answer the question they were being asked:
+Debian names no logo at all, and Fedora's cloud image names one it does not
+have. A distribution we ship no mark for still gets the penguin, which is what
+a server-shaped machine gets and not a rare path to be hand-waved.
 
 Windows is four panes, drawn here. **macOS is Apple's own mark**, rendered from
 the path Apple publishes in the global navigation on `apple.com` — the same
