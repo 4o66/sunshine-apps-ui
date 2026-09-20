@@ -75,6 +75,7 @@ before it is committed.
 |---|---|---|
 | Sunshine App Manager | three covers on a shelf | ours, drawn for this project |
 | Steam | the Steam roundel | Sunshine's `steam.png` (LizardByte, GPL-3.0) |
+| Steam Big Picture | the roundel on a television | ours, around the same roundel |
 | Heroic | the Heroic shield | Heroic Games Launcher `public/icon.png` (GPL-3.0) |
 | Desktop | a monitor, with the host's platform on the screen | ours |
 | Restart | a circular arrow | ours |
@@ -87,6 +88,19 @@ Both borrowed marks come from GPL-3.0 projects, which is compatible with this
 one. That covers the copyright in the artwork. The **trademarks** are not ours
 and are used only to identify what each tile launches — the README says so in
 as many words, and nothing here implies endorsement.
+
+### The television, and why it is not the monitor
+
+Big Picture sits on the same grid as the desktop tiles, so it cannot be the
+monitor glyph with a Steam roundel in it -- that reads as "the desktop, with
+Steam on it", which is a different tile. The television is wider (a 4-unit
+bezel against the monitor's 8, on the same 100 x 100 grid), stands on two
+splayed feet and a bar rather than a pedestal, and carries the mark at 42
+units against the monitor's 30, because a wider screen with the same mark on
+it looks switched off.
+
+It is drawn by `glyph_tv()` and takes any mark, so a second Big-Picture-like
+tile would be built the same way.
 
 ### Our own mark
 

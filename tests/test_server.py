@@ -1988,3 +1988,92 @@ class QueueDrainsEvenWhenSomethingIsRefusedTest(ServerTest):
         self.engine.fails = {"mutate": "apps.json could not be written"}
         self.post({}, token=self.token, path="/apply")
         self.assertEqual(len(st.queue()), 2)
+
+
+class RestoreDefaultTilesTest(ServerTest):
+    """The settings button that puts Sunshine's three default tiles back.
+
+    They can be deleted like anything else, and unlike our own launchers a
+    scan does not offer them again -- they exist because Sunshine's entries
+    did, and once ours are gone there is nothing left to claim. This is the
+    way back, and it goes through a scan so the tiles arrive on the grid as
+    pending changes rather than being written behind the user's back.
+    """
+
+    def _found(self, path="/usr/share/sunshine/apps.json"):
+        from sunshine_apps_ui.core import system_apps
+        patched = mock.patch.object(system_apps, "find_system_apps_json",
+                                    lambda override="": path)
+        patched.start()
+        self.addCleanup(patched.stop)
+
+    def _watch_opts(self):
+        seen = {}
+
+        def run_plan(conf_dir, opts=None):
+            seen.update(opts or {})
+            return self.engine.plan, "log line"
+
+        patched = mock.patch.object(server_module, "run_plan", run_plan)
+        patched.start()
+        self.addCleanup(patched.stop)
+        return seen
+
+    def _wait(self):
+        from sunshine_apps_ui import scanjob
+        deadline = time.monotonic() + 20.0
+        while scanjob.job.running() and time.monotonic() < deadline:
+            time.sleep(0.01)
+        self.assertFalse(scanjob.job.running(), "the restore never finished")
+
+    def test_the_button_is_offered(self):
+        _, body = self.get(f"/settings?token={self.token}")
+        self.assertIn("/settings/defaults", body)
+        self.assertIn("Put the default tiles back", body)
+
+    def test_it_asks_for_a_restore(self):
+        self._found()
+        seen = self._watch_opts()
+        status, headers = self.post({}, token=self.token, path="/settings/defaults")
+        self._wait()
+        self.assertEqual(seen.get("BSM_RESTORE_DEFAULTS"), "1")
+        self.assertIn("/scanning", headers.get("Location", ""))
+
+    def test_an_ordinary_scan_does_not(self):
+        """Restoring is what the button does, not what every scan does."""
+        self._found()
+        seen = self._watch_opts()
+        self.scan()
+        self.assertNotIn("BSM_RESTORE_DEFAULTS", seen)
+
+    def test_nothing_is_written_by_pressing_it(self):
+        """It stages. Apply writes."""
+        self._found()
+        self._watch_opts()
+        self.post({}, token=self.token, path="/settings/defaults")
+        self._wait()
+        self.assertEqual(self.engine.applied, [])
+
+    def test_it_says_so_when_there_is_nothing_to_copy_from(self):
+        self._found(path="")
+        seen = self._watch_opts()
+        status, headers = self.post({}, token=self.token,
+                                    path="/settings/defaults")
+        self.assertIn("/settings", headers.get("Location", ""))
+        self.assertEqual(seen, {})
+        _, body = self.get(f"/settings?token={self.token}")
+        self.assertIn("nothing to copy the default tiles from", body)
+
+    def test_and_says_it_only_once(self):
+        self._found(path="")
+        self.post({}, token=self.token, path="/settings/defaults")
+        self.get(f"/settings?token={self.token}")
+        _, body = self.get(f"/settings?token={self.token}")
+        self.assertNotIn("nothing to copy the default tiles from", body)
+
+    def test_it_needs_the_token(self):
+        self._found()
+        seen = self._watch_opts()
+        status, _ = self.post({}, path="/settings/defaults")
+        self.assertEqual(status, 404)
+        self.assertEqual(seen, {})

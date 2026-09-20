@@ -276,9 +276,27 @@ is noticed and kept like any other edit.
 
 One consequence worth knowing: `#2 Low Res Desktop` and `Zz Steam Big Picture`
 exist only because Sunshine's entries did. Delete one and a rescan does **not**
-offer it again, unlike our own launchers -- there is nothing left to claim. The
-way back is to put Sunshine's entry back (`/usr/share/sunshine/apps.json` holds
-the shipped copy) and scan. Measured on Bazzite, 2026-09-19.
+offer it again, unlike our own launchers -- there is nothing left to claim.
+Measured on Bazzite, 2026-09-19.
+
+**So Settings has a button for it**, "Put the default tiles back". It runs an
+ordinary scan with `BSM_RESTORE_DEFAULTS` on: the missing defaults are copied
+from Sunshine's shipped `apps.json`, the takeover claims them on the way past,
+and they land on the grid as pending changes. Nothing is written until Apply,
+which is the same bargain as everything else here. If Sunshine's shipped file
+cannot be found there is nothing to copy from, and the button says so instead
+of starting a scan that would do nothing.
+
+`restore_missing()` had to learn about the renames at the same time. It matches
+defaults by name, so `Low Res Desktop` looks absent the moment it becomes `#2
+Low Res Desktop`; restoring it would have added a second copy of a tile already
+on the grid, and the claim on that copy would have been declined for an id we
+already hold. It now takes the names we have taken over as present.
+
+**Big Picture needed its own artwork.** It was sharing `steam.png` with `Zz
+Steam`, so two tiles on one grid were the same picture. It is now the roundel
+on a television rather than the desktop's monitor -- see `docs/tile-art.md` for
+why those are different shapes and not the same one reused.
 
 **Measured on `10.40.68.32`, both paths and the protection:**
 

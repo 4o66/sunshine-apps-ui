@@ -348,7 +348,10 @@ FACTORY_TILES = {
     # Sunshine's name: (our marker id, the name we give it, our tile file)
     "Desktop": ("desktop", None, None),
     "Low Res Desktop": ("desktop-lowres", "#2 Low Res Desktop", "lowres"),
-    "Steam Big Picture": ("steam-bigpicture", "Zz Steam Big Picture", "steam.png"),
+    # Its own artwork, not Steam's: the two sit on one grid, and the same
+    # roundel twice says nothing about which one is the television.
+    "Steam Big Picture": ("steam-bigpicture", "Zz Steam Big Picture",
+                          "steam-bigpicture.png"),
 }
 
 

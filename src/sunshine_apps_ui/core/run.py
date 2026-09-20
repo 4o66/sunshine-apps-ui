@@ -15,8 +15,8 @@ import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from .reconcile import (MARKER, SCHEMA_VERSION, backup, log_plan, plan_document,
-                        reconcile)
+from .reconcile import (MARKER, SCHEMA_VERSION, backup, identity, log_plan,
+                        plan_document, reconcile)
 from .artwork_sources import load_sgdb_key
 from .system_apps import find_system_apps_json, load_system_apps, restore_missing
 from .sunshine_api import reload_sunshine
@@ -112,7 +112,16 @@ def execute(conf_dir: str, opts: Optional[Dict[str, Any]] = None,
         existing_apps = [dict(a) for a in system_apps]
         log(f"Fresh config: seeded with {len(existing_apps)} Sunshine default entries.")
     elif system_apps and restore_defaults:
-        existing_apps, restored = restore_missing(existing_apps, system_apps)
+        # A default we have already taken over is here under our own name, so
+        # it must not count as absent: restoring it would put a second copy of
+        # the same tile on the grid, and the claim on the copy would be
+        # declined because we already hold that id.
+        from .sources.launchers import FACTORY_TILES
+        held = {identity(a) for a in existing_apps if isinstance(a, dict)}
+        renamed = {name for name, (marker_id, _, _) in FACTORY_TILES.items()
+                   if ("launcher", marker_id) in held}
+        existing_apps, restored = restore_missing(existing_apps, system_apps,
+                                                  also_present=renamed)
         if restored:
             log(f"Restored Sunshine defaults: {', '.join(restored)}")
         else:

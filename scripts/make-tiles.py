@@ -242,6 +242,38 @@ def glyph_monitor_for(platform=None):
     return m
 
 
+def glyph_tv(inner=None):
+    """A television, for Big Picture.
+
+    Deliberately not the monitor: Big Picture and the desktop are two tiles on
+    the same grid, and a Steam roundel inside the desktop's monitor would read
+    as "the desktop, with Steam on it". A television is wider, sits on feet
+    rather than a pedestal, and is what Big Picture is for.
+    """
+    s, size = 4, 100
+    m = Image.new("RGBA", (size * s, size * s), (0, 0, 0, 0))
+    d = ImageDraw.Draw(m)
+    rounded(d, [4 * s, 14 * s, 96 * s, 76 * s], 6 * s, (255, 255, 255, 255))
+    rounded(d, [9 * s, 19 * s, 91 * s, 71 * s], 3 * s, (0, 0, 0, 0))
+    # Feet, not a stand. Two of them, splayed, the way a television stands.
+    d.polygon([(20 * s, 88 * s), (30 * s, 76 * s), (37 * s, 76 * s),
+               (27 * s, 88 * s)], fill=(255, 255, 255, 255))
+    d.polygon([(80 * s, 88 * s), (70 * s, 76 * s), (63 * s, 76 * s),
+               (73 * s, 88 * s)], fill=(255, 255, 255, 255))
+    rounded(d, [18 * s, 86 * s, 82 * s, 92 * s], 3 * s, (255, 255, 255, 255))
+    if inner is not None:
+        # Larger than the monitor's 30: this screen is wider, and a mark that
+        # left as much dead glass as the desktop tile does reads as an empty
+        # television rather than one with something on it.
+        box = 42 * s
+        ratio = inner.width / inner.height
+        w = box if ratio >= 1 else int(box * ratio)
+        h = box if ratio <= 1 else int(box / ratio)
+        sized = inner.resize((w, h), Image.LANCZOS)
+        m.paste(sized, ((100 * s - w) // 2, 19 * s + (52 * s - h) // 2), sized)
+    return m
+
+
 # --- the marks we ship ------------------------------------------------------
 
 def mark(name):
@@ -272,6 +304,8 @@ def build_worded(out_dir, strings):
 
     write("app_manager", our_mark(), "app-manager.png")
     write("steam", mark("steam.png"), "steam.png")
+    write("steam_big_picture", glyph_tv(mark("steam.png")),
+          "steam-bigpicture.png")
     write("heroic", mark("heroic.png"), "heroic.png")
     write("reboot_host", glyph_restart(), "reboot-host.png")
     for platform in ("windows", "macos", "linux"):
@@ -304,6 +338,7 @@ def build_wordless(out_dir):
 
     write(our_mark(), "app-manager.png")
     write(mark("steam.png"), "steam.png")
+    write(glyph_tv(mark("steam.png")), "steam-bigpicture.png")
     write(mark("heroic.png"), "heroic.png")
     write(glyph_restart(), "reboot-host.png")
     for platform in ("windows", "macos", "linux"):
@@ -337,6 +372,7 @@ def build_template(out_dir):
 
     write(our_mark(), "app-manager.png")
     write(mark("steam.png"), "steam.png")
+    write(glyph_tv(mark("steam.png")), "steam-bigpicture.png")
     write(mark("heroic.png"), "heroic.png")
     write(glyph_restart(), "reboot-host.png")
     for platform in ("windows", "macos", "linux"):

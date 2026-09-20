@@ -724,6 +724,7 @@ background:var(--bg-subtle);border:1px solid var(--border);font-size:.9rem}
 
 def settings_page(token: str, *, prefs: Dict[str, Any],
                   answer: Optional[Any] = None,
+                  notice: str = "",
                   via_sunshine: bool = False) -> str:
     """Everything that is a preference rather than a change to the app list.
 
@@ -757,6 +758,11 @@ def settings_page(token: str, *, prefs: Dict[str, Any],
         found = (f'<div class="result {_e(answer.state)}">{_e(answer.message)}'
                  f'{extra}</div>')
 
+    # Only ever said when the button could not do its job, so it is styled as
+    # the warning it is.
+    notice_html = (f'<div class="result unreachable">{_e(notice)}</div>'
+                   if notice else "")
+
     return f"""<!doctype html>
 {_html()}<head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -786,6 +792,18 @@ def settings_page(token: str, *, prefs: Dict[str, Any],
       <button class="btn" type="submit">Check for updates</button>
     </form>
     {found}
+  </div>
+
+  <div class="setting">
+    <h3>The default tiles</h3>
+    <p class="why">Sunshine ships a Desktop, a low resolution Desktop and
+    Steam Big Picture, and this puts back any of them you have deleted -- in
+    our artwork and doing exactly what Sunshine's did. Nothing you still have
+    is touched, and nothing is written until you press Apply.</p>
+    <form method="post" action="/settings/defaults{q}">
+      <button class="btn" type="submit">Put the default tiles back</button>
+    </form>
+    {notice_html}
   </div>
 
   <div class="setting">

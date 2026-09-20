@@ -13,7 +13,7 @@ by an older version of this tool that rewrote apps.json wholesale.
 """
 
 import os
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 from .utils import log, read_json
 
@@ -55,14 +55,22 @@ def system_app_names(apps: List[Dict[str, Any]]) -> set:
 
 
 def restore_missing(existing: List[Dict[str, Any]],
-                    system_apps: List[Dict[str, Any]]) -> Tuple[List[Dict[str, Any]], List[str]]:
+                    system_apps: List[Dict[str, Any]],
+                    also_present: Optional[Set[str]] = None,
+                    ) -> Tuple[List[Dict[str, Any]], List[str]]:
     """Prepend any default entry that is absent from *existing*, by name.
 
     Matching is by name only. An entry you renamed or rewrote is yours, and a
     default of the same name that you edited is left exactly as you have it --
     only wholly absent ones come back.
+
+    *also_present* names defaults that are here under another name, because we
+    took them over and renamed them. Without it "Low Res Desktop" looks absent
+    the moment it becomes "#2 Low Res Desktop", and restoring it would add a
+    second copy of a tile that is already on the grid.
     """
     present = {a.get("name") for a in existing if isinstance(a, dict)}
+    present |= set(also_present or ())
     missing = [a for a in system_apps if a.get("name") not in present]
     if not missing:
         return existing, []

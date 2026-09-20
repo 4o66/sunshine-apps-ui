@@ -125,6 +125,7 @@ class PlanHandler(BaseHTTPRequestHandler):
             answer = _LAST_CHECK.pop(self.token, None)
             self._send(200, settings_page(self.token, prefs=state.prefs(),
                                           answer=answer,
+                                          notice=_NOTICE.pop(self.token, ""),
                                           via_sunshine=self.via_sunshine))
             return
 
@@ -641,6 +642,32 @@ class PlanHandler(BaseHTTPRequestHandler):
                 if dev:
                     state.set_pref("stable_if_no_newer_dev",
                                    "stable_if_no_newer_dev" in fields)
+            elif what == "defaults":
+                # A scan with restore turned on, so the tiles arrive on the
+                # grid as pending changes the same way everything else does.
+                # Nothing is written until Apply, and the takeover makes the
+                # restored entries ours on the way past.
+                from .core.system_apps import find_system_apps_json
+                conf_dir, opts = self.conf_dir, dict(self.importer_opts)
+                if not find_system_apps_json(
+                        str(opts.get("SYSTEM_APPS_JSON", "")).strip()):
+                    _NOTICE[self.token] = (
+                        "Sunshine's own apps.json is not where we look for it, "
+                        "so there is nothing to copy the default tiles from.")
+                else:
+                    opts["BSM_RESTORE_DEFAULTS"] = "1"
+
+                    def work() -> int:
+                        doc, _ = run_plan(conf_dir, opts)
+                        staged = state.stage_plan(doc.get("plan", {}) or {})
+                        log.info("restore defaults staged %d change(s)", staged)
+                        return staged
+
+                    if not scanjob.job.start(work, on_error=lambda why:
+                                             log.warning("restore failed: %s", why)):
+                        log.info("a scan was already running; watching that one")
+                    self._redirect("/scanning")
+                    return
             elif what == "check":
                 prefs = state.prefs()
                 _LAST_CHECK[self.token] = updates.check(
@@ -881,6 +908,8 @@ class PlanHandler(BaseHTTPRequestHandler):
 # The result of the last check, waiting for the redirect that shows it. Keyed
 # by token so a second session cannot read the first one's answer.
 _LAST_CHECK: Dict[str, Any] = {}
+# Something to say on the settings page after a button that did not work.
+_NOTICE: Dict[str, str] = {}
 
 
 def _describe_platform() -> str:
