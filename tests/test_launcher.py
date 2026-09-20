@@ -114,6 +114,8 @@ class StopPreviousTest(unittest.TestCase):
             launcher.stop_previous()
         self.assertTrue(ended.called)
 
+    @unittest.skipIf(os.name == "nt",
+                     "the POSIX branch; Windows stops a helper by its record")
     def test_one_that_will_not_go_is_killed_rather_than_left(self):
         """Starting while it lives hands it our URL, which is the whole bug."""
         with mock.patch.object(launcher, "_pgrep", return_value=[]), \

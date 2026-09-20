@@ -239,10 +239,14 @@ class OnlyRebuiltWhenItChangedTest(unittest.TestCase):
             handle.write(b"MZ")
 
     def copy_source(self, text=None):
-        with open(os.path.join(self.host, winhost.SOURCE_NAME), "w",
-                  encoding="utf-8") as handle:
-            handle.write(text if text is not None
-                         else open(winhost.source_path(), encoding="utf-8").read())
+        # Bytes, because build() copies with shutil.copyfile and is_current()
+        # compares byte for byte. Writing it as text put \r\n in the copy on
+        # Windows, so the test said "rebuild" about an identical source -- on
+        # Windows, which is the only place this code runs.
+        body = (text.encode("utf-8") if text is not None
+                else open(winhost.source_path(), "rb").read())
+        with open(os.path.join(self.host, winhost.SOURCE_NAME), "wb") as handle:
+            handle.write(body)
 
     def test_the_same_source_and_a_working_build_is_left_alone(self):
         self.copy_source()

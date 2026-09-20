@@ -162,7 +162,13 @@ class HeroicConfigRootTest(unittest.TestCase):
         root = os.path.join(self.tmp, ".config", "heroic")
         os.makedirs(root)
         report = self.run_import()
-        self.assertEqual(report.get("root"), root)
+        # Compared with the separators normalised: the importer builds this
+        # path with os.path.join, so running the POSIX branch on Windows --
+        # which the suite does -- yields backslashes for a path this test
+        # spelled with forward slashes. Neither is wrong; they are the same
+        # directory.
+        self.assertEqual(os.path.normpath(str(report.get("root"))),
+                         os.path.normpath(root))
 
 
 if __name__ == "__main__":

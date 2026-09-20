@@ -26,6 +26,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(
 from sunshine_apps_ui import gtkhost, installer, winhost  # noqa: E402
 
 
+@unittest.skipIf(os.name == "nt", "the Linux toolkit offer")
 class LinuxToolkitOfferTest(unittest.TestCase):
     def setUp(self):
         self.ran = []

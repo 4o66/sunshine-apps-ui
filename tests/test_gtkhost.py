@@ -166,6 +166,7 @@ class WhichPackagesTest(unittest.TestCase):
             self.assertIn("GTK 4", gtkhost.how_to_install())
 
 
+@unittest.skipIf(os.name == "nt", "the Linux window; Windows has its own")
 class TheInstallerSaysWhichWindowYouGetTest(unittest.TestCase):
     def test_it_says_so_when_the_toolkit_is_there(self):
         """And the sandbox can run: on a machine where it cannot, the honest
@@ -264,6 +265,7 @@ class TheSandboxWebKitInsistsOnTest(unittest.TestCase):
                 mock.patch.dict(os.environ, {"WAYLAND_DISPLAY": "wayland-0"}):
             self.assertFalse(gtkhost.available())
 
+    @unittest.skipIf(os.name == "nt", "the Linux window; Windows has its own")
     def test_the_installer_says_which_policy_it_is(self):
         """Otherwise it reads as "your distribution is unsupported"."""
         from sunshine_apps_ui import installer

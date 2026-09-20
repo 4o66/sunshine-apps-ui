@@ -340,3 +340,57 @@ would otherwise reasonably assume.
 Measured on `10.40.68.32` in the real desktop session, not over ssh: POST
 /quit answered 200, and six seconds later the server was not listening, the
 window process was gone and the launcher had exited. No orphans.
+
+## The suite on five machines, 2026-09-19
+
+Run on the Windows rig and the four distro VMs, from the release archive and
+then from the repository, rather than only here.
+
+| machine | python | result |
+|---|---|---|
+| Windows 11 (`bsm-win11`) | 3.12.10, bundled | 36 of 36 test files |
+| Arch | 3.14.7 | 36 of 36 |
+| Fedora 43 | 3.14.0 | 36 of 36 |
+| Debian 13 | 3.13.5 | 36 of 36 |
+| Ubuntu 24.04 | 3.12.3 | 36 of 36 |
+
+**Two product defects, both only visible off this Mac.**
+
+*Windows could not find Sunshine's shipped defaults.* Only the POSIX paths
+were looked at; on Windows the shipped copy sits beside the executable in an
+install directory with no fixed path. Everything that reads the defaults was
+therefore dead there -- seeding a fresh config, and the button that puts the
+default tiles back, which reported them missing while they sat in
+`C:\Program Files\Sunshine\assets\apps.json`.
+
+*The picker offered one picture where the machine has no locale.* The cloud
+images have none, so the set in use is the wordless one and the worded tile
+was skipped for being the same file. English is offered alongside whatever
+the machine uses now.
+
+**One hazard in the suite itself.** Installer tests answer yes to every
+question, which is an ordinary thing for a test to do, and on Fedora that
+reached a real `sudo dnf install` -- 241 MiB of it, stopped only by having no
+tty to answer dnf's prompt at. The offer now refuses to run a package manager
+without a terminal, which is also the honest behaviour: sudo prompts on the
+terminal itself.
+
+**And seven tests that read the machine they ran on** rather than a fixture:
+a recorded server pid from an earlier session, the system typelib directories,
+the sandbox that genuinely cannot start on Ubuntu, a temp directory that is
+under `/tmp` on Linux and not on macOS, `\r\n` from writing a file as text on
+Windows, a path separator, and four Linux-only paths asked on Windows. None
+were product faults; all of them made "the tests pass" mean less than it
+looked.
+
+**What Windows ships is not what Linux ships.** Sunshine's Windows defaults
+are two entries, not three -- there is no Low Res Desktop -- and its Big
+Picture uses `cmd` with `auto-detach` and `wait-all` rather than `detached`.
+The takeover claimed both, kept every field byte for byte, invented no low
+res tile, and left nothing foreign.
+
+**Still untested:** the close button taking a WebView2 window down. The rig
+has no interactive session (nobody is logged on, and auto-logon is off with
+no stored password), so the desktop half cannot be exercised from here. The
+server half was measured there -- `POST /quit` answered 200 and the server
+stopped -- and the whole path was measured on Bazzite in a real session.
