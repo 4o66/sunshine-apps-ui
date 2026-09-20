@@ -10,7 +10,6 @@
     "name_in_english": "English",
     "direction": "ltr"
   },
-
   "tiles": {
     "_comment": "The captions rendered into tile artwork. Keep them short: a tile is 600px wide and a long name shrinks until it fits.",
     "app_manager": "Sunshine App Manager",
@@ -20,16 +19,16 @@
     "desktop_low_res": "Desktop\n(Low Res)",
     "reboot_host": "Reboot Host"
   },
-
   "names": {
     "_comment": "The names of the entries written into apps.json. The #1 and Zz prefixes are sort keys, not decoration -- see the README -- so keep them.",
     "desktop": "#1 Desktop",
+    "desktop_low_res": "#2 Low Res Desktop",
     "steam": "Zz Steam",
+    "steam_big_picture": "Zz Steam Big Picture",
     "heroic": "Zz Heroic",
     "app_manager": "Zz App Manager",
     "reboot_host": "Zz Reboot Host"
   },
-
   "ui": {
     "_comment": "The interface. Anything shown to a person belongs here.",
     "apps_heading_one": "1 application",
@@ -44,7 +43,6 @@
     "back_to_the_apps": "Back to the apps",
     "add_an_application": "Add an application"
   },
-
   "scanning": {
     "heading": "Scanning your libraries",
     "starting": "Starting...",
@@ -52,7 +50,6 @@
     "stopped": "The scan stopped",
     "stop_watching": "Stop watching"
   },
-
   "settings": {
     "heading": "Settings",
     "nothing_touches_your_list": "None of this touches your app list.",
@@ -70,7 +67,6 @@
     "move_to_finished_release": "Move to the finished release when it is newer",
     "move_to_finished_release_why": "A release is where a development build was heading, so this leaves you on the finished one rather than stranded on an older preview. Only applies while development builds are on."
   },
-
   "report": {
     "scan_this": "Scan this with your phone",
     "scan_this_why": "There is no way to type a web address into a stream, so here it is as a code. It goes to the issues page for this program.",

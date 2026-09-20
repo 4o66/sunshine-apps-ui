@@ -200,12 +200,21 @@ def execute(conf_dir: str, opts: Optional[Dict[str, Any]] = None,
         "PATH": "$(PATH):$(HOME)/.local/bin" + ((":" + opts.get("ENV_PATH_APPEND")) if opts.get("ENV_PATH_APPEND") else "")
     }
 
-    from .sources.launchers import FORMER_NAMES
+    from .sources.launchers import FORMER_NAMES, factory_takeovers
+
+    # Sunshine's own Desktop / Low Res Desktop / Steam Big Picture, where they
+    # are still exactly as shipped. Taking them over is what stops the grid
+    # showing two sets of tiles by two different authors.
+    takeovers, claim_by_name = factory_takeovers(existing_apps)
+    apps.extend(takeovers)
+    if claim_by_name:
+        log("Taking over Sunshine's own tiles: " + ", ".join(sorted(claim_by_name)))
 
     merged_apps, plan = reconcile(existing_apps, apps,
                                   former_names={
                                       was: ("launcher", key)
                                       for was, key in FORMER_NAMES.items()},
+                                  claim_by_name=claim_by_name,
                                   adopt_by_name=adopt_by_name, refresh=refresh,
                                   previously_managed=previously_managed,
                                   tombstones=tombstones,

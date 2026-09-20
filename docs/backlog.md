@@ -236,3 +236,58 @@ the engine:
 Still untested anywhere: **a desktop session.** Cloud images have no display, so
 the browser launch, gamescope and the tile itself are still only exercised on
 Bazzite. That gap is [#17](https://github.com/4o66/sunshine-apps-ui/issues/17).
+
+## Taking over Sunshine's own three tiles
+
+**Done 2026-09-19.** Sunshine ships `Desktop`, `Low Res Desktop` and `Steam Big
+Picture`. Until now a scan left all three alone and added ours beside them, so
+a fresh install produced two desktop tiles in two different styles and a grid
+that plainly had two authors. The 2026-09-15 note above records that as the
+correct outcome, and for its purpose -- never destroying somebody's config --
+it was. It is not the right outcome for artwork nobody has ever touched.
+
+They are now adopted: our names (`#1 Desktop`, `#2 Low Res Desktop`, `Zz Steam
+Big Picture`), our artwork, our sort prefixes.
+
+**The test for "untouched" is the artwork.** Sunshine writes a bare filename it
+resolves against its own assets -- `desktop.png`, `steam.png`. Anything else is
+a path somebody chose, so the entry is theirs and we pass it over. We looked at
+the commands instead and rejected it: they are long, they vary by display
+server, and a user who edited one has changed the least visible thing about the
+tile. Artwork is what they change first and what this is about.
+
+**We set the name and the artwork, and nothing else.** `Low Res Desktop` is a
+`prep-cmd` that runs `xrandr` and undoes it afterwards; `Steam Big Picture` is
+a detached launch with an undo that closes Big Picture again. That behaviour is
+the entire point of those two tiles, we do not author it, and `_merge` leaves
+any field the desired entry does not mention exactly as it found it.
+
+**Two ordering traps, both covered by tests.** A claimed tile has to stay in the
+desired set on the *second* scan, or reconcile reports it missing every run and
+prunes it the moment the launcher source is prunable -- so `factory_takeovers`
+looks for its own marker first and re-desires those. And a machine installed
+before this existed holds both Sunshine's `Desktop` and our `#1 Desktop`; two
+entries claiming one id leaves the loser disowned and sitting on the grid as a
+duplicate, so reconcile declines any claim on an id we already hold. Ours wins,
+Sunshine's copy stays foreign and untouched, and the user can hide it.
+
+After the claim the ordinary divergence rule applies, so renaming one of them
+is noticed and kept like any other edit.
+
+One consequence worth knowing: `#2 Low Res Desktop` and `Zz Steam Big Picture`
+exist only because Sunshine's entries did. Delete one and a rescan does **not**
+offer it again, unlike our own launchers -- there is nothing left to claim. The
+way back is to put Sunshine's entry back (`/usr/share/sunshine/apps.json` holds
+the shipped copy) and scan. Measured on Bazzite, 2026-09-19.
+
+**Measured on `10.40.68.32`, both paths and the protection:**
+
+| starting from | result |
+|---|---|
+| a fresh Sunshine `apps.json` | all three claimed, 12 tiles, none foreign, one desktop |
+| an install predating this | Low Res and Big Picture claimed, bare `Desktop` left foreign |
+| rescan of either | 12 unchanged, nothing added, nothing pruned |
+| `Steam Big Picture` with the user's own artwork | no claim, kept foreign, untouched |
+
+The adopted `prep-cmd` and `detached` values came back byte-identical to
+`/usr/share/sunshine/apps.json` after the claim.

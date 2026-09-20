@@ -138,6 +138,7 @@ def _selected(ident: Identity, selectors: Optional[Sequence[str]]) -> bool:
 def reconcile(existing: List[Dict[str, Any]], desired: List[Dict[str, Any]],
               adopt_by_name: bool = False,
               former_names: Optional[Dict[str, Identity]] = None,
+              claim_by_name: Optional[Dict[str, Identity]] = None,
               refresh: Optional[Sequence[str]] = None,
               previously_managed: Optional[Sequence[str]] = None,
               tombstones: Optional[List[Dict[str, Any]]] = None,
@@ -181,6 +182,18 @@ def reconcile(existing: List[Dict[str, Any]], desired: List[Dict[str, Any]],
     # "Zz Reboot Host" on 2026-09-19; this is what keeps the old one ours.
     for was, ident in (former_names or {}).items():
         name_to_id.setdefault(was, ident)
+    # Tiles we claim by name whatever the file looks like, rather than only in
+    # the adopt-everything case above. Sunshine's own three defaults are the
+    # reason: the caller has already checked each one is untouched, and left to
+    # itself an untouched default just sits beside ours as a duplicate.
+    claimable = dict(claim_by_name or {})
+    # Never claim an id we already hold under our own marker. Sunshine's
+    # "Desktop" and our "#1 Desktop" are both present on a machine installed
+    # before this existed, and whichever of the two lost the race would be
+    # disowned and left on the grid as a duplicate. Ours keeps the id; theirs
+    # stays foreign and untouched, which is the user's to hide.
+    already = {identity(a) for a in existing if isinstance(a, dict)}
+    claimable = {n: i for n, i in claimable.items() if i not in already}
     out: List[Dict[str, Any]] = []
     claimed = set()
 
@@ -189,8 +202,11 @@ def reconcile(existing: List[Dict[str, Any]], desired: List[Dict[str, Any]],
             out.append(cur)
             continue
         ident = identity(cur)
-        if ident is None and adopt_by_name:
-            ident = name_to_id.get(cur.get("name"))
+        if ident is None:
+            if adopt_by_name:
+                ident = name_to_id.get(cur.get("name"))
+            if ident is None:
+                ident = claimable.get(cur.get("name"))
 
         if ident is None:
             plan["kept_foreign"].append({"name": cur.get("name")})

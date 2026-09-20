@@ -3,10 +3,10 @@
 from __future__ import annotations
 import os
 import sys
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from pathlib import Path
 from ..utils import log, have_cmd, yn
-from ..reconcile import tag
+from ..reconcile import MARKER as MARKER_KEY, tag
 
 # The tiles we draw, by marker id. These ship with the program: until
 # 2026-09-19 they were downloaded at scan time from a third party's repository,
@@ -324,3 +324,104 @@ def import_launchers(home: str, conf_dir: str, images_dir: str, settings: Dict[s
     log(f"Added {yn(NAMES['reboot'])} launcher")
 
     return apps
+
+
+# --- taking over Sunshine's own tiles ---------------------------------------
+#
+# Sunshine ships three entries: Desktop, Low Res Desktop and Steam Big Picture.
+# Left alone they sit beside ours with different artwork and a duplicate
+# desktop, so the grid reads as two sets by two authors. We claim them.
+#
+# **Only while they are untouched.** The test is the artwork: Sunshine writes a
+# bare filename it ships. Anything else means somebody has been in there, and
+# then it is theirs and we leave it alone. After the claim the ordinary
+# divergence rule applies, so a later edit is noticed and kept.
+#
+# **What we set, and what we do not.** Name and artwork. Never the commands:
+# Low Res Desktop carries a prep-cmd that changes the screen resolution and
+# Steam Big Picture a detached launch with an undo that closes it again.
+# Those are Sunshine's behaviour, they are what the tile is for, and the merge
+# leaves any field we do not mention alone.
+FACTORY_ARTWORK = {"desktop.png", "desktop-alt.png", "steam.png"}
+
+FACTORY_TILES = {
+    # Sunshine's name: (our marker id, the name we give it, our tile file)
+    "Desktop": ("desktop", None, None),
+    "Low Res Desktop": ("desktop-lowres", "#2 Low Res Desktop", "lowres"),
+    "Steam Big Picture": ("steam-bigpicture", "Zz Steam Big Picture", "steam.png"),
+}
+
+
+def _is_untouched(entry: Dict[str, Any]) -> bool:
+    """Does this still look like the tile Sunshine shipped?"""
+    if not isinstance(entry, dict) or entry.get(MARKER_KEY):
+        return False
+    art = str(entry.get("image-path") or "").strip()
+    # A bare filename, resolved by Sunshine against its own assets. A path of
+    # any kind means somebody chose it.
+    return art in FACTORY_ARTWORK
+
+
+def _wanted_takeover(marker_id: str, new_name: str, art: Optional[str]):
+    from ... import i18n
+
+    if art == "lowres":
+        art = _desktop_tile_name().replace("desktop-", "desktop-lowres-")
+    picture = i18n.tile(art) if art else ""
+    wanted = {"name": new_name}
+    if picture:
+        wanted["image-path"] = picture
+    return tag(wanted, "launcher", marker_id)
+
+
+def factory_takeovers(existing: List[Dict[str, Any]]):
+    """(desired entries, name -> identity) for Sunshine's own tiles.
+
+    Returns nothing for a tile that is absent or has been edited, so this is
+    silent on a machine where there is nothing to take over.
+
+    Two passes, because a takeover has to survive the *second* scan as well.
+    The first pass finds tiles we have already claimed, by our own marker: they
+    stay in the desired set, or reconcile would report them missing every run
+    and prune them the moment the launcher source is prunable. The second pass
+    claims what is still Sunshine's -- but never an id the first pass already
+    found, since two entries claiming one id leaves the loser disowned and
+    sitting there as a duplicate. Where both exist, ours wins and Sunshine's
+    copy is left alone for the user to hide.
+    """
+    desired: List[Dict[str, Any]] = []
+    claims: Dict[str, Any] = {}
+    ours = {}
+    for name, (marker_id, new_name, art) in FACTORY_TILES.items():
+        if marker_id == "desktop":
+            continue            # our own desktop tile generates this one
+        ours[marker_id] = (name, new_name, art)
+
+    held = set()
+    for entry in existing or []:
+        if not isinstance(entry, dict):
+            continue
+        marker = entry.get(MARKER_KEY)
+        if not isinstance(marker, dict) or marker.get("source") != "launcher":
+            continue
+        marker_id = marker.get("id")
+        if marker_id in ours:
+            held.add(marker_id)
+            desired.append(_wanted_takeover(marker_id, *ours[marker_id][1:]))
+
+    for entry in existing or []:
+        name = entry.get("name") if isinstance(entry, dict) else None
+        if name not in FACTORY_TILES or not _is_untouched(entry):
+            continue
+        marker_id, new_name, art = FACTORY_TILES[name]
+        if marker_id == "desktop":
+            # The same thing our own desktop tile is, so it merges into that
+            # one: one desktop tile afterwards, not two.
+            claims[name] = ("launcher", "desktop")
+            continue
+        if marker_id in held:
+            continue
+        held.add(marker_id)
+        desired.append(_wanted_takeover(marker_id, new_name, art))
+        claims[name] = ("launcher", marker_id)
+    return desired, claims
