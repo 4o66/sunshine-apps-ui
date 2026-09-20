@@ -73,6 +73,13 @@ class AvailableTest(unittest.TestCase):
             open(os.path.join(self.tmp, name), "w").close()
         os.environ["GI_TYPELIB_PATH"] = self.tmp
         os.environ["WAYLAND_DISPLAY"] = "wayland-0"
+        # Only this directory. The real search adds the system ones, so on a
+        # machine that genuinely has the toolkit -- the Arch image does --
+        # "half a toolkit" was answered by the half installed on the machine
+        # rather than by the half in the fixture.
+        dirs = mock.patch.object(gtkhost, "_typelib_dirs", lambda: [self.tmp])
+        dirs.start()
+        self.addCleanup(dirs.stop)
         # This Mac has no PyGObject, so say whether it is there rather than
         # testing whichever machine happens to run the suite.
         import importlib.util
@@ -88,8 +95,13 @@ class AvailableTest(unittest.TestCase):
         self.assertFalse(gtkhost.available())
 
     def test_a_display_and_both_typelibs_is_enough(self):
+        """With the sandbox stood in for: it is the third condition, and on a
+        machine where it is genuinely blocked -- Ubuntu 24.04, measured -- the
+        honest answer is False. That case is TheSandboxWebKitInsistsOnTest;
+        this one is about the typelibs."""
         self.with_typelibs(*gtkhost.TYPELIBS)
-        with mock.patch.object(os, "name", "posix"):
+        with mock.patch.object(os, "name", "posix"), \
+                mock.patch.object(gtkhost, "sandbox_can_run", return_value=True):
             self.assertTrue(gtkhost.available())
 
     def test_half_a_toolkit_is_not_enough(self):
@@ -156,8 +168,11 @@ class WhichPackagesTest(unittest.TestCase):
 
 class TheInstallerSaysWhichWindowYouGetTest(unittest.TestCase):
     def test_it_says_so_when_the_toolkit_is_there(self):
+        """And the sandbox can run: on a machine where it cannot, the honest
+        answer is a browser and an explanation, which is three lines."""
         from sunshine_apps_ui import installer
-        with mock.patch.object(gtkhost, "toolkit_present", return_value=True):
+        with mock.patch.object(gtkhost, "toolkit_present", return_value=True), \
+                mock.patch.object(gtkhost, "sandbox_can_run", return_value=True):
             lines = installer._provide_window_linux()
         self.assertEqual(len(lines), 1)
         self.assertIn("our own", lines[0])
@@ -186,7 +201,8 @@ class TheInstallerSaysWhichWindowYouGetTest(unittest.TestCase):
         environ = {k: v for k, v in os.environ.items()
                    if k not in ("DISPLAY", "WAYLAND_DISPLAY")}
         with mock.patch.dict(os.environ, environ, clear=True), \
-                mock.patch.object(gtkhost, "toolkit_present", return_value=True):
+                mock.patch.object(gtkhost, "toolkit_present", return_value=True), \
+                mock.patch.object(gtkhost, "sandbox_can_run", return_value=True):
             lines = installer._provide_window_linux()
         self.assertIn("our own", lines[0])
 
@@ -284,7 +300,12 @@ class MainTest(unittest.TestCase):
 
     def test_a_machine_without_the_toolkit_says_so_in_its_exit_code(self):
         """3 is "use a browser instead", which is what the launcher does."""
-        if gtkhost.available():
+        if gtkhost.available() or gtkhost.toolkit_present():
+            # toolkit_present() as well as available(): a headless machine
+            # that has the typelibs installed anyway -- the Arch and Ubuntu
+            # cloud images -- goes past the check this is about and into
+            # Gtk.init(), which aborts the process rather than returning a
+            # code. Measured on both, 2026-09-19.
             self.skipTest("this machine has the toolkit")
         self.assertEqual(gtkhost.main(["http://127.0.0.1:1/"]),
                          gtkhost.EXIT_NO_TOOLKIT)

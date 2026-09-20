@@ -514,6 +514,14 @@ def _offer_webview2(where, confirm) -> List[str]:
     return [f"WebView2      installed, version {said}"] + _provide_window(where, None)
 
 
+def _at_a_terminal() -> bool:
+    """Is there a person at a terminal, able to answer sudo's own prompt?"""
+    try:
+        return bool(sys.stdin and sys.stdin.isatty())
+    except (AttributeError, ValueError, OSError):
+        return False
+
+
 def _offer_the_toolkit(confirm) -> List[str]:
     """Offer to install GTK 4 and WebKitGTK, and be plain about the sudo.
 
@@ -562,6 +570,19 @@ def _offer_the_toolkit(confirm) -> List[str]:
     if not confirm(detail, "Install the toolkit for a faster window?"):
         return ["Window        a browser (the toolkit was declined)",
                 f"              to change your mind later: {printed}"]
+
+    # Said yes -- but sudo prompts for a password on the terminal itself, so
+    # without one this hangs or fails. And a caller that answers yes to
+    # everything without being a person, which is an ordinary thing for a test
+    # to do, would otherwise run a real `sudo dnf install` on whatever machine
+    # it is running on. It did: on the Fedora VM, 2026-09-19, the suite
+    # reached dnf's transaction prompt and was saved only by having no tty to
+    # answer it at.
+    if not _at_a_terminal():
+        return ["", "There is no terminal here for sudo to ask for a password "
+                    "at, so this was not run.",
+                f"    {printed}",
+                "A browser is used until then, which works."]
 
     try:
         result = subprocess.run(command, timeout=600)

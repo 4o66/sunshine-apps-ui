@@ -179,7 +179,13 @@ class LogLocationTest(unittest.TestCase):
         try:
             path = launcher.log_path()
             self.assertTrue(path.startswith(places.state_dir()), path)
-            self.assertNotIn("/tmp/", path)
+            # The bug was a log at the root of the shared temp directory --
+            # world-writable, one name for every user on the machine. Saying
+            # "not under /tmp" instead was wrong the moment the test's own
+            # state directory was a temp directory, which is what it is on
+            # Linux: it passed on macOS, where tempdir is under /var/folders,
+            # and failed on the VMs.
+            self.assertNotEqual(os.path.dirname(path), tempfile.gettempdir(), path)
         finally:
             import shutil
             shutil.rmtree(os.environ["XDG_STATE_HOME"], ignore_errors=True)

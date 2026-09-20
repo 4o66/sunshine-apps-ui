@@ -29,6 +29,11 @@ from sunshine_apps_ui import gtkhost, installer, winhost  # noqa: E402
 class LinuxToolkitOfferTest(unittest.TestCase):
     def setUp(self):
         self.ran = []
+        # These are about what the offer says and does for a person at a
+        # terminal, which is the only place it runs anything.
+        tty = mock.patch.object(installer, "_at_a_terminal", return_value=True)
+        tty.start()
+        self.addCleanup(tty.stop)
         patched = mock.patch.object(
             installer.subprocess, "run",
             side_effect=lambda cmd, **kw: self.ran.append(cmd) or mock.Mock(returncode=0))
@@ -165,3 +170,38 @@ class WindowsWebView2OfferTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class NoTerminalMeansNoPackageManagerTest(unittest.TestCase):
+    """A confirm function is not somebody at a terminal.
+
+    sudo prompts on the terminal itself, so without one the install either
+    hangs or fails. And a test that answers yes to everything -- an ordinary
+    thing for a test to do -- would otherwise run a real package manager on
+    the machine running the suite. It did: on the Fedora VM, 2026-09-19, the
+    suite reached dnf's transaction prompt and was saved only by having no tty
+    to answer it at.
+    """
+
+    def _offer(self, tty):
+        from sunshine_apps_ui import gtkhost, installer
+        ran = []
+        with mock.patch.object(installer, "_at_a_terminal", return_value=tty), \
+             mock.patch.object(gtkhost, "install_command",
+                               return_value=["sudo", "dnf", "install", "gtk4"]), \
+             mock.patch.object(gtkhost, "toolkit_present", return_value=True), \
+             mock.patch.object(installer.subprocess, "run",
+                               side_effect=lambda *a, **k: (ran.append(a)
+                                                            or mock.Mock(returncode=0))):
+            lines = installer._offer_the_toolkit(lambda text, question: True)
+        return ran, "\n".join(lines)
+
+    def test_without_a_terminal_it_only_says_what_to_run(self):
+        ran, said = self._offer(tty=False)
+        self.assertEqual(ran, [])
+        self.assertIn("sudo dnf install gtk4", said)
+        self.assertIn("no terminal", said)
+
+    def test_with_a_terminal_a_yes_still_runs_it(self):
+        ran, _ = self._offer(tty=True)
+        self.assertEqual(len(ran), 1)

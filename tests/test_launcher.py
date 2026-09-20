@@ -67,6 +67,20 @@ class StopPreviousTest(unittest.TestCase):
     def setUp(self):
         self.ended = []
         self.alive = []
+        # stop_previous() ends the server named in the record before it scans
+        # for one, and the record lives in the state directory. Without a
+        # state directory of its own this test reads whatever the machine
+        # running it happens to have: on the Ubuntu and Arch VMs a record left
+        # by an earlier session made _end fire twice, and the test failed
+        # there while passing on the machine it was written on.
+        import tempfile
+        state = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, state, True)
+        previous = os.environ.get("XDG_STATE_HOME")
+        os.environ["XDG_STATE_HOME"] = state
+        self.addCleanup(lambda: os.environ.__setitem__("XDG_STATE_HOME", previous)
+                        if previous is not None
+                        else os.environ.pop("XDG_STATE_HOME", None))
 
     def _patched(self, rounds):
         """browsers() answers from *rounds*, one call at a time."""
