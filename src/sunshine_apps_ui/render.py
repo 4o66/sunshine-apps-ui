@@ -719,6 +719,11 @@ padding:.5rem 1rem;font:inherit;font-size:.9rem;cursor:pointer}
 background:var(--bg-subtle);border:1px solid var(--border);font-size:.9rem}
 .result.available{border-left:3px solid var(--success)}
 .result.unreachable{border-left:3px solid var(--warning)}
+.setting select{background:var(--bg-subtle);color:var(--text);
+border:1px solid var(--border);border-radius:var(--radius-md);
+padding:.5rem .7rem;font:inherit;font-size:.9rem;max-width:100%}
+.setting select:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+.setting form + .why{margin:.5rem 0 .7rem}
 """
 
 
@@ -852,9 +857,9 @@ def settings_page(token: str, *, prefs: Dict[str, Any],
   <div class="setting">
     <h3>The default tiles</h3>
     <p class="why">Sunshine ships a Desktop, a low resolution Desktop and
-    Steam Big Picture, and this puts back any of them you have deleted -- in
-    our artwork and doing exactly what Sunshine's did. Nothing you still have
-    is touched, and nothing is written until you press Apply.</p>
+    Steam Big Picture, and this puts back any of them you have deleted &mdash;
+    in our artwork and doing exactly what Sunshine's did. Nothing you still
+    have is touched, and nothing is written until you press Apply.</p>
     <form method="post" action="/settings/defaults{q}">
       <button class="btn" type="submit">Put the default tiles back</button>
     </form>
