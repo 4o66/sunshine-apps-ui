@@ -30,12 +30,40 @@ _SYSTEM_APPS_CANDIDATES = (
 )
 
 
+def _platform_candidates() -> List[str]:
+    """The places that are not a fixed path, because they follow the install.
+
+    On Windows the shipped copy sits beside the executable, in the install
+    directory -- `assets\\apps.json` next to `config\\apps.json`, which is the
+    live one. There is no fixed path for it: Sunshine can be installed
+    anywhere, so the install has to be found first, the same way the live
+    config is found. Measured on the rig 2026-09-19, where this returned
+    nothing and the defaults were reported missing while sitting in
+    `C:\\Program Files\\Sunshine\\assets\\apps.json`.
+
+    On macOS the app bundle carries its own, under Resources.
+    """
+    import sys
+
+    found: List[str] = []
+    if os.name == "nt":
+        import ntpath
+
+        from .api import _windows_install_dirs
+
+        for directory in _windows_install_dirs():
+            found.append(ntpath.join(directory, "assets", "apps.json"))
+    elif sys.platform == "darwin":
+        found.append("/Applications/Sunshine.app/Contents/Resources/assets/apps.json")
+    return found
+
+
 def find_system_apps_json(override: str = "") -> str:
     """Path to Sunshine's shipped apps.json, or "" if it cannot be found."""
     if override:
         path = os.path.abspath(os.path.expanduser(os.path.expandvars(override)))
         return path if os.path.isfile(path) else ""
-    for candidate in _SYSTEM_APPS_CANDIDATES:
+    for candidate in list(_SYSTEM_APPS_CANDIDATES) + _platform_candidates():
         path = os.path.expanduser(candidate)
         if os.path.isfile(path):
             return path

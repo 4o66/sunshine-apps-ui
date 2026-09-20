@@ -211,6 +211,23 @@ class FindCandidatesTest(_Fixture):
                          ["Ours, in English", "Ours, without words"])
         self.assertTrue(all(c["path"] for c in ours))
 
+    def test_english_is_offered_where_the_machine_has_no_language(self):
+        """A server has no locale, so its set is the wordless one.
+
+        Measured on the Arch, Debian and Ubuntu cloud images 2026-09-19: the
+        picker offered exactly one picture, on the page whose whole purpose is
+        choosing between them.
+        """
+        import os as _os
+        from sunshine_apps_ui import i18n
+        from sunshine_apps_ui.core.sources.launchers import our_tiles
+
+        with mock.patch.dict(_os.environ, {"SAU_LANGUAGE": "C"}):
+            i18n._cache.clear()
+            labels = [t["label"] for t in our_tiles("apps-ui")]
+        i18n._cache.clear()
+        self.assertEqual(labels, ["Ours, in English", "Ours, without words"])
+
     def test_ours_come_before_anything_on_a_network(self):
         with self.fake_fetch():
             result = art.find_candidates(self.conf, name="Zz Steam",

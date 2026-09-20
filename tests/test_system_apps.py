@@ -5,6 +5,7 @@ import os
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 sys.path.insert(0, os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "src"))
@@ -96,3 +97,41 @@ class TestRestore(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PlatformCandidatesTest(unittest.TestCase):
+    """Where the shipped defaults live when there is no fixed path for them.
+
+    Measured on the Windows rig 2026-09-19: the defaults were reported missing
+    while sitting in `C:\\Program Files\\Sunshine\\assets\\apps.json`, because
+    only the POSIX paths were ever looked at. Everything that reads the
+    defaults was therefore dead on Windows -- seeding a fresh config, and the
+    "put the default tiles back" button, which said it could not find them.
+    """
+
+    def test_windows_looks_beside_the_executable(self):
+        import ntpath
+        from sunshine_apps_ui.core import api, system_apps
+
+        with mock.patch.object(os, "name", "nt"), \
+             mock.patch.object(api, "_windows_install_dirs",
+                               lambda: [r"C:\Program Files\Sunshine"]):
+            found = system_apps._platform_candidates()
+        self.assertEqual(found, [ntpath.join(r"C:\Program Files\Sunshine",
+                                             "assets", "apps.json")])
+
+    def test_macos_looks_inside_the_bundle(self):
+        from sunshine_apps_ui.core import system_apps
+
+        with mock.patch.object(os, "name", "posix"), \
+             mock.patch.object(sys, "platform", "darwin"):
+            found = system_apps._platform_candidates()
+        self.assertIn("/Applications/Sunshine.app/Contents/Resources/assets/apps.json",
+                      found)
+
+    def test_linux_needs_no_extra_hunting(self):
+        from sunshine_apps_ui.core import system_apps
+
+        with mock.patch.object(os, "name", "posix"), \
+             mock.patch.object(sys, "platform", "linux"):
+            self.assertEqual(system_apps._platform_candidates(), [])

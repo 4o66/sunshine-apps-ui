@@ -232,17 +232,35 @@ def our_tiles(marker_id: str) -> List[Dict[str, str]]:
     if not filename:
         return []
 
-    found: List[Dict[str, str]] = []
-    worded = os.path.join(i18n.tile_set(), filename)
-    wordless = os.path.join(i18n.tiles_dir(), i18n.WORDLESS, filename)
-    if os.path.isfile(worded) and os.path.abspath(worded) != os.path.abspath(wordless):
-        code = os.path.basename(os.path.dirname(worded))
-        name = code
+    def named(code: str) -> str:
         for item in i18n.languages():
             if item["code"] == code:
-                name = item["name_in_english"]
-                break
-        found.append({"label": f"Ours, in {name}", "origin": worded})
+                return item["name_in_english"]
+        return code
+
+    wordless = os.path.join(i18n.tiles_dir(), i18n.WORDLESS, filename)
+    # The set this machine is using, then English, then no words. English is
+    # offered even where it is not what the machine would choose: on a machine
+    # with no locale at all -- which is most servers, and every one of the
+    # cloud images this was tested on -- the active set *is* the wordless one,
+    # and offering that alone left a picker with a single choice on a page
+    # whose whole purpose is choosing.
+    wanted = [i18n.tile_set()]
+    english = os.path.join(i18n.tiles_dir(), i18n.DEFAULT)
+    if english not in wanted:
+        wanted.append(english)
+
+    found: List[Dict[str, str]] = []
+    seen = set()
+    for folder in wanted:
+        path = os.path.join(folder, filename)
+        key = os.path.abspath(path)
+        if (key in seen or not os.path.isfile(path)
+                or key == os.path.abspath(wordless)):
+            continue
+        seen.add(key)
+        found.append({"label": f"Ours, in {named(os.path.basename(folder))}",
+                      "origin": path})
     if os.path.isfile(wordless):
         found.append({"label": "Ours, without words", "origin": wordless})
     return found
