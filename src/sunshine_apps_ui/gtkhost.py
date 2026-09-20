@@ -159,6 +159,19 @@ def _family() -> str:
     return ""
 
 
+def install_command() -> List[str]:
+    """The command that would install the toolkit, as argv. [] if unknown.
+
+    Returned as a list, never a string: it is handed to subprocess without a
+    shell, so a package name can never turn into a second command.
+    """
+    family = _family()
+    if family not in PACKAGES:
+        return []
+    verb, packages = PACKAGES[family]
+    return ["sudo"] + verb.split() + packages.split()
+
+
 def how_to_install() -> str:
     """One line telling someone how to get a window, or "" if we cannot say."""
     family = _family()

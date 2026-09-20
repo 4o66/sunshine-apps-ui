@@ -3,18 +3,21 @@
 from __future__ import annotations
 import os
 import sys
-import urllib.request
 from typing import List, Dict, Any
 from pathlib import Path
 from ..utils import log, have_cmd, yn
 from ..reconcile import tag
 
-# GitHub "blob" URLs -> convert to raw content automatically
-POSTERS = {
-    "desktop": "https://github.com/wadiebs/bazzite-sunshine-manager/blob/main/common/posters/desktop.png",
-    "steam":   "https://github.com/wadiebs/bazzite-sunshine-manager/blob/main/common/posters/steam.png",
-    "heroic":  "https://github.com/wadiebs/bazzite-sunshine-manager/blob/main/common/posters/heroic.png",
-    "reboot":  "https://github.com/wadiebs/bazzite-sunshine-manager/blob/main/common/posters/reboot.png",
+# The tiles we draw, by marker id. These ship with the program: until
+# 2026-09-19 they were downloaded at scan time from a third party's repository,
+# which meant a scan reached out to a stranger for artwork it then wrote into
+# somebody's apps.json. The files are in assets/tiles/; docs/tile-art.md says
+# how they are made and where each mark came from.
+TILE_FILES = {
+    "apps-ui": "app-manager.png",
+    "steam": "steam.png",
+    "heroic": "heroic.png",
+    "reboot": "reboot-host.png",
 }
 
 # Display names only. The keys are the ownership marker's id and must not
@@ -26,36 +29,10 @@ NAMES = {
     "desktop": "#1 Desktop",
     "steam": "Zz Steam",
     "heroic": "Zz Heroic",
-    "reboot": "Zz Reboot",
+    # "Reboot Host", not "Reboot": on a stream it matters which machine is
+    # about to go down, and it is not the one in front of you.
+    "reboot": "Zz Reboot Host",
 }
-
-def _to_raw_github(url: str) -> str:
-    # github.com/{user}/{repo}/blob/{branch}/{path} -> raw.githubusercontent.com/{user}/{repo}/{branch}/{path}
-    if "github.com" in url and "/blob/" in url:
-        parts = url.split("github.com/", 1)[1]
-        user_repo, rest = parts.split("/", 1)
-        repo, rest = rest.split("/", 1)
-        # rest starts with 'blob/...'
-        _, branch, *path_parts = rest.split("/")
-        raw = f"https://raw.githubusercontent.com/{user_repo}/{repo}/{branch}/" + "/".join(path_parts)
-        return raw
-    return url
-
-def _download_image(src_url: str, dst_path: str, timeout: int = 8) -> bool:  # Reduced from 20 to 8 seconds
-    url = _to_raw_github(src_url)
-    try:
-        os.makedirs(os.path.dirname(dst_path), exist_ok=True)
-        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            data = resp.read()
-        if not data or len(data) < 200:  # sanity check
-            return False
-        with open(dst_path, "wb") as f:
-            f.write(data)
-        return True
-    except Exception as e:
-        log(f"Poster download failed: {url} -> {dst_path} ({e})")
-        return False
 
 def _steam_cmd(home: str) -> tuple[str, str]:
     """Return (cmd, working_dir) for Steam if found, else ('','')."""
@@ -183,27 +160,57 @@ def _common_fields() -> Dict[str, Any]:
         "wait-all": True,
     }
 
+# Names these tiles used to have. Keyed by the old name, valued by the marker
+# id it belongs to, so an entry written before markers existed is still
+# recognised as ours after a rename rather than being duplicated.
+FORMER_NAMES = {
+    "Zz Reboot": "reboot",
+}
+
+
+def _desktop_tile_name() -> str:
+    """Which desktop tile this machine gets: its own platform, or its distro.
+
+    The Desktop tile says which machine you are connecting to. On Linux that
+    is the distribution -- from a set we ship, where we have one -- and
+    otherwise the platform. docs/tile-art.md has the whole lookup.
+    """
+    if os.name == "nt":
+        return "desktop-windows.png"
+    if sys.platform == "darwin":
+        return "desktop-macos.png"
+    ident = ""
+    try:
+        with open("/etc/os-release", encoding="utf-8") as handle:
+            fields = dict(
+                line.rstrip("\n").split("=", 1) for line in handle
+                if "=" in line and not line.startswith("#"))
+        ident = fields.get("ID", "").strip('"').lower()
+    except OSError:
+        ident = ""
+    from ... import i18n
+
+    if ident and i18n.tile("desktop-%s.png" % ident):
+        return "desktop-%s.png" % ident
+    return "desktop-linux.png"          # Tux, which is right anywhere
+
+
 def _ensure_posters(images_dir: str) -> Dict[str, str]:
+    """Where each launcher tile's artwork is. Nothing is downloaded.
+
+    The files ship with the program; this returns the path to the one that
+    suits this machine and this language, which is the wordless set unless
+    somebody has drawn a worded one -- see docs/i18n.md.
     """
-    Ensure all required posters exist under images_dir.
-    Returns dict with resolved local image paths.
-    """
+    from ... import i18n
+
     paths: Dict[str, str] = {}
-    for key, url in POSTERS.items():
-        filename = {
-            "desktop": "Desktop.png",
-            "steam":   "Steam.png",
-            "heroic":  "Heroic.png",
-            "reboot":  "Reboot.png",
-        }[key]
-        dst = os.path.join(images_dir, filename)
-        if not os.path.isfile(dst):
-            ok = _download_image(url, dst)
-            if ok:
-                log(f"Downloaded poster: {dst}")
-            else:
-                log(f"Warning: poster not downloaded: {dst}")
-        paths[key] = dst
+    for key, filename in TILE_FILES.items():
+        found = i18n.tile(filename)
+        if not found:
+            log(f"Warning: no tile artwork for {key} ({filename})")
+        paths[key] = found
+    paths["desktop"] = i18n.tile(_desktop_tile_name())
     return paths
 
 def import_launchers(home: str, conf_dir: str, images_dir: str, settings: Dict[str, Any],
@@ -280,6 +287,7 @@ def import_launchers(home: str, conf_dir: str, images_dir: str, settings: Dict[s
 
     # 4) The companion UI, if it is installed
     ui_cmd, ui_poster = _apps_ui(home)
+    ui_poster = posters.get("apps-ui") or ui_poster
     if ui_cmd:
         apps.append(tag({
             "name": NAMES["apps-ui"],

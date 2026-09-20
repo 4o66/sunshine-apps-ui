@@ -23,15 +23,17 @@ needs to carry what differs from Portuguese, if a `pt` exists.
 
 ## The tile artwork
 
-Tiles are pictures with the words baked in, so they are built, not translated
-in place. **Most languages should not have a set**, and that is not a
-shortcoming:
+Tiles are pictures with the words baked in, so they are built rather than
+translated in place. **Any language may have a set** — the limit is on what
+our generator can draw, not on the language.
 
-With the Pillow shipped on Windows there is no text shaping — no raqm, no
-harfbuzz, no fribidi. Latin, Cyrillic, Greek and CJK render correctly. Arabic
-comes out unjoined and left-to-right, Hebrew reversed, Devanagari and Thai
-with their marks in the wrong places. A wordless tile is correct in every
-language; a wrongly-shaped one is worse than no words at all.
+`scripts/make-tiles.py` uses the Pillow we ship, which has no text shaping.
+Latin, Cyrillic, Greek and CJK come out right. Arabic comes out unjoined and
+left-to-right, Hebrew reversed, Devanagari and Thai with their marks in the
+wrong places. Where we cannot generate a set, a person can letter the
+templates in a tool that shapes the script properly and send the pictures —
+see `docs/i18n.md`. Until someone does, those languages get the wordless set,
+which is correct everywhere.
 
 So: if your language is written in **Latin, Cyrillic, Greek, or CJK**, you can
 build a set once your catalogue has a `tiles` section:
@@ -44,9 +46,10 @@ That writes `assets/tiles/fr/`. Look at every tile before committing it —
 particularly that long names have not shrunk to the point of being unreadable.
 `docs/tile-art.md` is the specification the pictures follow.
 
-If your language is written in anything else, **stop at the strings**. The
-interface will be in your language and the tiles will be the wordless set,
-which is the right outcome.
+If your language is written in anything else, either stop at the strings — the
+interface will be in your language and the tiles wordless — or letter the
+templates by hand and send those. Both are welcome; the second is the only way
+your language gets worded tiles.
 
 ## What the program does with this
 

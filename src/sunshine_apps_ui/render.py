@@ -130,10 +130,15 @@ display:flex;align-items:baseline;gap:.6rem;flex-wrap:wrap}
 font-family:var(--mono);letter-spacing:.01em}
 .navbar .ro{margin-left:.6rem;color:var(--navbar-text-muted);font-size:.82rem;
 border:1px solid var(--navbar-text-muted);border-radius:999px;padding:2px 10px}
-.navbar .gear{margin-left:.9rem;color:var(--navbar-text);text-decoration:none;
-font-size:.85rem;font-weight:500;border:1px solid var(--navbar-text-muted);
-border-radius:999px;padding:3px 12px;white-space:nowrap}
-.navbar .gear:hover{background:rgba(0,0,0,.08)}
+/* The same slate the tiles are painted on, so it reads as part of the set and
+   not as a scratch on the amber bar. It was a thin outlined pill before and
+   Sean could not find it. */
+.navbar .gear{margin-left:.9rem;color:#f1f3f5;text-decoration:none;
+font-size:.85rem;font-weight:600;letter-spacing:.01em;
+background:linear-gradient(135deg,#3a4149 0%,#23282d 100%);
+border:1px solid rgba(0,0,0,.35);border-radius:999px;padding:5px 15px;
+box-shadow:0 1px 3px rgba(0,0,0,.3);white-space:nowrap}
+.navbar .gear:hover{background:linear-gradient(135deg,#474f59 0%,#2c3238 100%)}
 
 .wrap{max-width:1100px;margin:0 auto;padding:1.5rem 1rem 4rem}
 h1{font-size:1.35rem;margin:0 0 .25rem}
@@ -841,9 +846,10 @@ def report_page(token: str, via_sunshine: bool = False,
 
     if via_sunshine:
         first = (f'<section class="ok"><h2>Scan this with your phone</h2>'
-                 f'<p class="why">There is no way to type a web address into a '
-                 f'stream, so here it is as a code. It goes to the issues page '
-                 f'for this program.</p>{code}{address}</section>'
+                 f'<p class="why">Carry on wherever suits you. Scan this and '
+                 f'the issues page opens on your phone, which has a keyboard '
+                 f'and can paste a log -- neither of which a television has.'
+                 f'</p>{code}{address}</section>'
                  f'<section><h2>Or, at the machine itself</h2>{link}</section>')
     else:
         first = (f'<section class="ok"><h2>Report a bug</h2>'

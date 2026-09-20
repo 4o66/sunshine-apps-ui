@@ -137,6 +137,7 @@ def _selected(ident: Identity, selectors: Optional[Sequence[str]]) -> bool:
 
 def reconcile(existing: List[Dict[str, Any]], desired: List[Dict[str, Any]],
               adopt_by_name: bool = False,
+              former_names: Optional[Dict[str, Identity]] = None,
               refresh: Optional[Sequence[str]] = None,
               previously_managed: Optional[Sequence[str]] = None,
               tombstones: Optional[List[Dict[str, Any]]] = None,
@@ -174,6 +175,12 @@ def reconcile(existing: List[Dict[str, Any]], desired: List[Dict[str, Any]],
         by_id[ident] = app
 
     name_to_id = {a.get("name"): i for i, a in by_id.items()}
+    # Names we used to write. An entry from before ownership markers existed is
+    # claimed by its name, so renaming a generated tile would disown every copy
+    # already out there and add a second one beside it. "Zz Reboot" became
+    # "Zz Reboot Host" on 2026-09-19; this is what keeps the old one ours.
+    for was, ident in (former_names or {}).items():
+        name_to_id.setdefault(was, ident)
     out: List[Dict[str, Any]] = []
     claimed = set()
 

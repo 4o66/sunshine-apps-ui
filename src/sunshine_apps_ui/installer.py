@@ -22,8 +22,11 @@ from . import legacy
 from . import places
 
 # What is needed to run. Tests, git history and build files are not.
-INSTALLED = ("src", "assets", "scripts", "docs", "README.md", "LICENSE",
-             "LICENSE.upstream-MIT", "NOTICE")
+# What an install carries. "locales" is not optional: without it the
+# interface has no strings and i18n falls back to the key names. "docs" is
+# here but is left out of release archives -- see scripts/make-release.
+INSTALLED = ("src", "assets", "locales", "scripts", "docs", "README.md",
+             "LICENSE", "LICENSE.upstream-MIT", "NOTICE")
 
 COMMAND = "sunshine-apps-ui"
 
@@ -442,7 +445,7 @@ def _provide_interpreter(where, wanted: Optional[bool], confirm=None) -> List[st
     return [f"Interpreter   {os.path.join(where['install'], 'python', 'python.exe')}"]
 
 
-def _provide_window(where) -> List[str]:
+def _provide_window(where, confirm=None) -> List[str]:
     """Build the WebView2 window, if this machine can have one.
 
     Never fatal, and never asked about. Unlike the interpreter this is not a
@@ -452,11 +455,11 @@ def _provide_window(where) -> List[str]:
     between the app appearing in a second and a half and in three and a half.
     """
     if os.name != "nt":
-        return _provide_window_linux()
+        return _provide_window_linux(confirm)
     from . import winhost
 
     if not winhost.runtime_version():
-        return ["Window        a browser (no WebView2 runtime on this machine)"]
+        return _offer_webview2(where, confirm)
     if winhost.is_current(where["install"]):
         return ["Window        already built and working; leaving it alone."]
     if not winhost.compiler():
@@ -470,7 +473,114 @@ def _provide_window(where) -> List[str]:
     return [f"Window        {os.path.join(where['install'], 'host', 'AppWindow.exe')}"]
 
 
-def _provide_window_linux() -> List[str]:
+def _offer_webview2(where, confirm) -> List[str]:
+    """Offer to install the WebView2 runtime, saying whose installer it is.
+
+    Windows 11 has it; Windows 10 often does not. Without it the window falls
+    back to a browser, which works. With it the window opens in a third of a
+    second, so it is worth asking -- once, plainly, with the option to say no.
+    """
+    from . import winhost
+
+    if confirm is None:
+        return ["Window        a browser (no WebView2 runtime on this machine)",
+                "              Install Microsoft Edge WebView2 Runtime for a "
+                "faster window; this install was not interactive, so it was "
+                "not offered."]
+
+    detail = "\n".join([
+        "The faster window needs Microsoft's WebView2 runtime, which this "
+        "machine does not have. Windows 11 ships it; Windows 10 often does "
+        "not.",
+        "",
+        "Saying yes downloads Microsoft's own installer from microsoft.com "
+        "and runs it silently. It is checked for a valid Authenticode "
+        "signature from Microsoft Corporation first, and refused if it does "
+        "not have one.",
+        "",
+        "It installs system-wide and may ask for administrator rights -- that "
+        "is Microsoft's installer asking, not this program.",
+        "",
+        "Saying no is fine. A browser is used instead, which works and is "
+        "slower.",
+    ])
+    if not confirm(detail, "Install Microsoft's WebView2 runtime?"):
+        return ["Window        a browser (WebView2 was declined)"]
+
+    worked, said = winhost.install_runtime(log=lambda line: None)
+    if not worked:
+        return ["", f"WebView2 was not installed: {said}",
+                "Everything else is in place; a browser is used instead."]
+    return [f"WebView2      installed, version {said}"] + _provide_window(where, None)
+
+
+def _offer_the_toolkit(confirm) -> List[str]:
+    """Offer to install GTK 4 and WebKitGTK, and be plain about the sudo.
+
+    This is the only part of installing this program that needs root, and it
+    is not really installing *this* program: it is asking the distribution for
+    two introspection packages so a faster window can be used instead of a
+    browser. Declining is a perfectly good answer -- everything works without
+    them.
+
+    The password, if sudo asks for one, is typed at the terminal and read by
+    sudo. It never passes through this program.
+    """
+    from . import gtkhost
+
+    command = gtkhost.install_command()
+    if not command:
+        return ["", "For a faster window this needs the GTK 4 and WebKitGTK "
+                    "introspection typelibs. I do not recognise this "
+                    "distribution's package manager, so you would have to "
+                    "install them yourself.",
+                "A browser is used until then, which works."]
+
+    printed = " ".join(command)
+    if confirm is None:
+        return ["", "For a faster window, install the GTK 4 and WebKitGTK "
+                    "introspection typelibs:",
+                f"    {printed}",
+                "Not offered here because this install was not interactive. "
+                "A browser is used until then, which works."]
+
+    detail = "\n".join([
+        "This is the one part of the install that needs root.",
+        "",
+        "Everything else goes under your home directory and needs no "
+        "privileges at all. This does not, because it asks the distribution "
+        "for two packages:",
+        "",
+        f"    {printed}",
+        "",
+        "sudo will ask for your password itself, at this terminal. It is not "
+        "read, stored or seen by this program.",
+        "",
+        "Saying no is fine. Without them a browser is used instead, which "
+        "works and is slower.",
+    ])
+    if not confirm(detail, "Install the toolkit for a faster window?"):
+        return ["Window        a browser (the toolkit was declined)",
+                f"              to change your mind later: {printed}"]
+
+    try:
+        result = subprocess.run(command, timeout=600)
+    except (OSError, subprocess.SubprocessError) as e:
+        return ["", f"That did not run ({e}).",
+                f"You can do it by hand: {printed}",
+                "A browser is used until then."]
+    if result.returncode != 0:
+        return ["", f"The package manager exited {result.returncode}; nothing "
+                    f"here changed.",
+                f"You can try it by hand: {printed}",
+                "A browser is used until then."]
+    if gtkhost.toolkit_present():
+        return ["Window        our own (GTK 4 + WebKitGTK), just installed"]
+    return ["", "The packages installed but the typelibs still are not here.",
+            "A browser is used; please open an issue, because that is odd."]
+
+
+def _provide_window_linux(confirm=None) -> List[str]:
     """Say which window this machine will use, and how to get the better one.
 
     Nothing is installed here: on Linux that is the package manager's business
@@ -483,6 +593,8 @@ def _provide_window_linux() -> List[str]:
         return []
     from . import gtkhost
 
+    if not gtkhost.toolkit_present():
+        return _offer_the_toolkit(confirm)
     if gtkhost.toolkit_present() and not gtkhost.sandbox_can_run():
         # The toolkit is here and would work but for the machine's policy.
         # Saying which policy matters: without it this reads as "your distro
@@ -493,11 +605,7 @@ def _provide_window_linux() -> List[str]:
                 "this system, which",
                 "              WebKitGTK requires. Ubuntu 24.04 does this by "
                 "default."]
-    if gtkhost.toolkit_present():
-        return ["Window        our own (GTK 4 + WebKitGTK)"]
-    how = gtkhost.how_to_install()
-    return ["Window        a browser (no GTK 4 / WebKitGTK typelibs here)",
-            f"              for a faster window: {how}"]
+    return ["Window        our own (GTK 4 + WebKitGTK)"]
 
 
 def _replace_interpreter(where, interpreter) -> List[str]:
@@ -571,7 +679,7 @@ def install(prefix: Optional[str] = None, *,
     messages.append(f"Installed to {where['install']}")
     messages.append(f"Command     {where['command']}")
     messages.extend(_provide_interpreter(where, with_interpreter, confirm))
-    messages.extend(_provide_window(where))
+    messages.extend(_provide_window(where, confirm))
     messages.extend(_desktop_entry(where))
     shortcut = _start_menu_shortcut(where)
     if shortcut:

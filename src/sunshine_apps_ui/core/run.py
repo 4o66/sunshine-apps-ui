@@ -200,7 +200,12 @@ def execute(conf_dir: str, opts: Optional[Dict[str, Any]] = None,
         "PATH": "$(PATH):$(HOME)/.local/bin" + ((":" + opts.get("ENV_PATH_APPEND")) if opts.get("ENV_PATH_APPEND") else "")
     }
 
+    from .sources.launchers import FORMER_NAMES
+
     merged_apps, plan = reconcile(existing_apps, apps,
+                                  former_names={
+                                      was: ("launcher", key)
+                                      for was, key in FORMER_NAMES.items()},
                                   adopt_by_name=adopt_by_name, refresh=refresh,
                                   previously_managed=previously_managed,
                                   tombstones=tombstones,

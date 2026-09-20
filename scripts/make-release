@@ -1,0 +1,105 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-3.0-or-later
+"""Build the release archives.
+
+    python3 scripts/make-release
+
+Writes dist/sunshine-apps-ui-<version>.zip and .tar.gz -- the same tree in the
+two shapes the two platforms expect, so a Windows user gets something Explorer
+can open and a Linux user something tar already understands.
+
+**What is left out, and why.** `docs/` and `tests/` are tracked but not
+shipped: they are for people working on this, not people running it, and they
+are a third of the tree. `.git` and caches go too. Everything needed to
+install and run is in, including `locales/` and `assets/`.
+
+Every archive unpacks into a single directory named after itself, so an
+unpack in a Downloads folder does not scatter files everywhere.
+"""
+
+import argparse
+import os
+import subprocess
+import sys
+import tarfile
+import zipfile
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+DIST = os.path.join(ROOT, "dist")
+
+INCLUDE = ("src", "assets", "locales", "scripts",
+           "README.md", "LICENSE", "LICENSE.upstream-MIT", "NOTICE")
+SKIP_DIRS = {"__pycache__", ".git", ".pytest_cache", "dist"}
+SKIP_SUFFIX = (".pyc", ".pyo")
+# Local notes and drafts never belong in a release.
+SKIP_NAMES = {".DS_Store"}
+
+
+def version() -> str:
+    sys.path.insert(0, os.path.join(ROOT, "src"))
+    from sunshine_apps_ui import version as v
+
+    return v.version()
+
+
+def members():
+    """Every file to ship, as (absolute path, path inside the archive)."""
+    for item in INCLUDE:
+        origin = os.path.join(ROOT, item)
+        if os.path.isfile(origin):
+            yield origin, item
+            continue
+        for base, dirs, files in os.walk(origin):
+            dirs[:] = sorted(d for d in dirs if d not in SKIP_DIRS)
+            for name in sorted(files):
+                if name in SKIP_NAMES or name.endswith(SKIP_SUFFIX):
+                    continue
+                if name.endswith(".local.md") or name.endswith(".draft.md"):
+                    continue
+                path = os.path.join(base, name)
+                yield path, os.path.relpath(path, ROOT)
+
+
+def build(tag: str):
+    os.makedirs(DIST, exist_ok=True)
+    # The directory inside carries the version; the file does not. The install
+    # instructions point at releases/latest/download/<name>, which only works
+    # if <name> is the same every time.
+    stem = "sunshine-apps-ui-" + tag
+    files = list(members())
+
+    zip_path = os.path.join(DIST, "sunshine-apps-ui.zip")
+    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as archive:
+        for path, inside in files:
+            archive.write(path, os.path.join(stem, inside))
+
+    tar_path = os.path.join(DIST, "sunshine-apps-ui.tar.gz")
+    with tarfile.open(tar_path, "w:gz") as archive:
+        for path, inside in files:
+            archive.add(path, os.path.join(stem, inside))
+
+    return files, zip_path, tar_path
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--tag", default="", help="override the version")
+    args = parser.parse_args(argv)
+
+    tag = args.tag or version()
+    if "+" in tag:
+        print("Refusing to build from a dirty tree: the version says %r, which "
+              "means uncommitted changes. Commit first, so the archive and the "
+              "tag describe the same thing." % tag, file=sys.stderr)
+        return 2
+
+    files, zip_path, tar_path = build(tag)
+    print("%d files" % len(files))
+    for path in (zip_path, tar_path):
+        print("  %-52s %6.1f MB" % (os.path.relpath(path, ROOT),
+                                    os.path.getsize(path) / 1048576))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

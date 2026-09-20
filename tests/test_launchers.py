@@ -248,3 +248,63 @@ class ElevationOnWindowsTest(unittest.TestCase):
 
     def test_posix_does_not(self):
         self.assertIs(self.entry("posix")["elevated"], False)
+
+
+class RenamingATileDoesNotDuplicateItTest(unittest.TestCase):
+    """"Zz Reboot" became "Zz Reboot Host" on 2026-09-19.
+
+    An entry written before ownership markers existed is claimed by its name.
+    Change the name we generate and every one of those is suddenly a stranger's
+    -- left alone, with a second tile added beside it. Everyone with an install
+    would have got two reboot tiles.
+    """
+
+    def test_the_old_name_is_still_recognised_as_ours(self):
+        from sunshine_apps_ui.core.sources.launchers import FORMER_NAMES, NAMES
+        self.assertIn("Zz Reboot", FORMER_NAMES)
+        self.assertEqual(FORMER_NAMES["Zz Reboot"], "reboot")
+        self.assertEqual(NAMES["reboot"], "Zz Reboot Host")
+
+    def test_reconcile_claims_an_entry_under_its_former_name(self):
+        from sunshine_apps_ui.core.reconcile import reconcile, tag
+        existing = [{"name": "Zz Reboot", "cmd": "reboot", "image-path": ""}]
+        desired = [tag({"name": "Zz Reboot Host", "cmd": "reboot"},
+                       "launcher", "reboot")]
+        merged, plan = reconcile(existing, desired, adopt_by_name=True,
+                                 former_names={"Zz Reboot": ("launcher", "reboot")})
+        self.assertEqual(len(merged), 1, "it added a second tile")
+        self.assertEqual(plan["kept_foreign"], [])
+
+    def test_without_the_alias_it_would_have_duplicated(self):
+        """The bug this guards against, demonstrated."""
+        from sunshine_apps_ui.core.reconcile import reconcile, tag
+        existing = [{"name": "Zz Reboot", "cmd": "reboot", "image-path": ""}]
+        desired = [tag({"name": "Zz Reboot Host", "cmd": "reboot"},
+                       "launcher", "reboot")]
+        merged, plan = reconcile(existing, desired, adopt_by_name=True)
+        self.assertEqual(len(merged), 2)
+
+
+class TileArtworkShipsTest(unittest.TestCase):
+    """It used to be fetched from a third party's repository during a scan."""
+
+    def test_no_poster_is_downloaded_any_more(self):
+        import inspect
+        from sunshine_apps_ui.core.sources import launchers
+        source = inspect.getsource(launchers)
+        self.assertNotIn("wadiebs", source)
+        self.assertNotIn("urllib", source)
+        self.assertNotIn("raw.githubusercontent", source)
+
+    def test_every_launcher_tile_resolves_to_a_shipped_file(self):
+        import os
+        from sunshine_apps_ui.core.sources import launchers
+        for key, path in launchers._ensure_posters("/unused").items():
+            self.assertTrue(path, "%s has no artwork" % key)
+            self.assertTrue(os.path.isfile(path), path)
+
+    def test_the_desktop_tile_names_the_platform(self):
+        from sunshine_apps_ui.core.sources import launchers
+        name = launchers._desktop_tile_name()
+        self.assertTrue(name.startswith("desktop-"), name)
+        self.assertTrue(name.endswith(".png"), name)

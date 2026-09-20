@@ -42,7 +42,7 @@ import shutil
 import subprocess
 import tempfile
 import zipfile
-from typing import Callable, List, Optional
+from typing import Callable, List, Optional, Tuple
 
 from .interpreter import Artifact, ProvisionError, _download
 
@@ -299,6 +299,65 @@ def build(install_dir: Optional[str] = None,
 
     say("Window built in %s" % target)
     return os.path.join(target, EXE_NAME)
+
+
+# Microsoft's Evergreen bootstrapper: a small signed stub that fetches and
+# installs the runtime. It cannot be pinned by hash the way our other
+# downloads are -- Microsoft replaces the file in place, so a pinned hash
+# would be wrong within weeks and the install would refuse to proceed. Its
+# Authenticode signature is checked instead, which is the property that
+# actually matters: that this came from Microsoft.
+BOOTSTRAPPER = "https://go.microsoft.com/fwlink/p/?LinkId=2124703"
+EXPECTED_PUBLISHER = "Microsoft Corporation"
+
+
+def install_runtime(log=None) -> Tuple[bool, str]:
+    """Fetch and run Microsoft's WebView2 installer. (worked, what happened).
+
+    Verified by signature rather than by hash, and refused if the signature is
+    not Microsoft's -- an unsigned or wrongly-signed installer is not run at
+    all, on the reasoning that an installer is the last thing to be relaxed
+    about.
+    """
+    say = log or (lambda line: None)
+    if os.name != "nt":
+        return False, "Not Windows."
+
+    workspace = tempfile.mkdtemp(prefix="sunshine-apps-ui-webview2-")
+    target = os.path.join(workspace, "MicrosoftEdgeWebview2Setup.exe")
+    try:
+        say("Fetching Microsoft's WebView2 installer...")
+        try:
+            import urllib.request
+
+            with urllib.request.urlopen(BOOTSTRAPPER, timeout=120) as response, \
+                    open(target, "wb") as handle:
+                shutil.copyfileobj(response, handle)
+        except OSError as e:
+            return False, f"Could not download it: {e}"
+
+        check = subprocess.run(
+            ["powershell", "-NoProfile", "-NonInteractive", "-Command",
+             "(Get-AuthenticodeSignature -FilePath '%s') | "
+             "ForEach-Object { $_.Status; $_.SignerCertificate.Subject }" % target],
+            capture_output=True, text=True, timeout=120,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        printed = (check.stdout or "")
+        if "Valid" not in printed or EXPECTED_PUBLISHER not in printed:
+            return False, ("That download is not signed by Microsoft, so it "
+                           "was not run. Nothing has been installed.")
+
+        say("Running it (Microsoft's installer, silently)...")
+        run = subprocess.run([target, "/silent", "/install"], timeout=900,
+                             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        if run.returncode != 0:
+            return False, f"Microsoft's installer exited {run.returncode}."
+        version = runtime_version()
+        if not version:
+            return False, "It ran, but no runtime is registered afterwards."
+        return True, version
+    finally:
+        shutil.rmtree(workspace, ignore_errors=True)
 
 
 def describe() -> List[str]:

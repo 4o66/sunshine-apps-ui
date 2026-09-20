@@ -17,7 +17,7 @@ import subprocess
 from typing import Optional
 
 #: What the next release will be called.
-RELEASE = "0.1.0"
+RELEASE = "0.2.0"
 
 #: "dev" until there is a release to call it. Set to "" to cut one.
 CHANNEL = "dev"

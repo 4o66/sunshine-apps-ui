@@ -162,14 +162,18 @@ class TheInstallerSaysWhichWindowYouGetTest(unittest.TestCase):
         self.assertEqual(len(lines), 1)
         self.assertIn("our own", lines[0])
 
-    def test_it_names_the_packages_when_it_is_not(self):
+    def test_without_the_toolkit_it_offers_to_install_it(self):
+        """It used to only print the command. Now it asks -- see
+        tests/test_install_offers.py for what it says while asking."""
         from sunshine_apps_ui import installer
+        asked = []
         with mock.patch.object(gtkhost, "toolkit_present", return_value=False), \
-                mock.patch.object(gtkhost, "how_to_install",
-                                  return_value="sudo apt install things"):
-            lines = installer._provide_window_linux()
-        self.assertIn("a browser", lines[0])
-        self.assertIn("sudo apt install things", lines[1])
+                mock.patch.object(gtkhost, "_family", return_value="debian"):
+            lines = installer._provide_window_linux(
+                lambda detail, question: asked.append(question) or False)
+        self.assertEqual(len(asked), 1, "it should have asked")
+        self.assertIn("a browser", " ".join(lines))
+        self.assertIn("sudo apt install", " ".join(lines))
 
     def test_it_does_not_need_a_display_to_answer(self):
         """The install is usually run over ssh, where there is no display.
