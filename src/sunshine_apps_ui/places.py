@@ -5,7 +5,7 @@ One answer, in one place. The state directory was worked out independently in
 four modules -- the queue, the launcher, the backups and the installer -- with
 the same POSIX expression copied into each. That was fine while there was one
 platform. It is not now: `~/.local/state` on Windows produces
-``C:\\Users\\sean/.local/state``, a real directory Windows will happily create,
+``C:\\Users\\you/.local/state``, a real directory Windows will happily create,
 in a place no Windows program keeps anything and no backup tool looks.
 
 ``XDG_STATE_HOME`` still wins everywhere, including on Windows. It is what the

@@ -4,7 +4,7 @@
 A scan was a blocking GET. On the rig it takes about fifty seconds -- almost
 all of it one line, ``Building Heroic metadata cache``, walking fourteen
 thousand files under ``%APPDATA%`` -- and for that whole time the interface
-returned nothing at all: no window change, no spinner, no text. Sean, having
+returned nothing at all: no window change, no spinner, no text. The maintainer, having
 deleted two entries and pressed Rescan: "Scan runs with no visible indicator,
 we need some sort of indicator it is running." He was about to report the two
 entries as undetected when they came back.

@@ -380,7 +380,7 @@ class ChildCanImportUsTest(unittest.TestCase):
     def test_and_told_when_it_is_not(self):
         """Opened at the machine, nothing is being interrupted by applying a
         change -- and this used to claim otherwise, because it was asserted
-        rather than asked. Sean's report, 2026-09-17."""
+        rather than asked. The maintainer's report, 2026-09-17."""
         for name in ("SUNSHINE_APP_ID", "SUNSHINE_CLIENT_NAME", "SUNSHINE_APP_NAME"):
             os.environ.pop(name, None)
         self.assertEqual(
@@ -404,7 +404,7 @@ class ServerRecordTest(unittest.TestCase):
     """The previous run's server, ended without hunting for it.
 
     Finding it by enumerating every process costs several seconds on Windows,
-    on every launch, usually to discover there is not one. Sean measured the
+    on every launch, usually to discover there is not one. The maintainer measured the
     result as "10 or more seconds" before the window appeared.
     """
 
@@ -559,7 +559,7 @@ class ImportsSurviveWithoutStreamsTest(unittest.TestCase):
 class WindowFirstTest(unittest.TestCase):
     """The window opens before the server, so something appears at once.
 
-    Sean: "it needs to open nearly instantly, even if just to show a spinning
+    The maintainer: "it needs to open nearly instantly, even if just to show a spinning
     please wait." Most of the wait is the browser starting, which happens
     whatever we do -- so the browser starts first, on a page that spins, and
     the server comes up beside it.

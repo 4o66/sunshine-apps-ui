@@ -82,7 +82,7 @@ class Browser(NamedTuple):
         Streamed through Moonlight, nothing should frame the page: fullscreen,
         no border, no title bar. Opened at the machine from the Start menu, a
         window you cannot move or close is hostile -- so it fills the screen and
-        keeps its frame. Sean's rule, 2026-09-17.
+        keeps its frame. The maintainer's rule, 2026-09-17.
         """
         if self.kind == "webview2":
             # Our own window (winhost). It takes the profile under the same

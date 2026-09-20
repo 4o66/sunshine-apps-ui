@@ -28,7 +28,7 @@ from sunshine_apps_ui import gtkhost, launcher  # noqa: E402
 
 class CommandTest(unittest.TestCase):
     URL = "http://127.0.0.1:47999/?token=abc"
-    PROFILE = os.path.join("/home/sean/.local/state", "sunshine-apps-ui",
+    PROFILE = os.path.join("/home/you/.local/state", "sunshine-apps-ui",
                            "browser-profile")
 
     def command(self, streamed):
@@ -51,7 +51,7 @@ class CommandTest(unittest.TestCase):
                           "stop_previous would kill the window as a stale server")
 
     def test_streamed_has_no_frame_and_local_keeps_one(self):
-        """Sean's rule, 2026-09-17."""
+        """The maintainer's rule, 2026-09-17."""
         self.assertIn("--fullscreen", self.command(streamed=True))
         self.assertIn("--windowed", self.command(streamed=False))
 
@@ -283,7 +283,7 @@ class WhatIsOursTest(unittest.TestCase):
 
     def test_our_own_server_and_page_stay_in_the_window(self):
         for uri in ("http://127.0.0.1:47999/?token=a", "http://localhost:80/",
-                    "file:///home/sean/.local/state/sunshine-apps-ui/starting.html"):
+                    "file:///home/you/.local/state/sunshine-apps-ui/starting.html"):
             self.assertTrue(gtkhost._is_ours(uri), uri)
 
     def test_the_web_does_not(self):

@@ -132,7 +132,7 @@ font-family:var(--mono);letter-spacing:.01em}
 border:1px solid var(--navbar-text-muted);border-radius:999px;padding:2px 10px}
 /* The same slate the tiles are painted on, so it reads as part of the set and
    not as a scratch on the amber bar. It was a thin outlined pill before and
-   Sean could not find it. */
+   The maintainer could not find it. */
 .navbar .gear{margin-left:.9rem;color:#f1f3f5;text-decoration:none;
 font-size:.85rem;font-weight:600;letter-spacing:.01em;
 background:linear-gradient(135deg,#3a4149 0%,#23282d 100%);
@@ -809,7 +809,7 @@ def settings_page(token: str, *, prefs: Dict[str, Any],
                   via_sunshine: bool = False) -> str:
     """Everything that is a preference rather than a change to the app list.
 
-    Kept off the grid deliberately -- Sean's instruction, 2026-09-19, "set apart
+    Kept off the grid deliberately -- the maintainer's instruction, 2026-09-19, "set apart
     from the grid". The grid is a list of things that will happen to apps.json;
     none of this touches it, and mixing the two invites somebody to press
     Apply expecting their theme to be saved.

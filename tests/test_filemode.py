@@ -52,8 +52,8 @@ class PosixModeTest(unittest.TestCase):
 
     @unittest.skipIf(os.name == "nt", "POSIX modes")
     def test_the_content_survives_the_locking_down(self):
-        filemode.write_private(self.path, "username=sean\npassword=hunter2\n")
-        self.assertEqual(open(self.path).read(), "username=sean\npassword=hunter2\n")
+        filemode.write_private(self.path, "username=you\npassword=hunter2\n")
+        self.assertEqual(open(self.path).read(), "username=you\npassword=hunter2\n")
 
 
 class WindowsAclTest(unittest.TestCase):

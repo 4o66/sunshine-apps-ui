@@ -163,7 +163,7 @@ class PlanHandler(BaseHTTPRequestHandler):
             # invisible route. Everything that will happen is now one list.
             #
             # It runs on a thread and this returns at once: the page that
-            # watches it is the indicator Sean asked for after pressing Rescan
+            # watches it is the indicator the maintainer asked for after pressing Rescan
             # and seeing nothing move for fifty seconds.
             conf_dir, opts = self.conf_dir, self.importer_opts
 
@@ -888,7 +888,7 @@ class PlanHandler(BaseHTTPRequestHandler):
             # worked. Keeping a refused operation sounds kinder and is not: the
             # file was written either way, so a queued operation that referred
             # to the old contents is now stale, and re-applying it does nothing
-            # for ever. That is the jam Sean hit -- "Applied 0 of 2" on every
+            # for ever. That is the jam the maintainer hit -- "Applied 0 of 2" on every
             # press, after the first press had really applied one of them.
             refused = []
             for op, result in zip(pending, results):

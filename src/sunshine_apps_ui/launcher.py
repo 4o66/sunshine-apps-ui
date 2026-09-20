@@ -513,7 +513,7 @@ def browser_is_up(profile: str) -> bool:
     Only when neither applies does this fall back to `browsers()`, which
     enumerates every process on the machine through WMI and takes two and a half
     seconds. That was being called in two polling loops whose sleeps were half a
-    second and one second, which is where most of the ten seconds Sean measured
+    second and one second, which is where most of the ten seconds the maintainer measured
     went, and all of the lag on closing the window.
     """
     if not WINDOWS:
@@ -588,7 +588,7 @@ def _leave_on_signal() -> None:
 def launch(argv: Optional[List[str]] = None) -> int:
     """Open a window at once, start the server behind it, and stay until one goes.
 
-    The window comes first deliberately. Sean, timing it: "it needs to open
+    The window comes first deliberately. The maintainer, timing it: "it needs to open
     nearly instantly, even if just to show a spinning please wait." Most of the
     wait is the browser starting, which happens whatever we do -- so the
     browser is started first, on a page that spins, and the server comes up

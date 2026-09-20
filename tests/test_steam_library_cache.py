@@ -124,7 +124,7 @@ class ImporterAgreesWithPickerTest(unittest.TestCase):
 class SgdbNoteTest(unittest.TestCase):
     """What the picker says when it has found nothing.
 
-    Sean, on seeing the old one: "why do i suddenly need a key? no regular user
+    The maintainer, on seeing the old one: "why do i suddenly need a key? no regular user
     will have the slightest clue what this means." The wording is issue #22 and
     still open; what is settled is that it must not name a command that does not
     exist.

@@ -129,7 +129,7 @@ UNINSTALL_KEY = r"Software\Microsoft\Windows\CurrentVersion\Uninstall\sunshine-a
 def windowless_command(where) -> str:
     """How to start the interface with no console window anywhere.
 
-    A .cmd always opens one, and pythonw.exe never does. Sean, seeing the
+    A .cmd always opens one, and pythonw.exe never does. The maintainer, seeing the
     result of the .cmd: "closing the gui windows left the console launch helper
     open. This cannot happen. There needs to be one window."
 
@@ -149,7 +149,7 @@ def windowless_command(where) -> str:
 # Sunshine's own entry on Bazzite, read off the machine:
 #   Categories=RemoteAccess;Network;
 #   Keywords=gamestream;stream;moonlight;remote play;
-# Sean's instruction: sit in the same category as Sunshine, so the two are
+# The maintainer's instruction: sit in the same category as Sunshine, so the two are
 # found together rather than this turning up under "Other".
 DESKTOP_CATEGORIES = "RemoteAccess;Network;"
 DESKTOP_KEYWORDS = "sunshine;gamestream;moonlight;apps;games;"
@@ -265,7 +265,7 @@ def _remove_desktop_entry() -> List[str]:
 def _start_menu_shortcut(where) -> str:
     """A way to open it at the machine, not only from a stream.
 
-    Sean, on using it: "we need a way to launch it locally too from the start
+    The maintainer, on using it: "we need a way to launch it locally too from the start
     menu I think." Without one, the only way to open it on the machine in front
     of you is to type the path to a .cmd that is not on PATH.
 

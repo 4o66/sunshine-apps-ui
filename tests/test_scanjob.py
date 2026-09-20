@@ -3,7 +3,7 @@
 
 A scan takes about fifty seconds on a real library -- almost all of it one
 importer reading fourteen thousand files -- and it used to run on the request
-thread, so the interface returned nothing at all until it was over. Sean,
+thread, so the interface returned nothing at all until it was over. The maintainer,
 having deleted two entries and pressed Rescan: "Scan runs with no visible
 indicator, we need some sort of indicator it is running." He was about to
 report the two entries as undetected when they came back.

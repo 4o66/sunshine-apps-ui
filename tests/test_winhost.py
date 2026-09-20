@@ -295,7 +295,7 @@ class TheLauncherStillRecognisesItsOwnWindowTest(unittest.TestCase):
                         "the launcher would not recognise its own window")
 
     def test_streamed_has_no_border_and_local_keeps_its_frame(self):
-        """Sean's rule, 2026-09-17: fullscreen from Moonlight, framed at the machine."""
+        """The maintainer's rule, 2026-09-17: fullscreen from Moonlight, framed at the machine."""
         self.assertIn("--fullscreen", self.command(streamed=True))
         self.assertNotIn("--windowed", self.command(streamed=True))
         self.assertIn("--windowed", self.command(streamed=False))

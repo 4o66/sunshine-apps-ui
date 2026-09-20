@@ -502,7 +502,7 @@ class HelperRecordTest(unittest.TestCase):
 
 
 class WindowShapeTest(unittest.TestCase):
-    """Sean's rule, 2026-09-17: fullscreen either way, border only at the machine.
+    """The maintainer's rule, 2026-09-17: fullscreen either way, border only at the machine.
 
     "on windows, fullscreen with the window border is fine, but from moonlight
     fullscreen no window border."

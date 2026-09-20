@@ -139,7 +139,7 @@ def _apps_ui(home: str) -> tuple[str, str]:
         return ("", "")
 
     # os.path.join, not an f-string: on Windows a hand-built "/" path produces
-    # C:\Users\sean/.local/bin/... which is a real path Windows will open and a
+    # C:\Users\you/.local/bin/... which is a real path Windows will open and a
     # string nothing else here will match.
     poster = os.path.join(home, ".local", "share", "sunshine-apps-ui",
                           "assets", "poster.png")

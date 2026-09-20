@@ -143,7 +143,7 @@ class WindowsDiscoveryTest(unittest.TestCase):
         self.install(services={"SunshineService": r'"C:\Program Files\Sunshine\sunshinesvc.exe"'})
         os.name = "nt"
         try:
-            candidates = api._candidates(r"C:\Users\sean")
+            candidates = api._candidates(r"C:\Users\you")
         finally:
             os.name = self.real_name
         self.assertIn(ntpath.normpath(r"C:\Program Files\Sunshine\config"), candidates)
@@ -164,14 +164,14 @@ class PosixCandidatesTest(unittest.TestCase):
     """The existing behaviour, unchanged by the Windows work."""
 
     def test_flatpak_paths_come_before_the_native_one(self):
-        found = api._candidates("/home/sean")
+        found = api._candidates("/home/you")
         self.assertTrue(found[0].endswith("dev.lizardbyte.app.Sunshine/config/sunshine"))
-        self.assertIn("/home/sean/.config/sunshine", found)
+        self.assertIn("/home/you/.config/sunshine", found)
 
     @unittest.skipUnless(sys.platform == "darwin", "macOS paths")
     def test_macos_adds_the_app_bundle_and_application_support(self):
-        found = api._candidates("/Users/sean")
-        self.assertIn("/Users/sean/.config/sunshine", found)
+        found = api._candidates("/Users/you")
+        self.assertIn("/Users/you/.config/sunshine", found)
         self.assertTrue(any("Sunshine.app" in path for path in found))
 
 

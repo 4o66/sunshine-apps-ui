@@ -1,8 +1,8 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Being findable at the machine, not only from a stream.
 
-Windows has had a Start menu shortcut since Sean asked for one; this is the
-Linux half, and the icon both of them use. Sean, 2026-09-18: "we should have
+Windows has had a Start menu shortcut since the maintainer asked for one; this is the
+Linux half, and the icon both of them use. The maintainer, 2026-09-18: "we should have
 the app manager icon in the windows start menu and linux equivalent. if the
 start menu is categorized like bazzite, use the same category as sunshine."
 

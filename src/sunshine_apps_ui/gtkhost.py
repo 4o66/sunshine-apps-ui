@@ -317,7 +317,7 @@ def main(argv: Optional[List[str]] = None) -> int:
 
         window.connect("close-request", closed)
         window.set_child(view)
-        # Sean's rule, 2026-09-17: streamed through Moonlight nothing should
+        # The maintainer's rule, 2026-09-17: streamed through Moonlight nothing should
         # frame the page; opened at the machine, a window you cannot move or
         # close is hostile.
         if streamed:

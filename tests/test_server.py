@@ -1929,7 +1929,7 @@ class ReadOnlyGridTest(ServerTest):
 class QueueDrainsEvenWhenSomethingIsRefusedTest(ServerTest):
     """The queue must not keep operations that were already attempted.
 
-    Sean's report, 2026-09-18: "write changes: give the warning then does
+    The maintainer's report, 2026-09-18: "write changes: give the warning then does
     nothing". His log says exactly what happened:
 
         Applied 1 of 2 change(s)                      <- the delete really happened
@@ -2199,7 +2199,7 @@ class ClosingTest(ServerTest):
     """Leaving, for somebody who looked and decided nothing needed changing.
 
     There was no way out of the interface except closing the window, which on
-    a television means finding the controller shortcut for it. Sean, seeing the
+    a television means finding the controller shortcut for it. The maintainer, seeing the
     artwork picker: "there should also be an exit button in the ui, when the
     user decides no changes are needed."
     """

@@ -29,7 +29,7 @@ class WindowsPathsTest(unittest.TestCase):
         self.real_name = os.name
         self.real_environ = dict(os.environ)
         os.name = "nt"
-        os.environ["LOCALAPPDATA"] = r"C:\Users\sean\AppData\Local"
+        os.environ["LOCALAPPDATA"] = r"C:\Users\you\AppData\Local"
         os.environ.pop("PREFIX", None)
         os.environ.pop("XDG_STATE_HOME", None)
 
@@ -299,7 +299,7 @@ class StartMenuShortcutTest(unittest.TestCase):
 class OneWindowTest(unittest.TestCase):
     """There must be one window: the interface.
 
-    Sean, 2026-09-18: "closing the gui windows left the console launch helper
+    The maintainer, 2026-09-18: "closing the gui windows left the console launch helper
     open. This cannot happen. There needs to be one window." A .cmd always
     brings a console with it; pythonw.exe never does.
     """

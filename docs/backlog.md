@@ -298,7 +298,7 @@ Steam`, so two tiles on one grid were the same picture. It is now the roundel
 on a television rather than the desktop's monitor -- see `docs/tile-art.md` for
 why those are different shapes and not the same one reused.
 
-**Measured on `10.40.68.32`, both paths and the protection:**
+**Measured on the Bazzite test machine, both paths and the protection:**
 
 | starting from | result |
 |---|---|
@@ -313,7 +313,7 @@ The adopted `prep-cmd` and `detached` values came back byte-identical to
 
 ## A way out, and artwork shown as it is
 
-**Done 2026-09-19**, both from one screenshot Sean sent of the artwork picker.
+**Done 2026-09-19**, both from one screenshot the maintainer sent of the artwork picker.
 
 **The picker was cropping the tiles it exists to let you compare.** Its box is
 `aspect-ratio: 2/3` with `object-fit: cover`, which is Steam's portrait shape:
@@ -337,7 +337,7 @@ frightening one: the queue is a file, it outlives the program, and closing
 loses nothing. "I pressed close and my changes vanished" is what somebody
 would otherwise reasonably assume.
 
-Measured on `10.40.68.32` in the real desktop session, not over ssh: POST
+Measured on the Bazzite test machine in a real desktop session, not over ssh: POST
 /quit answered 200, and six seconds later the server was not listening, the
 window process was gone and the launcher had exited. No orphans.
 
@@ -403,7 +403,7 @@ the same result as Bazzite, by the same route: the server stops itself and the
 launcher takes the window down with it.
 
 Getting a session to test in needed auto-logon, which the rig does not
-normally have. Sean's decision, 2026-09-19: fine to enable while testing,
+normally have. The maintainer's decision, 2026-09-19: fine to enable while testing,
 because the host is powered down when not in use, and **turn it off again
 before shutting down**. Done and verified twice -- `AutoAdminLogon=0` and no
 `DefaultPassword` in the registry -- before the machine was powered off. The

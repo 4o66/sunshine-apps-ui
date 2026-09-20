@@ -88,7 +88,7 @@ class AppWindow {
         form.Text = "App Manager";
         form.BackColor = Background;
         form.WindowState = FormWindowState.Maximized;
-        // Sean's rule, 2026-09-17: streamed through Moonlight nothing should
+        // The maintainer's rule, 2026-09-17: streamed through Moonlight nothing should
         // frame the page; opened at the machine, a window you cannot move or
         // close is hostile.
         if (fullscreen) form.FormBorderStyle = FormBorderStyle.None;
