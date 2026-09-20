@@ -389,8 +389,24 @@ Picture uses `cmd` with `auto-detach` and `wait-all` rather than `detached`.
 The takeover claimed both, kept every field byte for byte, invented no low
 res tile, and left nothing foreign.
 
-**Still untested:** the close button taking a WebView2 window down. The rig
-has no interactive session (nobody is logged on, and auto-logon is off with
-no stored password), so the desktop half cannot be exercised from here. The
-server half was measured there -- `POST /quit` answered 200 and the server
-stopped -- and the whole path was measured on Bazzite in a real session.
+**The close button, with a real WebView2 window.** Measured on the rig the
+same evening, in a logged-on session:
+
+```
+before: AppWindow=1 python=2 listening=1
+POST /quit -> 200, page says: Closed
+after:  AppWindow=0 python=0 listening=0
+```
+
+The WebView2 window, the launcher and the server all went, with no orphans --
+the same result as Bazzite, by the same route: the server stops itself and the
+launcher takes the window down with it.
+
+Getting a session to test in needed auto-logon, which the rig does not
+normally have. Sean's decision, 2026-09-19: fine to enable while testing,
+because the host is powered down when not in use, and **turn it off again
+before shutting down**. Done and verified twice -- `AutoAdminLogon=0` and no
+`DefaultPassword` in the registry -- before the machine was powered off. The
+password came from `/mnt/user/domains/bsm-win11/.adminpw` on the Unraid host,
+piped straight into the registry write over ssh: never on a command line,
+never in an argument list, never printed.
