@@ -2264,3 +2264,79 @@ class ClosingTest(ServerTest):
         status, _ = self.get_no_redirect(f"/quit?token={self.token}")
         self.assertIn(status, (404, 405))
         self.assertFalse(self._stopping())
+
+
+class WhichBuildsTest(ServerTest):
+    """The two switches under "Which builds", which had no test at all.
+
+    That is how they shipped unusable: a checkbox that needed script to apply,
+    on a page whose policy forbids inline script, so pressing them did nothing
+    and nothing was written. Issue #28.
+    """
+
+    def _press(self, setting, value):
+        return self.post({"setting": setting, "value": value},
+                         token=self.token, path="/settings/channel")
+
+    def _prefs(self):
+        from sunshine_apps_ui import state
+        return state.prefs()
+
+    def test_turning_development_builds_on(self):
+        self._press("dev_builds", "1")
+        self.assertIs(self._prefs().get("dev_builds"), True)
+
+    def test_and_off_again(self):
+        self._press("dev_builds", "1")
+        self._press("dev_builds", "0")
+        self.assertIs(self._prefs().get("dev_builds"), False)
+
+    def test_the_child_follows_while_development_builds_are_on(self):
+        self._press("dev_builds", "1")
+        self._press("stable_if_no_newer_dev", "0")
+        self.assertIs(self._prefs().get("stable_if_no_newer_dev"), False)
+        self._press("stable_if_no_newer_dev", "1")
+        self.assertIs(self._prefs().get("stable_if_no_newer_dev"), True)
+
+    def test_the_child_is_refused_while_they_are_off(self):
+        """The switch is disabled, but a request can arrive anyway."""
+        self._press("dev_builds", "0")
+        self._press("stable_if_no_newer_dev", "0")
+        self.assertIsNone(self._prefs().get("stable_if_no_newer_dev"))
+
+    def test_an_unknown_setting_changes_nothing(self):
+        self._press("theme", "1")
+        self.assertEqual(self._prefs(), {})
+
+    def test_it_needs_the_token(self):
+        status, _ = self.post({"setting": "dev_builds", "value": "1"},
+                              path="/settings/channel")
+        self.assertEqual(status, 404)
+        self.assertEqual(self._prefs(), {})
+
+    # --- what the page actually offers to press ----------------------------
+
+    def test_each_switch_is_a_button_that_submits_on_its_own(self):
+        """Not a checkbox: applying has to need nothing but HTML."""
+        _, body = self.get(f"/settings?token={self.token}")
+        self.assertIn('name="setting" value="dev_builds"', body)
+        self.assertIn('name="setting" value="stable_if_no_newer_dev"', body)
+        self.assertNotIn('type="checkbox"', body)
+
+    def test_a_switch_posts_the_value_it_would_set(self):
+        _, off = self.get(f"/settings?token={self.token}")
+        self.assertIn('name="value" value="1"', off)      # currently off
+        self._press("dev_builds", "1")
+        _, on = self.get(f"/settings?token={self.token}")
+        self.assertIn('name="value" value="0"', on)       # now offers to turn it off
+
+    def test_the_child_is_disabled_until_the_parent_is_on(self):
+        _, body = self.get(f"/settings?token={self.token}")
+        self.assertRegex(body, r'value="stable_if_no_newer_dev".*?disabled')
+        self._press("dev_builds", "1")
+        _, body = self.get(f"/settings?token={self.token}")
+        self.assertNotRegex(body, r'value="stable_if_no_newer_dev".*?disabled')
+
+    def test_there_is_no_save_button_to_forget(self):
+        _, body = self.get(f"/settings?token={self.token}")
+        self.assertNotIn("noscript", body)

@@ -410,3 +410,47 @@ before shutting down**. Done and verified twice -- `AutoAdminLogon=0` and no
 password came from `/mnt/user/domains/bsm-win11/.adminpw` on the Unraid host,
 piped straight into the registry write over ssh: never on a command line,
 never in an argument list, never printed.
+
+## Settings that could not be changed, and the policy that ate them
+
+**Fixed on `dev`, 2026-09-20. Issue #28.** Reported from real use: "clicking
+the setting to run dev builds doesn't save."
+
+Three controls were affected, not one: both switches under Which builds, and
+the language selector. Each submitted its form with
+`onchange="this.form.submit()"`, and every page is served with `script-src
+'self'` and no `'unsafe-inline'`, so the browser never compiled the attribute
+into a handler. Measured in the page:
+
+```js
+document.querySelector('#dev').getAttribute('onchange')  // "this.form.submit()"
+typeof document.querySelector('#dev').onchange           // "object"  -> null
+```
+
+Pressing them made no request at all, so there was nothing in a log to find.
+
+**And the fallback did not fall back.** Each form carried
+`<noscript><button>Save</button></noscript>`, which renders only when scripting
+is *disabled*. Scripting was enabled; it was our own header blocking one
+attribute. So the button never existed and there was no way to save.
+
+**The fix uses no script.** Each switch is now a submit button carrying the
+value it would set -- the shape the appearance buttons beside them always had.
+The whole row is the button, label and explanation included, which matters most
+with a gamepad. The language selector keeps its `<select>` and gains a "Use
+this one" button. There is no JavaScript on the settings page at all, so there
+is nothing left for a policy to refuse.
+
+The child switch is `disabled` while development builds are off, and the
+server refuses it in that state as well, because a request can arrive whatever
+the page said.
+
+**Two things that let this ship.** There was no server test for the channel
+route -- the one route on that page with no coverage. And nothing checked for
+inline handlers, though the same policy had already eaten the scan progress
+page once. `tests/test_navigation.py` now renders every page and fails on any
+inline handler or any `<script>` without a `src`.
+
+Verified by clicking, in a browser, against a real server: switch on, child
+off, switch off again, each landing in `prefs.json` after one press with no
+save step.

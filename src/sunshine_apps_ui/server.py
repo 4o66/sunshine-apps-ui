@@ -653,13 +653,20 @@ class PlanHandler(BaseHTTPRequestHandler):
                 if choice in ("system", "light", "dark"):
                     state.set_pref("theme", choice)
             elif what == "channel":
-                # Checkboxes only arrive when ticked, so their absence is the
-                # answer for the ones that were not.
-                dev = "dev_builds" in fields
-                state.set_pref("dev_builds", dev)
-                if dev:
-                    state.set_pref("stable_if_no_newer_dev",
-                                   "stable_if_no_newer_dev" in fields)
+                # One switch per press, naming itself and the value it wants.
+                # It was a checkbox whose absence meant "off", which needed
+                # script to submit at all -- and the script was blocked by our
+                # own policy, so nothing here could be changed. Issue #28.
+                setting = (fields.get("setting") or [""])[0]
+                wanted = (fields.get("value") or [""])[0] == "1"
+                if setting == "dev_builds":
+                    state.set_pref("dev_builds", wanted)
+                elif setting == "stable_if_no_newer_dev":
+                    # Only meaningful while development builds are on, and the
+                    # switch is disabled otherwise -- but a request can arrive
+                    # regardless, so it is refused here rather than assumed.
+                    if state.prefs().get("dev_builds"):
+                        state.set_pref("stable_if_no_newer_dev", wanted)
             elif what == "language":
                 from . import i18n
 

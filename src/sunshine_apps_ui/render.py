@@ -777,13 +777,28 @@ SETTINGS_CSS = """
 border:1px solid var(--border);border-radius:var(--radius-md);
 padding:.5rem 1rem;font:inherit;font-size:.9rem;cursor:pointer}
 .choices button.on{background:var(--primary);border-color:var(--primary);color:#fff}
-.toggle{display:flex;align-items:flex-start;gap:.6rem;margin:.4rem 0}
-.toggle input{margin-top:.25rem;width:1.05rem;height:1.05rem;accent-color:var(--primary)}
-.toggle .body{flex:1}
-.toggle label{font-weight:500}
-.toggle .why{margin:.1rem 0 0;font-size:.85rem}
+.toggle{margin:.4rem 0}
 .toggle.nested{margin-left:1.7rem}
 .toggle.off{opacity:.5}
+/* A whole switch is one button, so the label and the explanation are part of
+   what you press -- which matters most with a gamepad, where hitting a 17px
+   box is the difference between working and not. */
+button.switch{display:flex;align-items:flex-start;gap:.6rem;width:100%;
+text-align:left;background:none;border:0;padding:.25rem;margin:0;
+font:inherit;color:inherit;cursor:pointer;border-radius:var(--radius-md)}
+button.switch:hover:not(:disabled){background:var(--bg-subtle)}
+button.switch:disabled{cursor:default}
+button.switch:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+button.switch .box{flex:0 0 auto;width:1.05rem;height:1.05rem;margin-top:.2rem;
+border:1px solid var(--border-strong);border-radius:4px;background:var(--bg-base);
+display:flex;align-items:center;justify-content:center;
+font-size:.75rem;line-height:1;color:#fff}
+button.switch .box.on{background:var(--primary);border-color:var(--primary)}
+button.switch .body{flex:1}
+button.switch .lab{display:block;font-weight:500}
+button.switch .why{display:block;margin:.1rem 0 0;font-size:.85rem;
+color:var(--text-muted)}
+.setting form.pick{display:flex;gap:.5rem;flex-wrap:wrap;align-items:center}
 .result{margin:.8rem 0 0;padding:.7rem .9rem;border-radius:var(--radius-md);
 background:var(--bg-subtle);border:1px solid var(--border);font-size:.9rem}
 .result.available{border-left:3px solid var(--success)}
@@ -846,6 +861,38 @@ def settings_page(token: str, *, prefs: Dict[str, Any],
     # the warning it is.
     notice_html = (f'<div class="result unreachable">{_e(notice)}</div>'
                    if notice else "")
+
+    # Buttons, not checkboxes. A checkbox needs script to apply on the spot,
+    # and every page here is served with `script-src \'self\'` and no
+    # `unsafe-inline`, so the onchange attribute these used to carry was never
+    # compiled into a handler: clicking did nothing, and the <noscript> fallback
+    # never rendered because scripting was enabled. Issue #28. A submit button
+    # carrying the value it would set needs nothing but HTML, which is also
+    # what the appearance buttons beside them have always been.
+    def toggle(name: str, on: bool, label: str, why: str,
+               nested: bool = False, enabled: bool = True) -> str:
+        classes = "toggle" + (" nested" if nested else "") + ("" if enabled else " off")
+        return (f'<form method="post" action="/settings/channel{q}" '
+                f'class="{classes}">'
+                f'<input type="hidden" name="setting" value="{_e(name)}">'
+                f'<button type="submit" name="value" value="{"0" if on else "1"}"'
+                f'{"" if enabled else " disabled"} role="switch" '
+                f'aria-checked="{"true" if on else "false"}" class="switch">'
+                f'<span class="box{" on" if on else ""}" aria-hidden="true">'
+                f'{"&#10003;" if on else ""}</span>'
+                f'<span class="body"><span class="lab">{label}</span>'
+                f'<span class="why">{why}</span></span></button></form>')
+
+    dev_toggle = toggle(
+        "dev_builds", dev, "Offer development builds",
+        "Newer, and sometimes broken. Off means only finished releases.")
+    fallback_toggle = toggle(
+        "stable_if_no_newer_dev", fall_back,
+        "Move to the finished release when it is newer",
+        "A release is where a development build was heading, so this leaves you "
+        "on the finished one rather than stranded on an older preview. Only "
+        "applies while development builds are on.",
+        nested=True, enabled=dev)
 
     picked = str(prefs.get("language", "") or "")
     info = language or {}
@@ -919,9 +966,9 @@ def settings_page(token: str, *, prefs: Dict[str, Any],
     language is a file and a pull request &mdash;
     <a href="{docs}/i18n.md" target="_blank" rel="noopener noreferrer">how to
     add one</a>.</p>
-    <form method="post" action="/settings/language{q}">
-      <select name="language" onchange="this.form.submit()">{options}</select>
-      <noscript><button class="btn sec" type="submit">Save</button></noscript>
+    <form method="post" action="/settings/language{q}" class="pick">
+      <select name="language">{options}</select>
+      <button class="btn sec" type="submit">Use this one</button>
     </form>
     <p class="why">{showing}</p>
     <form method="post" action="/settings/art-check{q}">
@@ -947,29 +994,8 @@ def settings_page(token: str, *, prefs: Dict[str, Any],
 
   <div class="setting">
     <h3>Which builds</h3>
-    <form method="post" action="/settings/channel{q}" id="channel">
-      <div class="toggle">
-        <input type="checkbox" id="dev" name="dev_builds" value="1"
-               {"checked" if dev else ""} onchange="this.form.submit()">
-        <div class="body">
-          <label for="dev">Offer development builds</label>
-          <p class="why">Newer, and sometimes broken. Off means only finished
-          releases.</p>
-        </div>
-      </div>
-      <div class="toggle nested {"" if dev else "off"}">
-        <input type="checkbox" id="fall" name="stable_if_no_newer_dev" value="1"
-               {"checked" if fall_back else ""} {"" if dev else "disabled"}
-               onchange="this.form.submit()">
-        <div class="body">
-          <label for="fall">Move to the finished release when it is newer</label>
-          <p class="why">A release is where a development build was heading, so
-          this leaves you on the finished one rather than stranded on an older
-          preview. Only applies while development builds are on.</p>
-        </div>
-      </div>
-      <noscript><button class="btn sec" type="submit">Save</button></noscript>
-    </form>
+    {dev_toggle}
+    {fallback_toggle}
   </div>
 </section>
 

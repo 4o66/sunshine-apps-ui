@@ -201,3 +201,58 @@ class ItSaysWhichBuildTest(unittest.TestCase):
             self.assertIn("dev", render.version_display())
         with mock.patch.object(version, "CHANNEL", ""):
             self.assertNotIn("dev", render.version_display())
+
+
+SCAN_STATUS = {"running": True, "run": 1, "elapsed": 1.2, "latest": "Steam",
+               "lines": ["Steam"], "staged": 0, "error": ""}
+
+
+class NothingRunsInlineTest(unittest.TestCase):
+    """No page may carry an inline handler or an inline <script>.
+
+    Every page is served with `script-src 'self'` and no `'unsafe-inline'`, so
+    the browser never compiles one: the attribute sits in the HTML looking
+    correct and does nothing at all. It has happened twice -- the scan progress
+    page, fixed by moving to /scanning.js, and then the settings toggles and
+    the language selector, which could not be changed at all for as long as
+    they existed (issue #28). Neither failed loudly; both simply did nothing.
+
+    So this is checked rather than remembered. A page that needs script loads
+    it from a file, which the policy allows.
+    """
+
+    HANDLER = re.compile(r"\son[a-z]+\s*=", re.I)
+    SCRIPT = re.compile(r"<script(?![^>]*\bsrc=)", re.I)
+
+    def _pages(self):
+        from sunshine_apps_ui import render
+        everything = dict(pages())
+        everything["settings"] = render.settings_page(
+            "t", prefs={"dev_builds": True},
+            language={"languages": [{"code": "en", "name": "English",
+                                     "name_in_english": "English"}],
+                      "system_suffix": " (en-US)", "showing": "Showing English tiles."})
+        everything["settings (plain)"] = render.settings_page("t", prefs={})
+        everything["report"] = render.report_page("t")
+        everything["closing"] = render.closing_page()
+        everything["leaving"] = render.leaving_with_changes_page("t", 2)
+        everything["scanning"] = render.scanning_page("t", SCAN_STATUS)
+        everything["backups"] = render.backups_page([], "t")
+        return everything
+
+    def test_no_page_carries_an_inline_event_handler(self):
+        for name, html in self._pages().items():
+            with self.subTest(page=name):
+                found = self.HANDLER.findall(html)
+                self.assertEqual(found, [], f"{name} has an inline handler")
+
+    def test_no_page_carries_an_inline_script(self):
+        for name, html in self._pages().items():
+            with self.subTest(page=name):
+                self.assertIsNone(self.SCRIPT.search(html),
+                                  f"{name} has a <script> with no src")
+
+    def test_a_page_that_needs_script_loads_it_from_a_file(self):
+        """Which the policy does allow, and which is how scanning works."""
+        from sunshine_apps_ui import render
+        self.assertIn('src="/scanning.js', render.scanning_page("t", SCAN_STATUS))
