@@ -20,25 +20,38 @@ from sunshine_apps_ui import version  # noqa: E402
 
 
 class FormatTest(unittest.TestCase):
+    """Both channels, whichever this checkout happens to be on.
+
+    These used to assume the dev channel, which was true for as long as there
+    had never been a release. Cutting 1.0.0 turned six of them red without
+    anything being wrong -- so each now says which channel it is about.
+    """
+
     def setUp(self):
         patched = mock.patch.object(version, "_cached",
                                     {"build": "123", "commit": "abc1234",
                                      "dirty": False})
         patched.start()
         self.addCleanup(patched.stop)
+        self.dev = mock.patch.object(version, "CHANNEL", "dev")
+        self.release = mock.patch.object(version, "CHANNEL", "")
 
     def test_a_development_build_says_so_first(self):
         """So it cannot be mistaken for a release at a glance."""
-        self.assertTrue(version.display().startswith("dev "), version.display())
+        with self.dev:
+            self.assertTrue(version.display().startswith("dev "), version.display())
 
     def test_it_carries_the_release_it_is_heading_for(self):
-        self.assertIn(version.RELEASE, version.display())
+        with self.dev:
+            self.assertIn(version.RELEASE, version.display())
 
     def test_and_the_build_number(self):
-        self.assertIn("123", version.display())
+        with self.dev:
+            self.assertIn("123", version.display())
 
     def test_the_machine_readable_form_is_pep_440(self):
-        self.assertEqual(version.version(), f"{version.RELEASE}.dev123")
+        with self.dev:
+            self.assertEqual(version.version(), f"{version.RELEASE}.dev123")
 
     def test_a_development_build_sorts_below_the_release_it_precedes(self):
         """Which is the whole reason for the .devN form."""
@@ -46,17 +59,28 @@ class FormatTest(unittest.TestCase):
             from packaging.version import Version
         except ImportError:
             self.skipTest("packaging is not installed")
-        self.assertLess(Version(version.version()), Version(version.RELEASE))
+        with self.dev:
+            self.assertLess(Version(version.version()), Version(version.RELEASE))
 
     def test_a_release_drops_the_word_and_the_build(self):
-        with mock.patch.object(version, "CHANNEL", ""):
+        with self.release:
             self.assertEqual(version.display(), version.RELEASE)
             self.assertEqual(version.version(), version.RELEASE)
 
+    def test_a_release_is_a_plain_number_tools_can_sort(self):
+        try:
+            from packaging.version import Version
+        except ImportError:
+            self.skipTest("packaging is not installed")
+        with self.release:
+            self.assertEqual(Version(version.version()), Version(version.RELEASE))
+            self.assertFalse(Version(version.version()).is_prerelease)
+
     def test_uncommitted_changes_are_admitted(self):
         """A build with local edits is not the commit it claims to be."""
-        with mock.patch.object(version, "_cached",
-                               {"build": "123", "commit": "abc", "dirty": True}):
+        with self.dev, mock.patch.object(
+                version, "_cached",
+                {"build": "123", "commit": "abc", "dirty": True}):
             self.assertTrue(version.display().endswith("+"), version.display())
 
     def test_the_long_form_names_the_commit_for_a_bug_report(self):

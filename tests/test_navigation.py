@@ -10,6 +10,7 @@ import os
 import re
 import sys
 import unittest
+from unittest import mock
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "src"))
 
@@ -193,4 +194,10 @@ class ItSaysWhichBuildTest(unittest.TestCase):
                 self.assertIn(render.version_display(), title)
 
     def test_a_development_build_is_marked_as_one(self):
-        self.assertIn("dev", render.version_display())
+        """And a release is not. Which this checkout is depends on the day."""
+        from sunshine_apps_ui import version
+
+        with mock.patch.object(version, "CHANNEL", "dev"):
+            self.assertIn("dev", render.version_display())
+        with mock.patch.object(version, "CHANNEL", ""):
+            self.assertNotIn("dev", render.version_display())
