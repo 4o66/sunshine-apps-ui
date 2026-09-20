@@ -22,6 +22,7 @@ from .engine import (EngineError, art_choose, art_search, backup_diff, browse,
                      save_auth)
 from . import scanjob, updates
 from .render import (LOCK_NOTE, app_page, applied_page, artwork_page,
+                     closing_page, leaving_with_changes_page,
                      render_elevating,
                      backups_page, confirm_page, connect_page, error_page,
                      explain_page, grid_page, hidden_page, is_protected, page,
@@ -625,6 +626,22 @@ class PlanHandler(BaseHTTPRequestHandler):
                         self.headers.get("Origin"),
                         self.headers.get("Sec-Fetch-Site"))
             self._send(404, error_page("Not found."))
+            return
+
+        if parts.path == "/quit":
+            # Leaving is a change to the world -- the program stops -- so it is
+            # a POST with a token behind it, like everything else here that
+            # does something rather than shows something.
+            fields = self._form()
+            queued = state.queue()
+            if queued and "anyway" not in fields:
+                self._send(200, leaving_with_changes_page(self.token, len(queued)))
+                return
+            self._send(200, closing_page(self.via_sunshine))
+            # The launcher watches the server as well as the window, and takes
+            # the window down when we go. So stopping here is the whole of it:
+            # there is nothing to ask the window to do.
+            self._stop_soon()
             return
 
         if parts.path.startswith("/settings/"):

@@ -2193,3 +2193,74 @@ class LanguageSettingTest(ServerTest):
         status, _ = self.post({"language": "en"}, path="/settings/language")
         self.assertEqual(status, 404)
         self.assertIsNone(state.prefs().get("language"))
+
+
+class ClosingTest(ServerTest):
+    """Leaving, for somebody who looked and decided nothing needed changing.
+
+    There was no way out of the interface except closing the window, which on
+    a television means finding the controller shortcut for it. Sean, seeing the
+    artwork picker: "there should also be an exit button in the ui, when the
+    user decides no changes are needed."
+    """
+
+    def _quit(self, **body):
+        return self.post(body, token=self.token, path="/quit")
+
+    def _stopping(self):
+        # The handler class is made per server, with the token baked in, so the
+        # flag lands there rather than on the class in the module.
+        return bool(getattr(self.httpd.RequestHandlerClass, "stopping", False))
+
+    def setUp(self):
+        super().setUp()
+        handler = self.httpd.RequestHandlerClass
+        handler.stopping = False
+        handler._armed = False
+
+    def test_the_button_is_on_the_grid(self):
+        _, body = self.get(f"/?token={self.token}")
+        self.assertIn("/quit", body)
+        self.assertIn("Close the manager", body)
+
+    def test_closing_stops_the_server(self):
+        status, _ = self._quit()
+        self.assertEqual(status, 200)
+        self.assertTrue(self._stopping())
+
+    def test_it_says_the_window_is_going(self):
+        from sunshine_apps_ui.render import closing_page
+        self.assertIn("Closed", closing_page())
+        self.assertIn("close it", closing_page())
+
+    def test_staged_changes_are_asked_about_first(self):
+        """Not a warning that anything is lost -- it is not -- but a fact."""
+        from sunshine_apps_ui import state
+        state.stage_plan(dict(PLAN["plan"]))
+        status, _ = self._quit()
+        self.assertEqual(status, 200)
+        self.assertFalse(self._stopping(), "it stopped without asking")
+
+    def test_and_closing_anyway_stops(self):
+        from sunshine_apps_ui import state
+        state.stage_plan(dict(PLAN["plan"]))
+        self._quit(anyway="1")
+        self.assertTrue(self._stopping())
+
+    def test_the_queue_survives_closing(self):
+        from sunshine_apps_ui import state
+        state.stage_plan(dict(PLAN["plan"]))
+        before = len(state.queue())
+        self._quit(anyway="1")
+        self.assertEqual(len(state.queue()), before)
+
+    def test_it_needs_the_token(self):
+        status, _ = self.post({}, path="/quit")
+        self.assertEqual(status, 404)
+        self.assertFalse(self._stopping())
+
+    def test_a_get_does_not_close_it(self):
+        """A link somebody follows, or a page prefetching, must not stop it."""
+        status, _ = self.get_no_redirect(f"/quit?token={self.token}")
+        self.assertIn(status, (404, 405))
+        self.assertFalse(self._stopping())

@@ -309,3 +309,34 @@ why those are different shapes and not the same one reused.
 
 The adopted `prep-cmd` and `detached` values came back byte-identical to
 `/usr/share/sunshine/apps.json` after the claim.
+
+
+## A way out, and artwork shown as it is
+
+**Done 2026-09-19**, both from one screenshot Sean sent of the artwork picker.
+
+**The picker was cropping the tiles it exists to let you compare.** Its box is
+`aspect-ratio: 2/3` with `object-fit: cover`, which is Steam's portrait shape:
+right for the Steam artwork that makes up most of what lands there, wrong for
+ours, which are 600x800. `cover` took the top and bottom off. It is `contain`
+now, so the box still lines the grid up but nothing is cropped or stretched.
+
+**There was no way to leave.** Every action in the interface was about
+changing something; somebody who looked and decided nothing needed changing
+had to close the window, which on a television means knowing the controller
+shortcut for it. `POST /quit` stops the server, and the launcher already takes
+the window down when the server goes -- the same path an apply uses. So the
+button is the whole of it; there is nothing to ask the window to do.
+
+It is a POST behind a token, because it does something rather than shows
+something, and a GET would let a prefetch or a followed link close the
+program.
+
+**With changes staged it asks first**, and says the true thing rather than the
+frightening one: the queue is a file, it outlives the program, and closing
+loses nothing. "I pressed close and my changes vanished" is what somebody
+would otherwise reasonably assume.
+
+Measured on `10.40.68.32` in the real desktop session, not over ssh: POST
+/quit answered 200, and six seconds later the server was not listening, the
+window process was gone and the launcher had exited. No orphans.

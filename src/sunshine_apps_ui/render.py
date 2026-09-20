@@ -362,6 +362,66 @@ def confirm_page(doc: Dict[str, Any], token: str, via_sunshine: bool = False,
 </div></body></html>"""
 
 
+def closing_page(via_sunshine: bool = False) -> str:
+    """The last page, shown while the server is on its way down.
+
+    There is a page at all because the window takes a moment to go, and a
+    frame of "this site cannot be reached" as the server stops looks like a
+    crash rather than like leaving.
+    """
+    # Which kind of window this is showing in is not something the server
+    # knows: it starts before the launcher has decided, and a browser may have
+    # been the fallback. So say what is true of both rather than guess.
+    if via_sunshine:
+        detail = ("Sunshine will end this stream and you will be back in "
+                  "Moonlight in a moment.")
+    else:
+        detail = ("Its own window closes itself. A browser tab stays until you "
+                  "close it -- we cannot close a window we did not open.")
+    return f"""<!doctype html>
+{_html()}<head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{_title('Closing')}</title><style>{_CSS}</style></head>
+<body>
+<div class="navbar"><span class="brand">Sunshine</span><span class="sep">/</span>
+<span class="where">app manager</span>{_version_chip()}</div>
+<div class="wrap">
+<section class="ok"><h2>Closed</h2><p class="why">{_e(detail)}</p></section>
+</div></body></html>"""
+
+
+def leaving_with_changes_page(token: str, queued: int) -> str:
+    """Asked before closing while something is staged, and only then.
+
+    The queue is a file and outlives the program, so nothing is lost by
+    leaving -- but "I pressed close and my changes vanished" is what somebody
+    would reasonably assume, so say what actually happens instead.
+    """
+    q = f"?token={_e(token)}" if token else ""
+    return f"""<!doctype html>
+{_html()}<head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{_title('Close?')}</title><style>{_CSS}</style></head>
+<body>
+<div class="navbar"><span class="brand">Sunshine</span><span class="sep">/</span>
+<span class="where">app manager</span>{_version_chip()}</div>
+<div class="wrap">
+<h1>Close without applying?</h1>
+<p class="sub">{queued} change{'' if queued == 1 else 's'} {'is' if queued == 1
+else 'are'} staged and {'has' if queued == 1 else 'have'} not been written to
+Sunshine.</p>
+<section><p class="why">Nothing is lost by closing: what you have staged is
+still here the next time you open the manager. Applying is what writes it to
+Sunshine.</p></section>
+<div class="actions">
+<a class="btn" href="/{q}">Back to the apps</a>
+<form method="post" action="/quit{q}" class="inline">
+<input type="hidden" name="anyway" value="1">
+<button class="btn sec" type="submit">Close anyway</button></form>
+</div>
+</div></body></html>"""
+
+
 def applied_page(token: str, via_sunshine: bool = False) -> str:
     """Shown straight after a successful apply.
 
@@ -1298,7 +1358,9 @@ def grid_page(state: Dict[str, Any], token: str, *, new_ids: Optional[set] = Non
 <div class="actions">{apply_button}{discard_button}
 <a class="btn{'' if not queued else ' sec'}" href="/?scan=1&token={_e(token)}">Rescan</a>
 <a class="btn sec" href="/backups?token={_e(token)}">Restore a copy</a>
-<a class="btn sec" href="/report?token={_e(token)}">Report a bug</a></div>
+<a class="btn sec" href="/report?token={_e(token)}">Report a bug</a>
+<form method="post" action="/quit?token={_e(token)}" class="inline">
+<button class="btn sec" type="submit">Close the manager</button></form></div>
 {legend}
 <div class="grid">{"".join(tiles)}</div>
 </div></body></html>"""
@@ -1544,13 +1606,20 @@ Un-hiding lets the next scan find it again.<br>
 
 
 _ARTWORK_CSS = """
+form.inline{display:inline}
 .arts{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));
 gap:1rem;margin:0 0 1.5rem}
 .arts figure{margin:0;display:flex;flex-direction:column;gap:.4rem}
 .arts a{display:block;border:2px solid var(--border);border-radius:var(--radius-md);
 overflow:hidden;background:var(--bg-subtle);text-decoration:none}
 .arts a:hover,.arts a:focus-visible{border-color:var(--primary);outline:none}
-.arts img{display:block;width:100%;aspect-ratio:2/3;object-fit:cover}
+/* The box is Steam's portrait shape, because most of what lands here is a
+   Steam portrait and a ragged grid is hard to compare across. The picture
+   inside it is not cropped to fit: ours are 600x800 rather than 600x900, and
+   `cover` was cutting the top and bottom off the very tiles this page exists
+   to let you choose between. */
+.arts img{display:block;width:100%;aspect-ratio:2/3;object-fit:contain;
+background:var(--bg-muted)}
 .arts figcaption{font-size:.8rem;color:var(--text-muted);text-align:center;
 line-height:1.3}
 .arts figcaption b{display:block;color:var(--text);font-size:.85rem}
