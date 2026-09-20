@@ -126,6 +126,7 @@ class PlanHandler(BaseHTTPRequestHandler):
             self._send(200, settings_page(self.token, prefs=state.prefs(),
                                           answer=answer,
                                           notice=_NOTICE.pop(self.token, ""),
+                                          language=_language_panel(self.token),
                                           via_sunshine=self.via_sunshine))
             return
 
@@ -642,6 +643,27 @@ class PlanHandler(BaseHTTPRequestHandler):
                 if dev:
                     state.set_pref("stable_if_no_newer_dev",
                                    "stable_if_no_newer_dev" in fields)
+            elif what == "language":
+                from . import i18n
+
+                choice = (fields.get("language") or [""])[0].strip()
+                codes = {item["code"] for item in i18n.languages()}
+                if choice and choice not in codes:
+                    _NOTICE[self.token] = "That is not a language we ship."
+                else:
+                    state.set_pref("language", choice)
+                    i18n._cache.clear()
+                    _offer_artwork(self.token, choice)
+            elif what == "art-check":
+                _check_artwork(self.token)
+            elif what == "art-fetch":
+                # The offer is a button, so what to fetch travels in the link
+                # behind it rather than in a field nobody typed.
+                asked = (fields.get("code") or [""])[0].strip()
+                if not asked:
+                    asked = (parse_qs(parts.query).get("code")
+                             or [""])[0].strip()
+                _fetch_artwork(self.token, asked)
             elif what == "defaults":
                 # A scan with restore turned on, so the tiles arrive on the
                 # grid as pending changes the same way everything else does.
@@ -910,6 +932,105 @@ class PlanHandler(BaseHTTPRequestHandler):
 _LAST_CHECK: Dict[str, Any] = {}
 # Something to say on the settings page after a button that did not work.
 _NOTICE: Dict[str, str] = {}
+# What the language section should say next time it is drawn: the result of a
+# check, or an offer to download a set. One per token, cleared when shown.
+_ART: Dict[str, Dict[str, Any]] = {}
+
+
+def _tile_language() -> str:
+    """Which set the tiles are actually coming from, as a sentence."""
+    from . import i18n
+
+    folder = os.path.basename(i18n.tile_set())
+    if folder == i18n.WORDLESS:
+        return "Showing tiles with no words, which are right in every language."
+    for item in i18n.languages():
+        if item["code"] == folder:
+            return f"Showing {item['name_in_english']} tiles."
+    return f"Showing {folder} tiles."
+
+
+def _language_panel(token: str) -> Dict[str, Any]:
+    from . import i18n
+
+    system = i18n.system_language()
+    suffix = f" ({system})" if system else ""
+    return {"languages": i18n.languages(), "system_suffix": suffix,
+            "showing": _tile_language(), "art": _ART.pop(token, None)}
+
+
+def _offer_artwork(token: str, code: str) -> None:
+    """After a language change: is there artwork for it, and is it here?
+
+    Nothing is downloaded by changing the language. The set is a couple of
+    megabytes and the person asked to change a language, not to start a
+    download; so this offers, and the offer names the language.
+    """
+    from . import i18n, tileart
+
+    wanted = code or i18n.system_language()
+    if not wanted or tileart.have_set(wanted):
+        return                              # already covered, or no opinion
+    remote, why = tileart.remote_manifest()
+    if why:
+        _ART[token] = {"state": "unreachable",
+                       "message": f"Wordless tiles are being used. {why}."}
+        return
+    for candidate in i18n.candidates(wanted):
+        if candidate in remote and candidate != i18n.DEFAULT:
+            _ART[token] = {
+                "state": "available",
+                "message": (f"Tiles are published for {candidate}. "
+                            f"Until they are here, the wordless set is used."),
+                "action": f"/settings/art-fetch?token={token}&code={candidate}",
+                "label": f"Download the {candidate} tiles"}
+            return
+    _ART[token] = {"state": "none",
+                   "message": (f"Nobody has made tiles for {wanted} yet, so the "
+                               f"wordless set is used. docs/i18n.md is how to "
+                               f"add them.")}
+
+
+def _check_artwork(token: str) -> None:
+    from . import tileart
+
+    remote, why = tileart.remote_manifest()
+    if why:
+        _ART[token] = {"state": "unreachable", "message": why.capitalize() + "."}
+        return
+    behind = tileart.stale(remote)
+    if not behind:
+        _ART[token] = {"state": "none",
+                       "message": "The tile artwork here is the published one."}
+        return
+    code, count = sorted(behind.items())[0]
+    rest = (f" ({len(behind) - 1} other set also differs)" if len(behind) == 2
+            else f" ({len(behind) - 1} other sets also differ)"
+            if len(behind) > 2 else "")
+    _ART[token] = {
+        "state": "available",
+        "message": (f"{count} tile{'s' if count != 1 else ''} in the {code} "
+                    f"set {'differ' if count != 1 else 'differs'} from the "
+                    f"published artwork{rest}."),
+        "action": f"/settings/art-fetch?token={token}&code={code}",
+        "label": f"Update the {code} tiles"}
+
+
+def _fetch_artwork(token: str, code: str) -> None:
+    from . import tileart
+
+    written, why = tileart.fetch_set(code)
+    if why:
+        _ART[token] = {"state": "unreachable", "message": why.capitalize() + "."}
+        return
+    _ART[token] = {
+        "state": "available",
+        "message": (f"{written} tiles saved for {code}. They go onto the grid "
+                    f"on the next scan, where you can see the change before "
+                    f"anything is written."),
+        "action": f"/?scan=1&token={token}",
+        "method": "get",
+        "label": "Scan now"}
 
 
 def _describe_platform() -> str:

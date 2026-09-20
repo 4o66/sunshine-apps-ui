@@ -53,6 +53,28 @@ def _normalise(tag: str) -> str:
     return "-".join(out)
 
 
+def chosen() -> str:
+    """The language somebody picked in Settings, or "" to follow the machine.
+
+    Read from the same preferences file the web interface writes, rather than
+    passed in, because the things that need it are not all in the web
+    interface: a scan from the command line writes the same tiles, and it
+    would be absurd for `--scan` to produce a different language from the
+    button that runs a scan. The import is late and guarded so the engine
+    never depends on the interface being importable.
+    """
+    override = _normalise(os.environ.get("SAU_LANGUAGE", ""))
+    if override:
+        return override
+    try:
+        from . import state
+
+        value = state.prefs().get("language")
+    except Exception:              # noqa: BLE001 - a preference, never a failure
+        return ""
+    return _normalise(value) if isinstance(value, str) else ""
+
+
 def system_language() -> str:
     """What language this machine is set to, or "" if it will not say.
 
@@ -88,7 +110,7 @@ def system_language() -> str:
 
 def candidates(tag: str = "") -> List[str]:
     """The chain to try: pt-BR, then pt, then English."""
-    tag = _normalise(tag) if tag else system_language()
+    tag = _normalise(tag) if tag else (chosen() or system_language())
     chain = []
     while tag:
         if tag not in chain:
@@ -106,6 +128,25 @@ def available() -> List[str]:
                       if name.endswith(".json"))
     except OSError:
         return []
+
+
+def languages() -> List[Dict[str, str]]:
+    """Every shipped catalogue, with the name to show for it.
+
+    A language is named in itself -- Deutsch, not German -- because the person
+    looking for it reads it in itself. The English name comes too, for whoever
+    is looking at a list in a script they cannot read.
+    """
+    out: List[Dict[str, str]] = []
+    for code in available():
+        meta = _read(code).get("_meta") or {}
+        out.append({
+            "code": code,
+            "name": str(meta.get("name") or code),
+            "name_in_english": str(meta.get("name_in_english")
+                                   or meta.get("name") or code),
+        })
+    return sorted(out, key=lambda item: item["name_in_english"].lower())
 
 
 def _read(code: str) -> Dict[str, Any]:
@@ -171,7 +212,8 @@ def tile_set(tag: str = "") -> str:
     """
     base = tiles_dir()
     asked = candidates(tag)
-    if DEFAULT not in (_normalise(tag) if tag else system_language() or ""):
+    if DEFAULT not in (_normalise(tag) if tag
+                       else (chosen() or system_language() or "")):
         asked = [code for code in asked if code != DEFAULT]
     for code in asked:
         candidate = os.path.join(base, code)

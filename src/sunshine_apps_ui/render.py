@@ -725,6 +725,7 @@ background:var(--bg-subtle);border:1px solid var(--border);font-size:.9rem}
 def settings_page(token: str, *, prefs: Dict[str, Any],
                   answer: Optional[Any] = None,
                   notice: str = "",
+                  language: Optional[Dict[str, Any]] = None,
                   via_sunshine: bool = False) -> str:
     """Everything that is a preference rather than a change to the app list.
 
@@ -763,6 +764,40 @@ def settings_page(token: str, *, prefs: Dict[str, Any],
     notice_html = (f'<div class="result unreachable">{_e(notice)}</div>'
                    if notice else "")
 
+    picked = str(prefs.get("language", "") or "")
+    info = language or {}
+    options = [
+        f'<option value=""{" selected" if not picked else ""}>'
+        f'Follow the system{_e(info.get("system_suffix", ""))}</option>']
+    for item in info.get("languages", []):
+        code = str(item.get("code", ""))
+        label = item.get("name", code)
+        if item.get("name_in_english") and item["name_in_english"] != label:
+            label = f'{label} ({item["name_in_english"]})'
+        options.append(
+            f'<option value="{_e(code)}"'
+            f'{" selected" if picked == code else ""}>{_e(label)}</option>')
+    options = "".join(options)
+    showing = _e(info.get("showing", ""))
+
+    # An offer rather than an announcement: a download is a download, and the
+    # only button here that reaches the network says what it will fetch first.
+    art = info.get("art") or {}
+    art_notice = ""
+    if art.get("message"):
+        action = ""
+        if art.get("action") and art.get("method") == "get":
+            action = (f'<div class="actions" style="margin:.7rem 0 0">'
+                      f'<a class="btn" href="{_e(art["action"])}">'
+                      f'{_e(art.get("label", "Go"))}</a></div>')
+        elif art.get("action"):
+            action = (f'<div class="actions" style="margin:.7rem 0 0">'
+                      f'<form method="post" action="{_e(art["action"])}">'
+                      f'<button class="btn" type="submit">'
+                      f'{_e(art.get("label", "Download"))}</button></form></div>')
+        art_notice = (f'<div class="result {_e(art.get("state", "none"))}">'
+                      f'{_e(art["message"])}{action}</div>')
+
     return f"""<!doctype html>
 {_html()}<head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -792,6 +827,26 @@ def settings_page(token: str, *, prefs: Dict[str, Any],
       <button class="btn" type="submit">Check for updates</button>
     </form>
     {found}
+  </div>
+
+  <div class="setting">
+    <h3>Language</h3>
+    <p class="why">Which language the words on the tiles are in. The interface
+    itself is English for now; the strings are ready to be translated and a
+    language is a file and a pull request &mdash; see
+    <code>docs/i18n.md</code>.</p>
+    <form method="post" action="/settings/language{q}">
+      <select name="language" onchange="this.form.submit()">{options}</select>
+      <noscript><button class="btn sec" type="submit">Save</button></noscript>
+    </form>
+    <p class="why">{showing}</p>
+    <form method="post" action="/settings/art-check{q}">
+      <button class="btn sec" type="submit">Check for new tile artwork</button>
+    </form>
+    <p class="why">Looks only at the sets on this machine &mdash; the wordless
+    tiles and any language you have asked for &mdash; and never downloads the
+    others.</p>
+    {art_notice}
   </div>
 
   <div class="setting">

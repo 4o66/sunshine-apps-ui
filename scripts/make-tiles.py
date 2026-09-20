@@ -16,6 +16,7 @@ scripts do not.
 """
 
 import argparse
+import hashlib
 import json
 import os
 import sys
@@ -383,11 +384,45 @@ def build_template(out_dir):
     return made
 
 
+def write_manifest():
+    """List every shipped set, with a hash per file.
+
+    Two things need this. A machine changing language has to know whether a
+    set exists for it before it asks for one, and one already carrying a set
+    has to know whether the copy it has is the copy we publish. Both are
+    answered by comparing hashes, so the manifest is the artwork's index and
+    its version at once -- there is no separate version number to forget to
+    bump.
+    """
+    sets = {}
+    for name in sorted(os.listdir(TILES)):
+        folder = os.path.join(TILES, name)
+        if not os.path.isdir(folder) or name == "_template":
+            continue
+        files = {}
+        for filename in sorted(os.listdir(folder)):
+            if not filename.endswith(".png"):
+                continue
+            with open(os.path.join(folder, filename), "rb") as handle:
+                files[filename] = hashlib.sha256(handle.read()).hexdigest()
+        if files:
+            sets[name] = files
+    path = os.path.join(TILES, "manifest.json")
+    with open(path, "w", encoding="utf-8") as handle:
+        json.dump({"schema": 1, "sets": sets}, handle, indent=1, sort_keys=True)
+        handle.write("\n")
+    print("manifest: %d sets, %d files"
+          % (len(sets), sum(len(f) for f in sets.values())))
+    return path
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--lang", default="en",
                         help="language code; must have locales/<code>.json")
     parser.add_argument("--wordless-only", action="store_true")
+    parser.add_argument("--manifest-only", action="store_true",
+                        help="rewrite assets/tiles/manifest.json and stop")
     parser.add_argument("--template", action="store_true",
                         help="rebuild assets/tiles/_template (canvases for "
                              "hand-lettering a language we cannot render)")
@@ -398,18 +433,23 @@ def main(argv=None):
               "\n  ".join(FONTS), file=sys.stderr)
         return 2
 
+    if args.manifest_only:
+        write_manifest()
+        return 0
+
     if args.template:
         out = os.path.join(TILES, "_template")
         os.makedirs(out, exist_ok=True)
         made = build_template(out)
         print("template: %d canvases in %s" % (len(made), out))
-        return 0
+        return 0                      # templates are not a shipped set
 
     wordless_dir = os.path.join(TILES, "_wordless")
     os.makedirs(wordless_dir, exist_ok=True)
     made = build_wordless(wordless_dir)
     print("wordless: %d tiles in %s" % (len(made), wordless_dir))
     if args.wordless_only:
+        write_manifest()
         return 0
 
     catalogue = os.path.join(LOCALES, args.lang + ".json")
@@ -425,6 +465,7 @@ def main(argv=None):
     os.makedirs(out_dir, exist_ok=True)
     made = build_worded(out_dir, strings)
     print("%s: %d tiles in %s" % (args.lang, len(made), out_dir))
+    write_manifest()
     return 0
 
 

@@ -2077,3 +2077,119 @@ class RestoreDefaultTilesTest(ServerTest):
         status, _ = self.post({}, path="/settings/defaults")
         self.assertEqual(status, 404)
         self.assertEqual(seen, {})
+
+
+class LanguageSettingTest(ServerTest):
+    """Choosing the language the tiles are written in, and the artwork for it.
+
+    The setting is about tiles, not the interface: the interface is English
+    until somebody translates it. What this has to get right is that changing
+    a language never downloads anything by itself, and that the one button
+    that does reach the network says what it will fetch first.
+    """
+
+    def _remote(self, sets, why=""):
+        from sunshine_apps_ui import tileart
+        patched = mock.patch.object(tileart, "remote_manifest",
+                                    lambda timeout=0: (sets, why))
+        patched.start()
+        self.addCleanup(patched.stop)
+
+    def _set(self, choice):
+        return self.post({"language": choice}, token=self.token,
+                         path="/settings/language")
+
+    def test_the_languages_we_ship_are_offered(self):
+        _, body = self.get(f"/settings?token={self.token}")
+        self.assertIn('<option value="en"', body)
+        self.assertIn("Follow the system", body)
+
+    def test_choosing_one_is_remembered(self):
+        from sunshine_apps_ui import state
+        self._remote({})
+        self._set("en")
+        self.assertEqual(state.prefs().get("language"), "en")
+
+    def test_following_the_system_is_the_empty_choice(self):
+        from sunshine_apps_ui import state
+        self._remote({})
+        self._set("en")
+        self._set("")
+        self.assertEqual(state.prefs().get("language"), "")
+
+    def test_a_language_we_do_not_ship_is_refused(self):
+        from sunshine_apps_ui import state
+        self._set("../../etc/passwd")
+        self.assertIsNone(state.prefs().get("language"))
+        _, body = self.get(f"/settings?token={self.token}")
+        self.assertIn("not a language we ship", body)
+
+    def test_changing_language_downloads_nothing(self):
+        """It offers. A couple of megabytes is not a side effect of a dropdown."""
+        from sunshine_apps_ui import tileart
+        fetched = []
+        patched = mock.patch.object(
+            tileart, "fetch_set",
+            lambda *a, **k: (fetched.append(a) or (0, "")))
+        patched.start()
+        self.addCleanup(patched.stop)
+        self._remote({"fr": {"steam.png": "f" * 64}})
+        self._set("en")
+        self.assertEqual(fetched, [])
+
+    def test_the_check_reports_when_everything_matches(self):
+        self._remote({})
+        self.post({}, token=self.token, path="/settings/art-check")
+        _, body = self.get(f"/settings?token={self.token}")
+        self.assertIn("the published one", body)
+
+    def test_the_check_offers_an_update_when_a_set_differs(self):
+        from sunshine_apps_ui import tileart
+        self._remote({"_wordless": {"steam.png": "f" * 64}})
+        patched = mock.patch.object(tileart, "stale", lambda remote: {"_wordless": 3})
+        patched.start()
+        self.addCleanup(patched.stop)
+        self.post({}, token=self.token, path="/settings/art-check")
+        _, body = self.get(f"/settings?token={self.token}")
+        self.assertIn("3 tiles in the _wordless set differ from", body)
+        self.assertIn("/settings/art-fetch", body)
+
+    def test_the_check_says_so_when_it_cannot_reach_us(self):
+        self._remote({}, why="the artwork list could not be reached (offline)")
+        self.post({}, token=self.token, path="/settings/art-check")
+        _, body = self.get(f"/settings?token={self.token}")
+        self.assertIn("could not be reached", body)
+
+    def test_a_download_reports_what_it_saved(self):
+        from sunshine_apps_ui import tileart
+        patched = mock.patch.object(tileart, "fetch_set", lambda code: (23, ""))
+        patched.start()
+        self.addCleanup(patched.stop)
+        # The code travels in the link behind the button, as the offer builds it.
+        self.post({}, path=f"/settings/art-fetch?code=fr&token={self.token}")
+        _, body = self.get(f"/settings?token={self.token}")
+        self.assertIn("23 tiles saved for fr", body)
+        self.assertIn("Scan now", body)
+
+    def test_a_failed_download_says_why(self):
+        from sunshine_apps_ui import tileart
+        patched = mock.patch.object(
+            tileart, "fetch_set", lambda code: (0, "steam.png did not match"))
+        patched.start()
+        self.addCleanup(patched.stop)
+        self.post({}, path=f"/settings/art-fetch?code=fr&token={self.token}")
+        _, body = self.get(f"/settings?token={self.token}")
+        self.assertIn("did not match", body)
+
+    def test_the_notice_is_shown_once(self):
+        self._remote({})
+        self.post({}, token=self.token, path="/settings/art-check")
+        self.get(f"/settings?token={self.token}")
+        _, body = self.get(f"/settings?token={self.token}")
+        self.assertNotIn("the published one", body)
+
+    def test_it_needs_the_token(self):
+        from sunshine_apps_ui import state
+        status, _ = self.post({"language": "en"}, path="/settings/language")
+        self.assertEqual(status, 404)
+        self.assertIsNone(state.prefs().get("language"))
