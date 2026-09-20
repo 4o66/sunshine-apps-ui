@@ -255,12 +255,13 @@ def glyph_tv(inner=None):
     d = ImageDraw.Draw(m)
     rounded(d, [4 * s, 14 * s, 96 * s, 76 * s], 6 * s, (255, 255, 255, 255))
     rounded(d, [9 * s, 19 * s, 91 * s, 71 * s], 3 * s, (0, 0, 0, 0))
-    # Feet, not a stand. Two of them, splayed, the way a television stands.
-    d.polygon([(20 * s, 88 * s), (30 * s, 76 * s), (37 * s, 76 * s),
-               (27 * s, 88 * s)], fill=(255, 255, 255, 255))
-    d.polygon([(80 * s, 88 * s), (70 * s, 76 * s), (63 * s, 76 * s),
-               (73 * s, 88 * s)], fill=(255, 255, 255, 255))
-    rounded(d, [18 * s, 86 * s, 82 * s, 92 * s], 3 * s, (255, 255, 255, 255))
+    # Two feet, near the corners, and no rail between them: with a bar across
+    # the bottom it stopped being a television and became a monitor on a
+    # stand, which is the glyph this one exists not to be.
+    d.polygon([(8 * s, 90 * s), (22 * s, 76 * s), (31 * s, 76 * s),
+               (17 * s, 90 * s)], fill=(255, 255, 255, 255))
+    d.polygon([(92 * s, 90 * s), (78 * s, 76 * s), (69 * s, 76 * s),
+               (83 * s, 90 * s)], fill=(255, 255, 255, 255))
     if inner is not None:
         # Larger than the monitor's 30: this screen is wider, and a mark that
         # left as much dead glass as the desktop tile does reads as an empty
