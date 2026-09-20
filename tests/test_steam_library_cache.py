@@ -20,6 +20,7 @@ import shutil
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "src"))
 
@@ -145,8 +146,23 @@ class SgdbNoteTest(unittest.TestCase):
     def test_it_says_what_steamgriddb_is(self):
         self.assertIn("community library", self.note())
 
-    def test_it_leads_with_the_situation_rather_than_the_missing_key(self):
-        self.assertTrue(self.note().startswith("No artwork was found"))
+    def test_it_does_not_claim_anything_about_what_was_found(self):
+        """This function has no idea. It is one source among several.
+
+        It used to lead with "No artwork was found for this one", which read
+        correctly while SteamGridDB was the last resort -- and became a lie the
+        moment our own tiles were offered on the same page. The lead is now
+        added by find_candidates, which is the only thing that knows.
+        """
+        self.assertFalse(self.note().startswith("No artwork was found"))
+
+    def test_the_situation_still_leads_when_there_is_nothing(self):
+        with mock.patch.object(artwork_sources, "_origin_bytes",
+                               side_effect=OSError("404")):
+            result = artwork_sources.find_candidates(
+                tempfile.mkdtemp(), name="Whatever", source="heroic", ident="x")
+        self.assertEqual(result["candidates"], [])
+        self.assertTrue(result["notes"][0].startswith("No artwork was found"))
 
 if __name__ == "__main__":
     unittest.main()

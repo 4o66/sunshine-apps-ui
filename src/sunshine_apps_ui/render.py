@@ -1549,6 +1549,11 @@ padding:.5rem .7rem;font:inherit}
 # Where each candidate came from, said the way it matters to someone choosing:
 # not the name of an API, but why this picture might be the right one.
 _ART_SOURCES = [
+    ("ours", "The tiles this program ships",
+     "Both versions of this tile: the one with words on it, in the language "
+     "you have chosen, and the one with none. A wordless tile is right in "
+     "every language, which is why it is the one a machine gets when nobody "
+     "has drawn its language yet."),
     ("steam-local", "On this machine",
      "What Steam has already downloaded for its own library. Usually the "
      "current art, because Steam keeps it up to date."),
@@ -1571,7 +1576,12 @@ def artwork_page(candidates: List[Dict[str, Any]], token: str, *, key: str,
 
     def tile(candidate: Dict[str, Any]) -> str:
         path = str(candidate.get("path") or "")
-        is_current = bool(current) and path == current
+        # A candidate from a network is used from the cached copy, so that is
+        # what the entry points at. One of ours is used from where it already
+        # lies, so the entry points at the origin instead -- and comparing only
+        # the cached copy left the tile actually in use labelled "choose".
+        origin = str(candidate.get("origin") or "")
+        is_current = bool(current) and current in (path, origin)
         return (f'<figure class="{"current" if is_current else ""}">'
                 f'<a href="/artwork?key={_eq(key)}&choose={_eq(str(candidate.get("id")))}'
                 f'&q={_eq(searched)}&token={_e(token)}">'

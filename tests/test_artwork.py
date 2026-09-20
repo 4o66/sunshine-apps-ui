@@ -186,3 +186,24 @@ class WindowsPathMatchingTest(unittest.TestCase):
         if os.name == "nt":
             self.skipTest("POSIX only")
         self.assertNotEqual(artwork._key("/tmp/Cover.png"), artwork._key("/tmp/cover.png"))
+
+
+class OurTileInUseTest(unittest.TestCase):
+    """One of ours is used from where it lies, not from the candidate cache."""
+
+    def _page(self, current):
+        from sunshine_apps_ui.render import artwork_page
+        return artwork_page(
+            [{"id": "a1", "source": "ours", "label": "Ours, in English",
+              "origin": "/opt/app/assets/tiles/en/steam.png",
+              "path": "/conf/.candidates/a1.png"}],
+            token="t", key="index:0", label="Zz Steam", current=current)
+
+    def test_the_origin_counts_as_in_use(self):
+        self.assertIn("in use", self._page("/opt/app/assets/tiles/en/steam.png"))
+
+    def test_the_cached_copy_still_counts_as_in_use(self):
+        self.assertIn("in use", self._page("/conf/.candidates/a1.png"))
+
+    def test_anything_else_does_not(self):
+        self.assertNotIn("in use", self._page("/home/u/my-own.png"))

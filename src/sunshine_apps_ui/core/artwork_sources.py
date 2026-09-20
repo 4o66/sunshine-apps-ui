@@ -253,6 +253,25 @@ def _fetch_candidate(conf_dir: str, candidate: Dict[str, Any], timeout: int) -> 
 # The sources
 
 
+def _ours(source: str, ident: str) -> List[Dict[str, Any]]:
+    """Our own artwork for our own tiles, offered before anything on a network.
+
+    It is first because for these entries it is the right answer: it is the
+    picture the tile ships with, it is already on the disk, and the only
+    reason to open the picker on one of ours is usually to swap the worded set
+    for the wordless one or back. A game has none of these and gets none.
+    """
+    if source != "launcher" or not ident:
+        return []
+    from .sources.launchers import our_tiles
+
+    found = []
+    for tile in our_tiles(str(ident)):
+        found.append({"id": candidate_id(tile["origin"]), "source": "ours",
+                      "label": tile["label"], "origin": tile["origin"]})
+    return found
+
+
 def _steam_local(steam_root: str, appid: str) -> List[Dict[str, Any]]:
     """Artwork Steam has already downloaded for this machine."""
     if not (steam_root and str(appid).isdigit()):
@@ -351,10 +370,14 @@ def _sgdb(name: str, appid: str, key: str, timeout: int,
         # itself is still wrong and is issue #22: this reads as a requirement
         # when it is one optional source among several, and assumes the reader
         # knows what SteamGridDB is.
-        return [], ("No artwork was found for this one. SteamGridDB is a "
-                    "community library of game artwork; if you have an account "
-                    "there, sunshine-apps-ui --save-sgdb-key adds your key and "
-                    "its pictures appear here too.")
+        # No leading claim about what was found: this function has no idea.
+        # The caller knows, and adds one only when it is true -- otherwise the
+        # page says "no artwork was found" directly above two perfectly good
+        # pictures, which is how the old wording read once our own tiles were
+        # offered here.
+        return [], ("SteamGridDB is a community library of game artwork; if you "
+                    "have an account there, sunshine-apps-ui --save-sgdb-key "
+                    "adds your key and its pictures appear here too.")
 
     def grids(endpoint: str) -> List[Dict[str, Any]]:
         try:
@@ -415,6 +438,7 @@ def find_candidates(conf_dir: str, *, name: str = "", source: str = "",
     notes: List[str] = []
 
     wanted: List[Dict[str, Any]] = []
+    wanted += _ours(source, ident)
     wanted += _steam_local(steam_root, appid)
     wanted += _steam_cdn(appid)
     if sgdb_enable:
@@ -424,6 +448,8 @@ def find_candidates(conf_dir: str, *, name: str = "", source: str = "",
             notes.append(note)
 
     if not wanted:
+        if notes:
+            notes[0] = "No artwork was found for this one. " + notes[0]
         return {"candidates": [], "notes": notes or [
             "Nothing to suggest for this app. Browse for a file instead."]}
 
@@ -434,6 +460,8 @@ def find_candidates(conf_dir: str, *, name: str = "", source: str = "",
     # Order follows `wanted`, which is the order a person wants to see: what is
     # already on this machine, then what Valve has now, then community art.
     candidates = [c for c in fetched if c]
+    if not candidates and notes:
+        notes[0] = "No artwork was found for this one. " + notes[0]
     if not candidates and not notes:
         notes.append("None of the artwork sources answered. Check the network, "
                      "or browse for a file.")

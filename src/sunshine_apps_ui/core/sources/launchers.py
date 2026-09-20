@@ -195,6 +195,59 @@ def _desktop_tile_name() -> str:
     return "desktop-linux.png"          # Tux, which is right anywhere
 
 
+def tile_filename(marker_id: str) -> str:
+    """The artwork file we ship for one of our own tiles, by marker id.
+
+    The desktop pair is worked out rather than listed, because which one it is
+    depends on the machine: a Bazzite box wants `desktop-bazzite.png` and a
+    Windows one `desktop-windows.png`.
+    """
+    if marker_id == "desktop":
+        return _desktop_tile_name()
+    if marker_id == "desktop-lowres":
+        return _desktop_tile_name().replace("desktop-", "desktop-lowres-")
+    for key, filename in TILE_FILES.items():
+        if key == marker_id:
+            return filename
+    for _, (candidate, _name, art) in FACTORY_TILES.items():
+        if candidate == marker_id and isinstance(art, str):
+            return art
+    return ""
+
+
+def our_tiles(marker_id: str) -> List[Dict[str, str]]:
+    """Both of our tiles for one entry: the one with words, and the one without.
+
+    The picker offers whatever it can find on the internet for a game. For our
+    own tiles the artwork is *here*, in two versions, and which one somebody
+    wants is a preference rather than a fact about their machine -- a French
+    speaker may well prefer the English tile to a wordless one, and there is no
+    way for us to know. So both are offered and neither is assumed.
+
+    Returns [] for anything that is not ours, which is every game.
+    """
+    from ... import i18n
+
+    filename = tile_filename(marker_id)
+    if not filename:
+        return []
+
+    found: List[Dict[str, str]] = []
+    worded = os.path.join(i18n.tile_set(), filename)
+    wordless = os.path.join(i18n.tiles_dir(), i18n.WORDLESS, filename)
+    if os.path.isfile(worded) and os.path.abspath(worded) != os.path.abspath(wordless):
+        code = os.path.basename(os.path.dirname(worded))
+        name = code
+        for item in i18n.languages():
+            if item["code"] == code:
+                name = item["name_in_english"]
+                break
+        found.append({"label": f"Ours, in {name}", "origin": worded})
+    if os.path.isfile(wordless):
+        found.append({"label": "Ours, without words", "origin": wordless})
+    return found
+
+
 def _ensure_posters(images_dir: str) -> Dict[str, str]:
     """Where each launcher tile's artwork is. Nothing is downloaded.
 

@@ -194,11 +194,39 @@ class FindCandidatesTest(_Fixture):
         self.assertTrue(any("SteamGridDB" in n for n in result["notes"]))
 
     def test_a_non_steam_app_with_no_key_says_so_rather_than_failing(self):
+        """The note is still made, even now that one of ours has art regardless."""
         with self.fake_fetch():
-            result = art.find_candidates(self.conf, name="Zz Reboot",
-                                         source="launcher", ident="reboot")
+            result = art.find_candidates(self.conf, name="Some Game",
+                                         source="heroic", ident="abc123")
         self.assertEqual(result["candidates"], [])
         self.assertTrue(result["notes"])
+
+    def test_one_of_our_own_tiles_offers_both_versions_of_itself(self):
+        """With words and without: which one somebody wants is a preference."""
+        with self.fake_fetch():
+            result = art.find_candidates(self.conf, name="Zz Reboot Host",
+                                         source="launcher", ident="reboot")
+        ours = [c for c in result["candidates"] if c["source"] == "ours"]
+        self.assertEqual([c["label"] for c in ours],
+                         ["Ours, in English", "Ours, without words"])
+        self.assertTrue(all(c["path"] for c in ours))
+
+    def test_ours_come_before_anything_on_a_network(self):
+        with self.fake_fetch():
+            result = art.find_candidates(self.conf, name="Zz Steam",
+                                         source="launcher", ident="steam")
+        self.assertEqual(result["candidates"][0]["source"], "ours")
+
+    def test_a_game_is_not_offered_our_tiles(self):
+        with self.fake_fetch():
+            result = art.find_candidates(self.conf, source="steam", ident="526870")
+        self.assertFalse([c for c in result["candidates"] if c["source"] == "ours"])
+
+    def test_an_entry_of_ours_we_have_no_tile_for_offers_nothing_of_ours(self):
+        with self.fake_fetch():
+            result = art.find_candidates(self.conf, name="Something",
+                                         source="launcher", ident="not-a-tile")
+        self.assertFalse([c for c in result["candidates"] if c["source"] == "ours"])
 
 
 class SgdbTest(_Fixture):
@@ -337,3 +365,29 @@ class SgdbKeyTest(_Fixture):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class NotesTest(_Fixture):
+    """What the page says about what it found, which has to be true."""
+
+    def test_nothing_found_says_so(self):
+        with self.fake_fetch(set()):
+            result = art.find_candidates(self.conf, name="Something",
+                                         source="heroic", ident="abc")
+        self.assertTrue(result["notes"])
+        self.assertTrue(result["notes"][0].startswith("No artwork was found"))
+
+    def test_something_found_does_not_claim_otherwise(self):
+        """Ours are offered for our own tiles, so "nothing found" would be a lie."""
+        with self.fake_fetch():
+            result = art.find_candidates(self.conf, name="Zz Reboot Host",
+                                         source="launcher", ident="reboot")
+        self.assertTrue(result["candidates"])
+        self.assertFalse(any(n.startswith("No artwork was found")
+                             for n in result["notes"]))
+
+    def test_the_steamgriddb_note_is_still_made(self):
+        with self.fake_fetch():
+            result = art.find_candidates(self.conf, name="Zz Reboot Host",
+                                         source="launcher", ident="reboot")
+        self.assertTrue(any("SteamGridDB" in n for n in result["notes"]))

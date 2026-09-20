@@ -202,3 +202,27 @@ Until 2026-09-19 these four tiles were downloaded **at scan time** from
 and two of them carried Steam's and Heroic's logos with no licence recorded.
 A scan reached out to a stranger's repository for artwork it then wrote into
 the user's `apps.json`. That is the thing this template exists to have stopped.
+
+## Swapping a tile between worded and wordless
+
+The artwork picker offers **both of our tiles** for any entry of ours: the
+worded one from the language in Settings, and the wordless one. Which is
+wanted is a preference and not a fact about the machine — a French speaker may
+well prefer the English tile to a wordless one, and there is no way for us to
+know — so both are offered and neither is assumed.
+
+They come before anything on a network, because for these entries the shipped
+picture is the right answer and it is already on the disk. A game is offered
+none of them.
+
+Two things this changed elsewhere, both worth knowing:
+
+- The SteamGridDB note used to begin "No artwork was found for this one".
+  That read correctly while SteamGridDB was the last resort, and became false
+  the moment our own tiles appeared on the same page. `_sgdb()` no longer
+  claims anything about what was found — it cannot know — and
+  `find_candidates()` adds the lead only when there is genuinely nothing.
+- "In use" compares the candidate's **origin** as well as its cached copy. A
+  picture from a network is used from the cache, so the entry points there;
+  one of ours is used from where it lies, and comparing only the cache left
+  the tile actually in use labelled "choose".
