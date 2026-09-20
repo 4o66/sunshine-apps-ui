@@ -94,8 +94,8 @@ as many words, and nothing here implies endorsement.
 Big Picture sits on the same grid as the desktop tiles, so it cannot be the
 monitor glyph with a Steam roundel in it -- that reads as "the desktop, with
 Steam on it", which is a different tile. The television is wider (a 4-unit
-bezel against the monitor's 8, on the same 100 x 100 grid), stands on two
-splayed feet and a bar rather than a pedestal, and carries the mark at 42
+bezel against the monitor's 8, on the same 100 x 100 grid), stands on two short
+splayed feet, with nothing joining them, rather than a pedestal, and carries the mark at 42
 units against the monitor's 30, because a wider screen with the same mark on
 it looks switched off.
 

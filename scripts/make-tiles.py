@@ -258,10 +258,10 @@ def glyph_tv(inner=None):
     # Two feet, near the corners, and no rail between them: with a bar across
     # the bottom it stopped being a television and became a monitor on a
     # stand, which is the glyph this one exists not to be.
-    d.polygon([(8 * s, 90 * s), (22 * s, 76 * s), (31 * s, 76 * s),
-               (17 * s, 90 * s)], fill=(255, 255, 255, 255))
-    d.polygon([(92 * s, 90 * s), (78 * s, 76 * s), (69 * s, 76 * s),
-               (83 * s, 90 * s)], fill=(255, 255, 255, 255))
+    d.polygon([(15 * s, 83 * s), (22 * s, 76 * s), (31 * s, 76 * s),
+               (24 * s, 83 * s)], fill=(255, 255, 255, 255))
+    d.polygon([(85 * s, 83 * s), (78 * s, 76 * s), (69 * s, 76 * s),
+               (76 * s, 83 * s)], fill=(255, 255, 255, 255))
     if inner is not None:
         # Larger than the monitor's 30: this screen is wider, and a mark that
         # left as much dead glass as the desktop tile does reads as an empty
