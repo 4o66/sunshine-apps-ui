@@ -809,6 +809,9 @@ def stamp_build(package_dir: str) -> bool:
                 'it describes one copy, not the source it came from."""\n'
                 f"BUILD = {found['build']!r}\n"
                 f"COMMIT = {found['commit']!r}\n"
+                # Which branch it was built from, because the build number
+                # only identifies a build off dev or main on its own.
+                f"BRANCH = {found.get('branch')!r}\n"
                 f"DIRTY = {bool(found['dirty'])!r}\n")
         return True
     except OSError:

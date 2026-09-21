@@ -106,7 +106,7 @@ class WhereTheBuildComesFromTest(unittest.TestCase):
             capture_output=True, text=True).stdout.strip()
         self.assertEqual(found["build"], expected)
 
-    def test_a_build_number_never_goes_backwards(self):
+    def test_a_build_number_never_goes_backward(self):
         """The only question a build number is asked is which one is newer."""
         found = version._from_git()
         if found is None:
@@ -158,10 +158,6 @@ class InstalledCopyTest(unittest.TestCase):
         root = version._repo_root()
         with open(os.path.join(root, ".gitignore"), encoding="utf-8") as handle:
             self.assertIn("_build.py", handle.read())
-
-
-if __name__ == "__main__":
-    unittest.main()
 
 
 class StampingTest(unittest.TestCase):
@@ -219,3 +215,134 @@ class StampingTest(unittest.TestCase):
             self.assertTrue(self.installer.stamp_build(self.package))
         self.assertIn("'42'", self._read())
         version.details(refresh=True)
+
+
+class OffTheIntegrationBranchTest(unittest.TestCase):
+    """A commit count only identifies a build on one line of history.
+
+    `main` takes only what `dev` already has, so those two never hold
+    different commits at the same depth and the number stands alone. Two issue
+    branches cut from the same commit do reach the same count, so those say
+    which branch and which commit as well. Issue #3.
+    """
+
+    def _on(self, branch, commit="abc1234", build="123", dirty=False):
+        return mock.patch.object(version, "_cached",
+                                 {"build": build, "commit": commit,
+                                  "branch": branch, "dirty": dirty})
+
+    def test_a_dev_build_is_named_by_its_number_alone(self):
+        with mock.patch.object(version, "CHANNEL", "dev"), self._on("dev"):
+            self.assertEqual(version.version(), f"{version.RELEASE}.dev123")
+            self.assertEqual(version.display(), f"dev {version.RELEASE}.123")
+
+    def test_and_so_is_one_off_main(self):
+        with mock.patch.object(version, "CHANNEL", "dev"), self._on("main"):
+            self.assertEqual(version.version(), f"{version.RELEASE}.dev123")
+
+    def test_an_issue_branch_carries_the_branch_and_the_commit(self):
+        with mock.patch.object(version, "CHANNEL", "dev"), self._on("issue-3"):
+            self.assertEqual(version.version(),
+                             f"{version.RELEASE}.dev123+issue.3.gabc1234")
+
+    def test_two_branches_at_the_same_depth_are_told_apart(self):
+        """The whole point: same build number, different version."""
+        with mock.patch.object(version, "CHANNEL", "dev"):
+            with self._on("issue-3", commit="aaaaaaa"):
+                first = version.version()
+            with self._on("issue-22", commit="bbbbbbb"):
+                second = version.version()
+        self.assertNotEqual(first, second)
+
+    def test_a_branch_build_sorts_above_the_dev_build_it_branched_from(self):
+        try:
+            from packaging.version import Version
+        except ImportError:
+            self.skipTest("packaging is not installed")
+        with mock.patch.object(version, "CHANNEL", "dev"):
+            with self._on("dev"):
+                base = version.version()
+            with self._on("issue-3"):
+                branch = version.version()
+            self.assertGreater(Version(branch), Version(base))
+            self.assertLess(Version(branch), Version(version.RELEASE))
+
+    def test_a_person_sees_the_branch_next_to_the_number(self):
+        with mock.patch.object(version, "CHANNEL", "dev"), self._on("issue-3"):
+            self.assertEqual(version.display(),
+                             f"dev {version.RELEASE}.123 (issue.3)")
+
+    def test_uncommitted_changes_are_still_admitted_on_a_branch(self):
+        with mock.patch.object(version, "CHANNEL", "dev"), \
+                self._on("issue-3", dirty=True):
+            self.assertIn("123+", version.display())
+            self.assertIn("(issue.3)", version.display())
+
+    def test_the_long_form_puts_the_branch_and_commit_in_one_parenthesis(self):
+        with mock.patch.object(version, "CHANNEL", "dev"), self._on("issue-3"):
+            self.assertEqual(version.long_display(),
+                             f"dev {version.RELEASE}.123 (issue.3 abc1234)")
+
+    def test_a_detached_head_falls_back_to_the_commit(self):
+        """Not a branch name, so the commit does the identifying."""
+        with mock.patch.object(version, "CHANNEL", "dev"), self._on(""):
+            self.assertEqual(version.version(),
+                             f"{version.RELEASE}.dev123+gabc1234")
+            self.assertIn("detached", version.display())
+
+    def test_a_copy_that_does_not_know_says_nothing(self):
+        """Stamped before branches existed. Silence beats a wrong claim."""
+        with mock.patch.object(version, "CHANNEL", "dev"), self._on(None):
+            self.assertEqual(version.version(), f"{version.RELEASE}.dev123")
+            self.assertEqual(version.display(), f"dev {version.RELEASE}.123")
+
+    def test_a_branch_name_becomes_a_legal_local_segment(self):
+        """PEP 440 allows alphanumerics and periods, and nothing else."""
+        for name, expected in (("issue-3", "issue.3"),
+                               ("feature/tile_art", "feature.tile.art"),
+                               ("ISSUE-3", "issue.3"),
+                               ("--", "branch")):
+            self.assertEqual(version._slug(name), expected, name)
+            self.assertRegex(version._slug(name), r"^[a-z0-9]+(\.[a-z0-9]+)*$")
+
+    def test_a_release_off_a_branch_admits_it(self):
+        """Releases are cut on main, so this is a warning sign worth seeing."""
+        with mock.patch.object(version, "CHANNEL", ""), self._on("issue-3"):
+            self.assertIn("(issue.3)", version.display())
+
+    def test_a_checkout_reports_the_branch_it_is_on(self):
+        found = version._from_git()
+        if found is None:
+            self.skipTest("not a git checkout")
+        expected = subprocess.run(
+            ["git", "-C", version._repo_root(), "rev-parse", "--abbrev-ref", "HEAD"],
+            capture_output=True, text=True).stdout.strip()
+        self.assertEqual(found["branch"], "" if expected == "HEAD" else expected)
+
+    def test_a_worktree_is_still_a_checkout(self):
+        """Its `.git` is a file, not a directory -- issue branches live in one,
+        and testing for a directory reported build 0 for every one of them."""
+        root = version._repo_root()
+        if not os.path.exists(os.path.join(root, ".git")):
+            self.skipTest("not a git checkout")
+        self.assertIsNotNone(version._from_git())
+
+
+class WhatIsStampedTest(unittest.TestCase):
+    """The branch has to survive into a copy that has no git."""
+
+    def test_the_branch_is_written_down(self):
+        from sunshine_apps_ui import installer
+        package = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, package, True)
+        with mock.patch.object(version, "_from_git",
+                               return_value={"build": "123", "commit": "abc",
+                                             "branch": "issue-3", "dirty": False}):
+            self.assertTrue(installer.stamp_build(package))
+        with open(os.path.join(package, "_build.py")) as handle:
+            self.assertIn("BRANCH = 'issue-3'", handle.read())
+        version.details(refresh=True)
+
+
+if __name__ == "__main__":
+    unittest.main()

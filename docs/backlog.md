@@ -17,10 +17,37 @@ so the issues carry their own argument; this is the context underneath them.
 How the version is decided, and who decides how big a bump is, is in
 `docs/releasing.md`.
 
-## A dev branch
+## A dev branch, and what the build number counts
 
-**Decided 2026-09-16. Not yet worth doing.** Tracked in
-[#3](https://github.com/4o66/sunshine-apps-ui/issues/3).
+**Decided 2026-09-16, branch created 2026-09-20, settled 2026-09-21.** Was
+[#3](https://github.com/4o66/sunshine-apps-ui/issues/3). The flow and the
+version rules are in `docs/releasing.md`.
+
+`main` carries releases, `dev` carries development, and work on an issue gets a
+branch of its own that merges back into `dev`.
+
+The build number is `git rev-list --count HEAD`, and the reason that survived
+the split is narrower than it first looks. The count only orders commits along
+one line of history, but `main` never holds a commit `dev` does not, so the two
+cannot reach the same depth with different commits. Merging a branch into `dev`
+raises the count by the branch plus its merge commit -- more than one, never
+less, so it still only ever answers which build is newer.
+
+What genuinely collides is a build taken on a branch *before* it merges: two
+issue branches cut from the same commit both reach the same count. So those,
+and only those, add the branch and the commit in the PEP 440 local segment,
+which sorts them above the `dev` build they came from and below the release.
+Builds off `dev` and `main` were left exactly as they read before, so no
+existing number was renumbered and no tag changed meaning.
+
+**Rejected: `git describe` against the last tag, and dropping the commit count.**
+Both renumber every build to fix an ambiguity that only affects unmerged
+branches. `--first-parent` counting was the real alternative -- it would have
+made the number count integrations rather than commits, and while the history
+was still linear the two agreed, so it was free to adopt that day and never
+again. Counting commits was kept because the number should reflect the work in
+it, and because squash-merging an issue branch keeps `dev` a single line
+anyway.
 
 ## Run everywhere Sunshine runs
 
@@ -198,7 +225,7 @@ added `POST /api/reset-portal-token` (it deletes the saved XDG Portal restore
 token, and is a no-op off Linux). None of them writes `meta`. `/api/apps` POST
 replaces one app, DELETE removes one. The `bsm` markers ride inside each entry
 and survive, but the managed list and the tombstones have no API path. Any
-design that avoids writing the file directly has to put them somewhere else, and they then stop travelling with the file and
+design that avoids writing the file directly has to put them somewhere else, and they then stop traveling with the file and
 stop being in the backups.
 
 ## What generic Linux established
@@ -258,7 +285,7 @@ tile. Artwork is what they change first and what this is about.
 
 **We set the name and the artwork, and nothing else.** `Low Res Desktop` is a
 `prep-cmd` that runs `xrandr` and undoes it afterwards; `Steam Big Picture` is
-a detached launch with an undo that closes Big Picture again. That behaviour is
+a detached launch with an undo that closes Big Picture again. That behavior is
 the entire point of those two tiles, we do not author it, and `_merge` leaves
 any field the desired entry does not mention exactly as it found it.
 
@@ -372,7 +399,7 @@ the machine uses now.
 question, which is an ordinary thing for a test to do, and on Fedora that
 reached a real `sudo dnf install` -- 241 MiB of it, stopped only by having no
 tty to answer dnf's prompt at. The offer now refuses to run a package manager
-without a terminal, which is also the honest behaviour: sudo prompts on the
+without a terminal, which is also the honest behavior: sudo prompts on the
 terminal itself.
 
 **And seven tests that read the machine they ran on** rather than a fixture:
