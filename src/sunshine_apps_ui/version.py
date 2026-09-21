@@ -20,7 +20,7 @@ from typing import Optional
 RELEASE = "1.1.0"
 
 #: "dev" until there is a release to call it. Set to "" to cut one.
-CHANNEL = "dev"
+CHANNEL = ""
 
 _cached: Optional[dict] = None
 
