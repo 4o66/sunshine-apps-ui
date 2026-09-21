@@ -8,7 +8,7 @@
     CHANNEL = "dev"      # "" once it is one
 
 The build number is `git rev-list --count HEAD`. Nothing to maintain, it never
-goes backwards, and it answers the only question a build number is asked: which
+goes backward, and it answers the only question a build number is asked: which
 one is newer. So a tag and what the program prints are the same thing by
 construction, rather than by remembering to keep them in step.
 
@@ -16,9 +16,12 @@ construction, rather than by remembering to keep them in step.
 |---|---|
 | A development build | `dev 0.1.0.57`, or `0.1.0.dev57` in PEP 440 |
 | With uncommitted changes | `dev 0.1.0.57+` -- it is not the commit it claims to be |
+| On an issue branch | `dev 0.1.0.57 (issue.22)`, or `0.1.0.dev57+issue.22.gabc1234` |
 | A release | `0.1.0`, both ways |
 
 `.devN` sorts *below* the release it precedes, which is the point of using it.
+A branch build sorts *above* the `dev` build it came from and still below the
+release, because a local segment orders after the version it hangs off.
 
 An installed copy has no git, so `--stamp-build` writes the number into the
 source tree and the installer carries it across. Stamping will not replace a
@@ -64,9 +67,34 @@ collaborators, and stay as they are when the repository goes public.
    builds after the release describe themselves as heading somewhere rather
    than claiming to be the release that just went out.
 
-## One thing that will need settling
+## Branches
 
-The build number is unambiguous because there is a single line of history. Two
-branches at the same depth produce the same count for different commits, so the
-day development moves to its own branch, the build number has to carry the
-branch or stop being the commit count. See `backlog.md`.
+`main` carries releases. `dev` carries development, and is where build numbers
+come from. Work on an issue gets a branch off `dev` and merges back into it;
+`main` takes a merge only when a release is cut, which is why it never holds a
+commit `dev` does not.
+
+    git fetch -q origin
+    git worktree add /tmp/issue-22 origin/dev -b issue-22
+    # work, commit, push, open a pull request against dev, merge
+    git worktree remove /tmp/issue-22
+
+A worktree keeps one checkout per piece of work, which matters here because
+several sessions run against this repository at once.
+
+**Why the build number survives this.** The commit count only orders commits
+along one line of history, and there are two. It holds anyway for anything you
+would tag or ship: `main` never holds a commit `dev` does not, so the two
+cannot reach the same depth with different commits, and merging a branch into
+`dev` raises the count by the whole branch plus its merge commit.
+
+What does collide is a build taken on a branch before it merges -- two issue
+branches cut from the same commit both reach the same count. Those carry the
+branch and the commit in the local segment, so they are told apart from each
+other and from the `dev` build they branched off. Builds off `dev` and `main`
+read exactly as they did before this, so no number was renumbered and no
+existing tag changed meaning. The argument, and what was rejected, is in
+`backlog.md`.
+
+**Do not cut a release off a branch.** If you do, the version says so in
+parentheses rather than pretending otherwise.
