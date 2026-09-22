@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Tests for artwork path handling."""
 import os
+import shutil
 import sys
 import tempfile
 import unittest
@@ -207,3 +208,62 @@ class OurTileInUseTest(unittest.TestCase):
 
     def test_anything_else_does_not(self):
         self.assertNotIn("in use", self._page("/home/u/my-own.png"))
+
+
+class TheSettingsOfferOnThePickerTest(unittest.TestCase):
+    """Issue #22. When there is no SteamGridDB key, the note says one can be
+    added in Settings -- so there has to be a way to get to Settings from here.
+
+    A link, not an instruction: this page is read on a television, and the way
+    to Settings on a television is something you can move a gamepad onto.
+    """
+
+    def _page(self, offer):
+        from sunshine_apps_ui.render import artwork_page
+        return artwork_page([], token="tok", key="index:0", label="Zz Steam",
+                            notes=["More artwork is available from SteamGridDB."],
+                            offer_sgdb=offer)
+
+    def test_the_link_is_there_when_a_key_could_be_added(self):
+        body = self._page(True)
+        self.assertIn("/settings?token=tok", body)
+
+    def test_it_is_absent_when_a_key_is_already_stored(self):
+        self.assertNotIn("/settings?token=tok", self._page(False))
+
+    def test_the_picker_never_names_a_command(self):
+        """Every command this ever named was one somebody could not run."""
+        body = self._page(True)
+        for fragment in ("sunshine-import", "--save-sgdb-key"):
+            self.assertNotIn(fragment, body)
+
+
+class TheOfferIsDecidedByTheSourceTest(unittest.TestCase):
+    """find_candidates says whether a key was wanted and missing, rather than
+    the page matching on the note's wording. Reworded text must not silently
+    take the offer away with it."""
+
+    def setUp(self):
+        self.conf = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.conf, True)
+
+    def _result(self, **kw):
+        # No network: with a key set, _sgdb would go and ask SteamGridDB, and a
+        # test whose result depends on the machine having a route out is a test
+        # that fails on an aeroplane.
+        from unittest import mock
+        from sunshine_apps_ui.core import artwork_sources
+        with mock.patch.object(artwork_sources, "_sgdb_json",
+                               side_effect=OSError("no network in tests")):
+            return artwork_sources.find_candidates(self.conf, name="Zz Nothing",
+                                                   **kw)
+
+    def test_offered_when_there_is_no_key(self):
+        self.assertTrue(self._result(sgdb_key="").get("offer_sgdb"))
+
+    def test_not_offered_when_a_key_is_stored(self):
+        self.assertFalse(self._result(sgdb_key="a-key").get("offer_sgdb"))
+
+    def test_not_offered_when_the_source_is_turned_off(self):
+        self.assertFalse(
+            self._result(sgdb_key="", sgdb_enable=False).get("offer_sgdb"))

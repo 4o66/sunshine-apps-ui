@@ -2340,3 +2340,111 @@ class WhichBuildsTest(ServerTest):
     def test_there_is_no_save_button_to_forget(self):
         _, body = self.get(f"/settings?token={self.token}")
         self.assertNotIn("noscript", body)
+
+
+class CommunityArtworkKeyTest(ServerTest):
+    """Issue #22: somewhere to put a SteamGridDB key that is not a shell.
+
+    The picker used to answer "no artwork found" by naming a command -- first
+    one that did not exist, then one that on Windows is a .cmd off PATH. This
+    program is normally launched as a Sunshine tile, on a television, from a
+    gamepad. There is nothing to type a command into, so the key goes in a
+    field on the settings page and the picker points at the page.
+    """
+
+    def _saving(self, ok=True, why="SteamGridDB did not accept that key: 403"):
+        """Stand in for the network call save_sgdb makes to check a key."""
+        from sunshine_apps_ui.core import api
+        seen = {}
+
+        def save_sgdb(conf_dir, key):
+            seen["conf_dir"], seen["key"] = conf_dir, key
+            if ok:
+                return True, f"Verified and saved to {conf_dir}/.bsm-sgdb-key"
+            return False, why
+
+        patched = mock.patch.object(api, "save_sgdb", save_sgdb)
+        patched.start()
+        self.addCleanup(patched.stop)
+        return seen
+
+    def _stored(self, value="a-stored-key"):
+        from sunshine_apps_ui.core import artwork_sources
+        patched = mock.patch.object(artwork_sources, "load_sgdb_key",
+                                    lambda conf_dir: value)
+        patched.start()
+        self.addCleanup(patched.stop)
+
+    def test_the_field_is_offered(self):
+        _, body = self.get(f"/settings?token={self.token}")
+        self.assertIn("/settings/sgdb-key", body)
+        self.assertIn("Community artwork", body)
+
+    def test_it_says_when_no_key_is_stored(self):
+        self._stored("")
+        _, body = self.get(f"/settings?token={self.token}")
+        self.assertIn("No key stored", body)
+
+    def test_it_says_when_a_key_is_stored(self):
+        self._stored()
+        _, body = self.get(f"/settings?token={self.token}")
+        self.assertIn("A key is stored", body)
+
+    def test_the_stored_key_is_never_rendered(self):
+        """It is a secret. The page says whether there is one, not what it is."""
+        self._stored("sekrit-value-0123")
+        _, body = self.get(f"/settings?token={self.token}")
+        self.assertNotIn("sekrit-value-0123", body)
+
+    def test_a_typed_key_reaches_save_sgdb(self):
+        seen = self._saving()
+        self.post({"sgdb-key": " typed-key "}, token=self.token,
+                  path="/settings/sgdb-key")
+        # Trimmed: a key pasted from a web page arrives with whitespace, and a
+        # key with a space on the end is a key that does not work.
+        self.assertEqual(seen["key"], "typed-key")
+        self.assertEqual(seen["conf_dir"], self.conf_dir)
+
+    def test_a_good_key_is_reported_without_naming_the_file(self):
+        self._saving()
+        self._stored("")
+        self.post({"sgdb-key": "good"}, token=self.token,
+                  path="/settings/sgdb-key")
+        _, body = self.get(f"/settings?token={self.token}")
+        self.assertIn("That key works", body)
+        self.assertNotIn(".bsm-sgdb-key", body)
+
+    def test_a_bad_key_says_why(self):
+        self._saving(ok=False)
+        self._stored("")
+        self.post({"sgdb-key": "bad"}, token=self.token,
+                  path="/settings/sgdb-key")
+        _, body = self.get(f"/settings?token={self.token}")
+        self.assertIn("did not accept that key", body)
+
+    def test_an_empty_field_does_not_reach_the_network(self):
+        seen = self._saving()
+        self.post({"sgdb-key": "   "}, token=self.token,
+                  path="/settings/sgdb-key")
+        self.assertEqual(seen, {})
+        _, body = self.get(f"/settings?token={self.token}")
+        self.assertIn("No key was typed", body)
+
+    def test_the_result_is_shown_once(self):
+        """Cleared when drawn, like every other one-shot notice here: a result
+        still on the page after a reload reads as a second attempt."""
+        self._saving()
+        self._stored("")
+        self.post({"sgdb-key": "good"}, token=self.token,
+                  path="/settings/sgdb-key")
+        self.get(f"/settings?token={self.token}")
+        _, body = self.get(f"/settings?token={self.token}")
+        self.assertNotIn("That key works", body)
+
+    def test_it_needs_the_token(self):
+        """404 rather than 403, as everywhere else here: a wrong token is told
+        there is nothing at this address, not that it guessed the wrong one."""
+        seen = self._saving()
+        status, _ = self.post({"sgdb-key": "good"}, path="/settings/sgdb-key")
+        self.assertEqual(status, 404)
+        self.assertEqual(seen, {})

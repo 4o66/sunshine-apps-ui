@@ -128,7 +128,8 @@ class PlanHandler(BaseHTTPRequestHandler):
                                           answer=answer,
                                           notice=_NOTICE.pop(self.token, ""),
                                           language=_language_panel(self.token),
-                                          via_sunshine=self.via_sunshine))
+                                          via_sunshine=self.via_sunshine,
+                                          sgdb=self._sgdb_panel()))
             return
 
         if parts.path == "/report":
@@ -376,7 +377,8 @@ class PlanHandler(BaseHTTPRequestHandler):
             searched = (query.get("q") or [""])[0] or name
             if searched != name:
                 source = ident = ""
-            error, doc = "", {"candidates": [], "notes": []}
+            error, doc = "", {"candidates": [], "notes": [],
+                              "offer_sgdb": False}
             try:
                 doc = art_search(self.conf_dir, name=searched,
                                  source=source, ident=ident)
@@ -386,7 +388,8 @@ class PlanHandler(BaseHTTPRequestHandler):
                 doc.get("candidates") or [], self.token, key=key,
                 label=name or "this app",
                 current=str(state.draft(key).get("image-path") or ""),
-                notes=doc.get("notes") or [], searched=searched, error=error))
+                notes=doc.get("notes") or [], searched=searched, error=error,
+                offer_sgdb=bool(doc.get("offer_sgdb"))))
             return
 
         if parts.path == "/connect":
@@ -714,6 +717,27 @@ class PlanHandler(BaseHTTPRequestHandler):
                         log.info("a scan was already running; watching that one")
                     self._redirect("/scanning")
                     return
+            elif what == "sgdb-key":
+                # Checked against the API before it is stored, and stored mode
+                # 600 -- both inside save_sgdb, which is the same path the
+                # command line uses. A key that does not work is worse than
+                # none: it looks, weeks later, like SteamGridDB having nothing
+                # for anything.
+                typed = (fields.get("sgdb-key") or [""])[0].strip()
+                if not typed:
+                    _SGDB[self.token] = {"state": "unreachable",
+                                         "message": "No key was typed."}
+                else:
+                    from .core import api
+
+                    ok, why = api.save_sgdb(self.conf_dir, typed)
+                    _SGDB[self.token] = {
+                        "state": "available" if ok else "unreachable",
+                        # save_sgdb reports the path it wrote, which is not
+                        # what someone at a television wants to read.
+                        "message": ("That key works, and is saved. Community "
+                                    "artwork appears in the picker from now "
+                                    "on.") if ok else why}
             elif what == "check":
                 prefs = state.prefs()
                 _LAST_CHECK[self.token] = updates.check(
@@ -950,6 +974,24 @@ class PlanHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", "0")
         self.end_headers()
 
+    def _sgdb_panel(self) -> Dict[str, Any]:
+        """What the community-artwork section knows: whether a key is stored,
+        and the outcome of the last attempt to store one.
+
+        Never the key. `load_sgdb_key` also honours SGDB_API_KEY, so a key in
+        the environment counts as stored -- typing one here would be ignored in
+        favour of it, and saying "no key stored" beside working artwork is the
+        kind of small lie that costs an afternoon.
+        """
+        from .core.artwork_sources import load_sgdb_key
+
+        panel: Dict[str, Any] = dict(_SGDB.pop(self.token, {}))
+        try:
+            panel["have"] = bool(load_sgdb_key(self.conf_dir))
+        except OSError:
+            panel["have"] = False
+        return panel
+
 
 # The result of the last check, waiting for the redirect that shows it. Keyed
 # by token so a second session cannot read the first one's answer.
@@ -959,6 +1001,9 @@ _NOTICE: Dict[str, str] = {}
 # What the language section should say next time it is drawn: the result of a
 # check, or an offer to download a set. One per token, cleared when shown.
 _ART: Dict[str, Dict[str, Any]] = {}
+# The outcome of saving a SteamGridDB key, waiting for the redirect that shows
+# it. Never the key itself -- only whether it was accepted, and why not.
+_SGDB: Dict[str, Dict[str, Any]] = {}
 
 
 def _tile_language() -> str:

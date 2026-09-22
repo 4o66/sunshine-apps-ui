@@ -365,19 +365,21 @@ def _sgdb(name: str, appid: str, key: str, timeout: int,
           limit: int = SGDB_LIMIT) -> Tuple[List[Dict[str, Any]], str]:
     """Community artwork. Returns (candidates, note explaining any shortfall)."""
     if not key:
-        # Named the old importer's command until 2026-09-18, which does not
-        # exist here -- anyone who followed it got "not recognised". The wording
-        # itself is still wrong and is issue #22: this reads as a requirement
-        # when it is one optional source among several, and assumes the reader
-        # knows what SteamGridDB is.
+        # Issue #22, and the third wording. It named `sunshine-import`, a
+        # command that does not exist here; then this program's own command,
+        # which on Windows is a .cmd in the install directory that is not on
+        # PATH. Telling someone at a television with a gamepad to run anything
+        # at all was the mistake both times: the key goes in Settings now, and
+        # the picker points at the page rather than at a shell.
         # No leading claim about what was found: this function has no idea.
         # The caller knows, and adds one only when it is true -- otherwise the
         # page says "no artwork was found" directly above two perfectly good
         # pictures, which is how the old wording read once our own tiles were
         # offered here.
-        return [], ("SteamGridDB is a community library of game artwork; if you "
-                    "have an account there, sunshine-apps-ui --save-sgdb-key "
-                    "adds your key and its pictures appear here too.")
+        return [], ("More artwork is available from SteamGridDB, a community "
+                    "library of game artwork. If you have an account there, "
+                    "add your key in Settings and its pictures appear here "
+                    "too.")
 
     def grids(endpoint: str) -> List[Dict[str, Any]]:
         try:
@@ -436,6 +438,10 @@ def find_candidates(conf_dir: str, *, name: str = "", source: str = "",
 
     appid = str(ident or "") if source == "steam" else ""
     notes: List[str] = []
+    # Whether the page should offer somewhere to put a key. Decided here rather
+    # than by matching the note's wording downstream: this is the only place
+    # that knows a key was wanted and missing.
+    offer_sgdb = sgdb_enable and not str(sgdb_key or "").strip()
 
     wanted: List[Dict[str, Any]] = []
     wanted += _ours(source, ident)
@@ -450,8 +456,10 @@ def find_candidates(conf_dir: str, *, name: str = "", source: str = "",
     if not wanted:
         if notes:
             notes[0] = "No artwork was found for this one. " + notes[0]
-        return {"candidates": [], "notes": notes or [
-            "Nothing to suggest for this app. Browse for a file instead."]}
+        return {"candidates": [], "offer_sgdb": offer_sgdb,
+                "notes": notes or [
+                    "Nothing to suggest for this app. Browse for a file "
+                    "instead."]}
 
     with ThreadPoolExecutor(max_workers=max(1, workers)) as pool:
         fetched = list(pool.map(
@@ -465,7 +473,8 @@ def find_candidates(conf_dir: str, *, name: str = "", source: str = "",
     if not candidates and not notes:
         notes.append("None of the artwork sources answered. Check the network, "
                      "or browse for a file.")
-    return {"candidates": candidates, "notes": notes}
+    return {"candidates": candidates, "notes": notes,
+            "offer_sgdb": offer_sgdb}
 
 
 def _slug(name: str) -> str:

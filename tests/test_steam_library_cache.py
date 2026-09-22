@@ -125,9 +125,10 @@ class SgdbNoteTest(unittest.TestCase):
     """What the picker says when it has found nothing.
 
     The maintainer, on seeing the old one: "why do i suddenly need a key? no regular user
-    will have the slightest clue what this means." The wording is issue #22 and
-    still open; what is settled is that it must not name a command that does not
-    exist.
+    will have the slightest clue what this means." Issue #22, settled 2026-09-21:
+    it names no command at all. This runs at a television, driven by a gamepad,
+    where there is nothing to type one into -- so the offer points at Settings,
+    which has a field for the key.
     """
 
     def note(self):
@@ -140,8 +141,17 @@ class SgdbNoteTest(unittest.TestCase):
         """sunshine-import was the previous project's command. It is not here."""
         self.assertNotIn("sunshine-import ", self.note())
 
-    def test_it_names_the_command_that_exists(self):
-        self.assertIn("sunshine-apps-ui --save-sgdb-key", self.note())
+    def test_it_sends_you_to_settings_rather_than_to_a_shell(self):
+        self.assertIn("Settings", self.note())
+
+    def test_it_names_no_command_at_all(self):
+        """Every command this ever named was one somebody could not run:
+        `sunshine-import` does not exist here, and `sunshine-apps-ui` is a .cmd
+        off PATH on Windows. A television has no shell either way."""
+        note = self.note()
+        for fragment in ("sunshine-import", "sunshine-apps-ui",
+                         "--save-sgdb-key"):
+            self.assertNotIn(fragment, note)
 
     def test_it_says_what_steamgriddb_is(self):
         self.assertIn("community library", self.note())

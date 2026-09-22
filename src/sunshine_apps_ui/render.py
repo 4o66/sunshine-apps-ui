@@ -807,6 +807,11 @@ background:var(--bg-subtle);border:1px solid var(--border);font-size:.9rem}
 border:1px solid var(--border);border-radius:var(--radius-md);
 padding:.5rem .7rem;font:inherit;font-size:.9rem;max-width:100%}
 .setting select:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+.setting input[type=password]{background:var(--bg-subtle);color:var(--text);
+border:1px solid var(--border);border-radius:var(--radius-md);
+padding:.5rem .7rem;font:inherit;font-size:.9rem;min-width:16rem;max-width:100%}
+.setting input[type=password]:focus-visible{outline:3px solid var(--accent);
+outline-offset:2px}
 /* A link inside explanatory text was the same small muted grey as the text
    around it, underlined in the browser default -- legible on a desk, not from
    a sofa. */
@@ -821,7 +826,8 @@ def settings_page(token: str, *, prefs: Dict[str, Any],
                   answer: Optional[Any] = None,
                   notice: str = "",
                   language: Optional[Dict[str, Any]] = None,
-                  via_sunshine: bool = False) -> str:
+                  via_sunshine: bool = False,
+                  sgdb: Optional[Dict[str, Any]] = None) -> str:
     """Everything that is a preference rather than a change to the app list.
 
     Kept off the grid deliberately -- the maintainer's instruction, 2026-09-19, "set apart
@@ -928,6 +934,19 @@ def settings_page(token: str, *, prefs: Dict[str, Any],
         art_notice = (f'<div class="result {_e(art.get("state", "none"))}">'
                       f'{_e(art["message"])}{action}</div>')
 
+    # Issue #22. The key used to be storable only by running a command, which
+    # is no use at a television -- and the picker's offer named a command that
+    # on Windows is not even on PATH. A field here is the whole of what that
+    # offer now points at. The key itself is never rendered back: the page says
+    # whether one is stored, not what it is.
+    art_key = sgdb or {}
+    sgdb_state = ("A key is stored. Replacing it checks the new one first."
+                  if art_key.get("have") else
+                  "No key stored. Community artwork is skipped.")
+    sgdb_result = (f'<div class="result {_e(art_key.get("state", "none"))}">'
+                   f'{_e(art_key["message"])}</div>'
+                   if art_key.get("message") else "")
+
     return f"""<!doctype html>
 {_html()}<head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -990,6 +1009,23 @@ def settings_page(token: str, *, prefs: Dict[str, Any],
       <button class="btn" type="submit">Put the default tiles back</button>
     </form>
     {notice_html}
+  </div>
+
+  <div class="setting">
+    <h3>Community artwork</h3>
+    <p class="why">SteamGridDB is a community library of game artwork, and the
+    place to look when a game has no cover of its own &mdash; which is most
+    often a GOG or Epic game, since Steam ships its own. It is optional, and
+    everything else here works without it. If you have an account there, paste
+    its API key and the pictures appear in the artwork picker too.</p>
+    <p class="why">{sgdb_state}</p>
+    <form method="post" action="/settings/sgdb-key{q}" class="pick">
+      <input type="password" name="sgdb-key" autocomplete="off"
+             spellcheck="false" placeholder="API key"
+             aria-label="SteamGridDB API key">
+      <button class="btn sec" type="submit">Save the key</button>
+    </form>
+    {sgdb_result}
   </div>
 
   <div class="setting">
@@ -1682,7 +1718,8 @@ _ART_SOURCES = [
 
 def artwork_page(candidates: List[Dict[str, Any]], token: str, *, key: str,
                  label: str, current: str = "", notes: Optional[List[str]] = None,
-                 searched: str = "", error: str = "") -> str:
+                 searched: str = "", error: str = "",
+                 offer_sgdb: bool = False) -> str:
     """Choose cover art from everything that could be found for one app."""
     by_source: Dict[str, List[Dict[str, Any]]] = {}
     for candidate in candidates:
@@ -1718,6 +1755,13 @@ def artwork_page(candidates: List[Dict[str, Any]], token: str, *, key: str,
 
     note_items = "".join(f"<li>{_e(n)}</li>" for n in (notes or []))
     note_list = f'<ul class="notes">{note_items}</ul>' if note_items else ""
+    # The note says a key can be added in Settings; this is how you get there
+    # without a keyboard. Issue #22 -- the wording used to name a command, and
+    # on a television there is nowhere to type one.
+    if offer_sgdb:
+        note_list += (f'<div class="actions" style="margin:-.5rem 0 1.25rem">'
+                      f'<a class="btn sec" href="/settings?token={_e(token)}">'
+                      f'Settings</a></div>')
     problem = (f'<section class="err"><p class="why">{_e(error)}</p></section>'
                if error else "")
 

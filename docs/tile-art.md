@@ -228,3 +228,28 @@ Two things this changed elsewhere, both worth knowing:
   picture from a network is used from the cache, so the entry points there;
   one of ours is used from where it lies, and comparing only the cache left
   the tile actually in use labelled "choose".
+
+## The SteamGridDB key goes in Settings
+
+The note the picker shows when no key is stored **names no command**, and this
+is deliberate rather than a wording preference. It named `sunshine-import`
+first, which is the previous project's command and does not exist here; then
+this program's own, which on Windows is a `.cmd` in the install directory that
+is not on `PATH`. Both were wrong for the same underlying reason: this runs as
+a Sunshine tile, on a television, driven by a gamepad, and there is nothing
+there to type a command into.
+
+So **Settings holds a field for the key**, and the picker holds a link to
+Settings. `POST /settings/sgdb-key` hands what was typed to the same
+`api.save_sgdb()` the command line uses, so the key is checked against the API
+before it is stored and is written mode 600 either way — one path, not two that
+drift. The page says *whether* a key is stored and never renders the key back.
+
+`--save-sgdb-key` stays. It is how a key gets onto a headless machine, and it
+reads the key on stdin rather than taking it on argv (`docs/security.md`).
+
+Whether the offer belongs on the picker at all was the open half of issue #22.
+It stays, because with the library-cache layout fixed most Steam games never
+reach it — the ones that do are GOG and Epic, where there is genuinely no
+keyless source and the person looking at an empty picker has no other way to
+learn one exists.
