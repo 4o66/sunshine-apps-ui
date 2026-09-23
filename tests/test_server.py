@@ -2528,9 +2528,17 @@ class SteamGridDbSheetTest(ServerTest):
         open -- which is exactly what happened to the settings switches (#28)."""
         self._key(); self._page()
         body = self._open(page=0)
-        self.assertIn("<dialog", body)
-        self.assertIn("open", body)
+        # The whole opening tag, not just "<dialog": the CSS beside it used to
+        # mention the tag in a comment, so the loose assertion passed on a page
+        # with no sheet on it at all.
+        self.assertIn('<dialog class="sheet" open', body)
         self.assertNotIn("<script", body)
+
+    def test_the_picker_carries_no_open_dialog_until_asked(self):
+        """The other half of the one above, and the half that can regress:
+        a sheet that is always in the markup is a sheet that is always up."""
+        self._key(); self._page()
+        self.assertNotIn('<dialog class="sheet" open', self._open())
 
     def test_it_says_how_far_through_you_are(self):
         self._key(); self._page(n=1)

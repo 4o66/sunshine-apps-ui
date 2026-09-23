@@ -1736,8 +1736,8 @@ padding:.5rem .7rem;font:inherit}
 /* The SteamGridDB sheet. A real modal, with no script anywhere: the page is
    served with `script-src 'self'` and the switches taught us what happens when
    something here needs JavaScript to work at all (issue #28). So the server
-   renders <dialog open> when the address says the sheet is up, and every
-   control in it -- page forward, page back, close, choose -- is a link. A
+   renders the dialog already open when the address says the sheet is up, and
+   every control in it -- forward, back, close, choose -- is a link. A
    gamepad can reach all of them, which a JS-driven overlay cannot promise. */
 dialog.sheet{position:fixed;inset:0;width:min(1100px,94vw);max-height:92vh;
 margin:auto;padding:0;border:1px solid var(--border-strong);
