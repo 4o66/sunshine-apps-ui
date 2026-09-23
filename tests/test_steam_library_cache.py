@@ -132,9 +132,13 @@ class SgdbNoteTest(unittest.TestCase):
     """
 
     def note(self):
-        candidates, note = artwork_sources._sgdb(
+        # The wording is a constant now: `find_candidates` says it without
+        # calling SteamGridDB at all, because with no key there is nothing to
+        # call it with. Issue #30. `_sgdb` still returns it for the same case.
+        candidates, note, _ = artwork_sources._sgdb(
             name="Whatever", appid="", key="", timeout=1)
         self.assertEqual(candidates, [])
+        self.assertEqual(note, artwork_sources.SGDB_NO_KEY_NOTE)
         return note
 
     def test_it_does_not_name_the_old_importer(self):

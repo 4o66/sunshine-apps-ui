@@ -92,6 +92,11 @@ def art_search(conf_dir: str, *, name: str = "", source: str = "",
     return _wrap(api.art_search, conf_dir, name, source, ident)
 
 
+def art_sgdb(conf_dir: str, *, name: str = "", source: str = "",
+             ident: str = "", page: int = 0) -> Dict[str, Any]:
+    return _wrap(api.art_sgdb, conf_dir, name, source, ident, page)
+
+
 def art_choose(conf_dir: str, chosen_id: str, name: str = "") -> str:
     return _wrap(api.art_choose, conf_dir, chosen_id, name)
 

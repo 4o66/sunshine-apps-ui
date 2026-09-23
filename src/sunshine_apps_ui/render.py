@@ -11,6 +11,7 @@ from urllib.parse import quote
 from typing import Any, Dict, List, Optional
 
 from . import __version__
+from .core.artwork_sources import SGDB_PAGE
 from .version import display as version_display
 
 # What this is called, in one place. It is not an importer any more -- importing
@@ -752,6 +753,10 @@ without it.</p></section>
 # Where bugs go. One place, so the link on the page and the code in the QR
 # cannot drift apart -- they are both this string.
 ISSUES_URL = "https://github.com/4o66/sunshine-apps-ui/issues"
+# Where a SteamGridDB key is actually issued. Deep link rather than the front
+# page: the page it lands on is the one with the key on it, so the instructions
+# beside it only have to cover getting signed in.
+SGDB_KEY_URL = "https://www.steamgriddb.com/profile/preferences/api"
 # Documentation lives in the repository and not in an install: a release
 # archive carries no docs/ directory, so naming a local path in the interface
 # would send somebody looking for a file that is not on their machine.
@@ -766,6 +771,14 @@ def _version_label() -> str:
     except Exception:              # noqa: BLE001 - a label, never a failure
         return version.RELEASE
 
+
+# A QR code is always dark-on-white, whatever the theme: a reader points a
+# camera at it, and an inverted one does not scan.
+_QR_CSS = """
+.qr{background:#fff;padding:12px;border-radius:var(--radius-md);
+display:inline-block;line-height:0;margin:.25rem 0 .9rem}
+.qr svg{display:block;width:min(46vw,260px);height:auto}
+"""
 
 SETTINGS_CSS = """
 .setting{border-bottom:1px solid var(--border);padding:1rem 0}
@@ -943,6 +956,33 @@ def settings_page(token: str, *, prefs: Dict[str, Any],
     sgdb_state = ("A key is stored. Replacing it checks the new one first."
                   if art_key.get("have") else
                   "No key stored. Community artwork is skipped.")
+
+    # How to get one. Through Moonlight there is no address bar and no
+    # keyboard, so the way off the screen is the phone already in your hand --
+    # the same reasoning as the bug-report page. At the machine a link is
+    # enough, and a QR code would be clutter, so it is only drawn when we are
+    # being streamed to.
+    from . import qr
+
+    sgdb_where = (
+        f'<p class="why">An account is free, and the key is on one page: sign '
+        f'in, open <b>Preferences</b> from the menu under your name at the top '
+        f'right, then <b>API</b>.</p>'
+        f'<div class="actions" style="margin:.2rem 0 .7rem">'
+        f'<a class="btn sec" href="{_e(SGDB_KEY_URL)}" target="_blank" '
+        f'rel="noopener noreferrer">Open SteamGridDB</a></div>')
+    if via_sunshine:
+        sgdb_where = (
+            f'<p class="why">An account is free, and the key is on one page: '
+            f'sign in, open <b>Preferences</b> from the menu under your name at '
+            f'the top right, then <b>API</b>. Scan this and that page opens on '
+            f'your phone, which has a keyboard to sign in with &mdash; then '
+            f'type the key here.</p>'
+            f'<div class="qr">{qr.svg(SGDB_KEY_URL)}</div>'
+            f'<p class="why"><code>{_e(SGDB_KEY_URL)}</code></p>'
+            f'<div class="actions" style="margin:.2rem 0 .7rem">'
+            f'<a class="btn sec" href="{_e(SGDB_KEY_URL)}" target="_blank" '
+            f'rel="noopener noreferrer">Or open it here</a></div>')
     sgdb_result = (f'<div class="result {_e(art_key.get("state", "none"))}">'
                    f'{_e(art_key["message"])}</div>'
                    if art_key.get("message") else "")
@@ -950,7 +990,7 @@ def settings_page(token: str, *, prefs: Dict[str, Any],
     return f"""<!doctype html>
 {_html()}<head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>{_title("Settings")}</title><style>{_CSS}{SETTINGS_CSS}</style></head>
+<title>{_title("Settings")}</title><style>{_CSS}{SETTINGS_CSS}{_QR_CSS}</style></head>
 <body>
 <div class="navbar"><span class="brand">Sunshine</span><span class="sep">/</span>
 <span class="where">app manager</span>{_version_chip()}</div>
@@ -1016,8 +1056,10 @@ def settings_page(token: str, *, prefs: Dict[str, Any],
     <p class="why">SteamGridDB is a community library of game artwork, and the
     place to look when a game has no cover of its own &mdash; which is most
     often a GOG or Epic game, since Steam ships its own. It is optional, and
-    everything else here works without it. If you have an account there, paste
-    its API key and the pictures appear in the artwork picker too.</p>
+    everything else here works without it. With a key, the artwork picker
+    grows a <b>Show SteamGridDB art</b> button &mdash; nothing is fetched from
+    them until you press it.</p>
+    {sgdb_where}
     <p class="why">{sgdb_state}</p>
     <form method="post" action="/settings/sgdb-key{q}" class="pick">
       <input type="password" name="sgdb-key" autocomplete="off"
@@ -1093,11 +1135,7 @@ def report_page(token: str, via_sunshine: bool = False,
     return f"""<!doctype html>
 {_html()}<head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>{_title("Report a bug")}</title><style>{_CSS}
-.qr{{background:#fff;padding:12px;border-radius:var(--radius-md);
-display:inline-block;line-height:0;margin:.25rem 0 .9rem}}
-.qr svg{{display:block;width:min(46vw,260px);height:auto}}
-</style></head>
+<title>{_title("Report a bug")}</title><style>{_CSS}{_QR_CSS}</style></head>
 <body>
 <div class="navbar"><span class="brand">Sunshine</span><span class="sep">/</span>
 <span class="where">app manager</span>{_version_chip()}</div>
@@ -1694,6 +1732,38 @@ line-height:1.3}
 border:1px solid var(--border);border-radius:var(--radius-md);
 padding:.5rem .7rem;font:inherit}
 .find input:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+
+/* The SteamGridDB sheet. A real modal, with no script anywhere: the page is
+   served with `script-src 'self'` and the switches taught us what happens when
+   something here needs JavaScript to work at all (issue #28). So the server
+   renders <dialog open> when the address says the sheet is up, and every
+   control in it -- page forward, page back, close, choose -- is a link. A
+   gamepad can reach all of them, which a JS-driven overlay cannot promise. */
+dialog.sheet{position:fixed;inset:0;width:min(1100px,94vw);max-height:92vh;
+margin:auto;padding:0;border:1px solid var(--border-strong);
+border-radius:var(--radius-lg,12px);background:var(--bg-base);color:var(--text);
+box-shadow:0 24px 60px rgba(0,0,0,.45);overflow:hidden;
+display:flex;flex-direction:column;z-index:20}
+dialog.sheet::backdrop{background:rgba(0,0,0,.6)}
+/* ::backdrop only paints for a dialog opened by script. This one is open in
+   the markup, so it gets a backdrop of its own. */
+.sheet-veil{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:10}
+.sheet-head{display:flex;align-items:baseline;gap:.75rem;flex-wrap:wrap;
+padding:1rem 1.25rem;border-bottom:1px solid var(--border);
+background:var(--bg-subtle)}
+.sheet-head h2{margin:0;font-size:1.05rem}
+.sheet-head .count{font-size:.85rem;color:var(--text-muted)}
+.sheet-head .shut{margin-left:auto}
+.sheet-body{padding:1.25rem;overflow-y:auto;flex:1}
+.sheet-body .arts{margin:0}
+.sheet-foot{display:flex;align-items:center;gap:.75rem;flex-wrap:wrap;
+padding:.9rem 1.25rem;border-top:1px solid var(--border);
+background:var(--bg-subtle)}
+.sheet-foot .where{font-size:.85rem;color:var(--text-muted);margin-left:auto}
+.btn.flat{opacity:.45;pointer-events:none}
+@media (max-width:560px){
+  dialog.sheet{width:100vw;max-height:100vh;border-radius:0;border:0}
+}
 """
 
 # Where each candidate came from, said the way it matters to someone choosing:
@@ -1716,11 +1786,94 @@ _ART_SOURCES = [
 ]
 
 
+def _sheet_url(key: str, token: str, searched: str = "", page: int = 0) -> str:
+    """The picker with the SteamGridDB sheet open at *page*.
+
+    The sheet's state lives in the address, which is what makes every control
+    in it an ordinary link and the browser's Back button do the obvious thing.
+    """
+    bits = [f"key={_eq(key)}", f"token={_eq(token)}", "sgdb=1", f"sgdb_page={int(page)}"]
+    if searched:
+        bits.append(f"q={_eq(searched)}")
+    return "/artwork?" + "&".join(bits)
+
+
+def _sgdb_sheet(sheet: Dict[str, Any], token: str, *, key: str, searched: str,
+                label: str, current: str) -> str:
+    """The SteamGridDB results, as a modal over the picker.
+
+    `<dialog open>` rather than a scripted `showModal()`: see the CSS. An open
+    dialog in the markup paints no ::backdrop, so a veil is drawn behind it.
+    """
+    found = list(sheet.get("candidates") or [])
+    page = int(sheet.get("page") or 0)
+    pages = int(sheet.get("pages") or 0)
+    total = int(sheet.get("total") or 0)
+    note = str(sheet.get("note") or "")
+
+    def tile(candidate: Dict[str, Any]) -> str:
+        path = str(candidate.get("path") or "")
+        origin = str(candidate.get("origin") or "")
+        is_current = bool(current) and current in (path, origin)
+        # Choosing from the sheet returns to the picker, not to the sheet: the
+        # choice is made, and leaving the modal up over the answer would be
+        # asking the same question again.
+        return (f'<figure class="{"current" if is_current else ""}">'
+                f'<a href="/artwork?key={_eq(key)}'
+                f'&choose={_eq(str(candidate.get("id")))}'
+                f'&q={_eq(searched)}&token={_e(token)}">'
+                f'<img src="/art?p={_eq(path)}&token={_e(token)}" alt="" loading="lazy"></a>'
+                f'<figcaption><b>{_e(str(candidate.get("label") or ""))}</b>'
+                f'{"in use" if is_current else "choose"}</figcaption></figure>')
+
+    if found:
+        body = f'<div class="arts">{"".join(tile(c) for c in found)}</div>'
+    else:
+        body = (f'<p class="why">{_e(note or "Nothing on this page.")}</p>')
+
+    # Closing goes back to the picker with the sheet shut, which is this same
+    # page without sgdb= in the address.
+    close_url = f"/artwork?key={_eq(key)}&token={_e(token)}"
+    if searched:
+        close_url += f"&q={_eq(searched)}"
+    shut = f'<a class="btn sec shut" href="{close_url}">Close</a>'
+
+    def step(delta: int, text: str) -> str:
+        wanted = page + delta
+        # A dead end is shown flat rather than hidden: a control that vanishes
+        # moves everything beside it, and on a gamepad that means the button
+        # under the cursor is suddenly a different button.
+        if wanted < 0 or (pages and wanted >= pages) or not found and delta > 0:
+            return f'<span class="btn sec flat">{text}</span>'
+        return (f'<a class="btn sec" href="'
+                f'{_e(_sheet_url(key, token, searched, wanted))}">{text}</a>')
+
+    first = page * SGDB_PAGE + 1
+    last = page * SGDB_PAGE + len(found)
+    where = (f"{first}-{last} of {total}" if found and total
+             else (f"{total} in all" if total else ""))
+    counted = (f'<span class="count">{_e(where)}</span>' if where else "")
+    of_pages = (f'<span class="where">Page {page + 1} of {pages}</span>'
+                if pages else "")
+
+    return (f'<div class="sheet-veil"></div>'
+            f'<dialog class="sheet" open aria-label="SteamGridDB artwork for {_e(label)}">'
+            f'<div class="sheet-head"><h2>From SteamGridDB</h2>{counted}{shut}</div>'
+            f'<div class="sheet-body">{body}</div>'
+            f'<div class="sheet-foot">{step(-1, "Back")}{step(1, "Next")}'
+            f'{of_pages}</div></dialog>')
+
+
 def artwork_page(candidates: List[Dict[str, Any]], token: str, *, key: str,
                  label: str, current: str = "", notes: Optional[List[str]] = None,
                  searched: str = "", error: str = "",
-                 offer_sgdb: bool = False) -> str:
-    """Choose cover art from everything that could be found for one app."""
+                 offer_sgdb: bool = False, sgdb_ready: bool = False,
+                 sheet: Optional[Dict[str, Any]] = None) -> str:
+    """Choose cover art from everything that could be found for one app.
+
+    *sheet*, when given, is a page of SteamGridDB results and puts the modal up
+    over this page. It is only ever fetched because somebody pressed for it.
+    """
     by_source: Dict[str, List[Dict[str, Any]]] = {}
     for candidate in candidates:
         by_source.setdefault(str(candidate.get("source")), []).append(candidate)
@@ -1762,6 +1915,14 @@ def artwork_page(candidates: List[Dict[str, Any]], token: str, *, key: str,
         note_list += (f'<div class="actions" style="margin:-.5rem 0 1.25rem">'
                       f'<a class="btn sec" href="/settings?token={_e(token)}">'
                       f'Settings</a></div>')
+    # With a key, community artwork is a button rather than something that has
+    # already happened. Nothing is fetched until this is pressed: hundreds of
+    # pictures from a third party are not what opening this page should cost.
+    if sgdb_ready and not sheet:
+        note_list += (
+            f'<div class="actions" style="margin:-.5rem 0 1.25rem">'
+            f'<a class="btn sec" href="{_e(_sheet_url(key, token, searched, 0))}">'
+            f'Show SteamGridDB art</a></div>')
     problem = (f'<section class="err"><p class="why">{_e(error)}</p></section>'
                if error else "")
 
@@ -1773,6 +1934,9 @@ def artwork_page(candidates: List[Dict[str, Any]], token: str, *, key: str,
             f'<input type="text" name="q" value="{_e(searched)}" '
             f'placeholder="Search by another name" aria-label="Search by another name">'
             f'<button class="btn sec" type="submit">Search</button></form>')
+
+    modal = _sgdb_sheet(sheet, token, key=key, searched=searched,
+                        label=label, current=current) if sheet else ""
 
     return f"""<!doctype html>
 {_html()}<head><meta charset="utf-8">
@@ -1790,7 +1954,7 @@ def artwork_page(candidates: List[Dict[str, Any]], token: str, *, key: str,
 <a class="btn sec" href="{_e(_form_url(key, token))}">Back</a>
 <a class="btn sec" href="/browse?key={_eq(key)}&field=image-path&token={_e(token)}">
 Browse for a file</a></div>
-</div></body></html>"""
+</div>{modal}</body></html>"""
 
 
 def app_page(entry: Dict[str, Any], token: str, *, is_new: bool = False,

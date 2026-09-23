@@ -182,6 +182,38 @@ Delete one of them and a rescan will not offer it back, the way it does for the
 tiles we generate: there is nothing left to claim. Settings has a **Put the
 default tiles back** button for exactly that.
 
+### Community artwork from SteamGridDB
+
+Some games have no cover of their own — usually GOG and Epic entries, since
+Steam ships its own art and we read what Steam has already downloaded.
+[SteamGridDB](https://www.steamgriddb.com/) is a community library that often
+has one, and the artwork picker can show it. **It is optional, and everything
+else works without it.**
+
+It needs a free account, because SteamGridDB asks everyone to bring their own
+key rather than sharing one. To get yours:
+
+1. Sign in at [steamgriddb.com](https://www.steamgriddb.com/).
+2. Open **Preferences** from the menu under your name at the top right, then
+   **API**, which is this page:
+   <https://www.steamgriddb.com/profile/preferences/api>
+3. Copy the key into **Settings → Community artwork** and press **Save the
+   key**, which checks it against SteamGridDB before storing it.
+
+Settings shows that page as a QR code when you are connected through
+Moonlight, because a television has no address bar and no keyboard: scan it,
+sign in on your phone, and type the key in here.
+
+The key is stored in your Sunshine config directory, readable only by you, and
+never passed on a command line. On a machine with no screen, `sunshine-apps-ui
+--save-sgdb-key` reads one on standard input instead.
+
+**Nothing is fetched from SteamGridDB until you ask.** With a key stored, the
+picker grows a **Show SteamGridDB art** button; pressing it opens a sheet
+showing 48 at a time, with Back and Next. A popular game can have several
+hundred — Cyberpunk 2077 had 689 — so they are not all worth waiting for on the
+chance you wanted one.
+
 ## More
 
 | | |

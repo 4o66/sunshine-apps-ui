@@ -37,9 +37,28 @@ CACHE_DIRNAME = ".candidates"
 CACHE_TTL = 7 * 24 * 3600
 CHOSEN_DIRNAME = "chosen"
 
-# How many SteamGridDB results to offer. The API returns hundreds for a popular
-# game, sorted by community score; past the first dozen they are novelty art.
-SGDB_LIMIT = 12
+# How many SteamGridDB results to show at once. A popular game has hundreds --
+# Cyberpunk 2077 had 689 the day this was written -- so they arrive a page at a
+# time and the picker walks through them.
+#
+# Not 50, which is the API's own page size, because 48 lays out in a grid
+# without a ragged last row. One request per page either way.
+SGDB_PAGE = 48
+
+# The API's maximum page size. Asking for more is ignored, so this is the
+# ceiling on what one request can return.
+SGDB_API_PAGE = 50
+
+# Said when community artwork is wanted and there is no key to fetch it with.
+# Issue #22, and the third wording. It named `sunshine-import`, a command that
+# does not exist here; then this program's own command, which on Windows is a
+# .cmd in the install directory that is not on PATH. Telling someone at a
+# television with a gamepad to run anything at all was the mistake both times:
+# the key goes in Settings now, and the picker points at the page.
+SGDB_NO_KEY_NOTE = ("More artwork is available from SteamGridDB, a community "
+                    "library of game artwork. If you have an account there, "
+                    "add your key in Settings and its pictures appear here "
+                    "too.")
 
 _USER_AGENT = "bazzite-sunshine-manager/2.0"
 _SGDB_BASE = "https://www.steamgriddb.com/api/v2"
@@ -362,51 +381,80 @@ def _sgdb_json(path: str, key: str, timeout: int) -> Any:
 
 
 def _sgdb(name: str, appid: str, key: str, timeout: int,
-          limit: int = SGDB_LIMIT) -> Tuple[List[Dict[str, Any]], str]:
-    """Community artwork. Returns (candidates, note explaining any shortfall)."""
-    if not key:
-        # Issue #22, and the third wording. It named `sunshine-import`, a
-        # command that does not exist here; then this program's own command,
-        # which on Windows is a .cmd in the install directory that is not on
-        # PATH. Telling someone at a television with a gamepad to run anything
-        # at all was the mistake both times: the key goes in Settings now, and
-        # the picker points at the page rather than at a shell.
-        # No leading claim about what was found: this function has no idea.
-        # The caller knows, and adds one only when it is true -- otherwise the
-        # page says "no artwork was found" directly above two perfectly good
-        # pictures, which is how the old wording read once our own tiles were
-        # offered here.
-        return [], ("More artwork is available from SteamGridDB, a community "
-                    "library of game artwork. If you have an account there, "
-                    "add your key in Settings and its pictures appear here "
-                    "too.")
+          limit: int = SGDB_PAGE, page: int = 0) -> Tuple[List[Dict[str, Any]], str, int]:
+    """One page of community artwork: (candidates, note, how many there are).
 
-    def grids(endpoint: str) -> List[Dict[str, Any]]:
+    **There is no ranking here, and there cannot be.** This used to sort by the
+    `score` field and keep the best dozen. Measured against the live API on
+    2026-09-22, `score` and `upvotes` are zero on every item of every game
+    tried -- 300 items across six pages of Cyberpunk 2077 alone -- so the sort
+    compared equal keys, and a stable sort left the order exactly as it
+    arrived. It had never chosen a best anything. The grids endpoints take no
+    sort or order parameter either, so the server cannot rank for us. Issue
+    #30. What is left is honest: the API's own order, a page at a time.
+    """
+    if not key:
+        return [], SGDB_NO_KEY_NOTE, 0
+
+    def grids(path: str) -> Tuple[List[Dict[str, Any]], int]:
+        """A page of results, and the total the API says exist.
+
+        `limit` is sent as well as `page`, and the API pages by it -- so our
+        page N is exactly items [N*limit, N*limit+limit). Without it the server
+        pages by its own 50 and taking 48 of each would drop two items per
+        page, silently, forever. (`limit` is capped at 50; asking 100 gets 50.)
+        """
+        join = "&" if "?" in path else "?"
+        window = f"{join}limit={min(limit, SGDB_API_PAGE)}&page={max(0, page)}"
         try:
-            doc = _sgdb_json(endpoint, key, timeout)
+            doc = _sgdb_json(f"{path}{window}", key, timeout)
         except Exception as e:
-            log(f"Artwork: SteamGridDB {endpoint} failed ({e})")
-            return []
-        data = doc.get("data") if isinstance(doc, dict) else None
-        return data if isinstance(data, list) else []
+            log(f"Artwork: SteamGridDB {path} failed ({e})")
+            return [], 0
+        if not isinstance(doc, dict):
+            return [], 0
+        data = doc.get("data")
+        total = doc.get("total")
+        return (data if isinstance(data, list) else [],
+                total if isinstance(total, int) else 0)
 
     items: List[Dict[str, Any]] = []
+    total = 0
     if str(appid).isdigit():
-        items = grids(f"/grids/steam/{appid}?dimensions=600x900")
+        items, total = grids(f"/grids/steam/{appid}?dimensions=600x900")
         if not items:
-            items = grids(f"/grids/steam/{appid}")
+            items, total = grids(f"/grids/steam/{appid}")
     if not items and name:
-        search = grids(f"/search/autocomplete/{urllib.parse.quote(name)}")
-        if search:
-            game_id = search[0].get("id")
+        # The game id is resolved again for every page. One extra request on a
+        # page turn, and the alternative is threading a resolved id through the
+        # URL where a person could edit it into something we then trust.
+        #
+        # Unpaged, deliberately: this is a name lookup, not a page of results.
+        # Asking it for page 2 returns nothing, which would have made every
+        # page turn past the first say "no artwork" for anything found by name
+        # rather than by appid.
+        try:
+            doc = _sgdb_json(
+                f"/search/autocomplete/{urllib.parse.quote(name)}", key, timeout)
+            found_games = doc.get("data") if isinstance(doc, dict) else None
+            found_games = found_games if isinstance(found_games, list) else []
+        except Exception as e:
+            log(f"Artwork: SteamGridDB autocomplete failed ({e})")
+            found_games = []
+        if found_games:
+            game_id = found_games[0].get("id")
             if game_id:
-                items = (grids(f"/grids/game/{game_id}?dimensions=600x900")
-                         or grids(f"/grids/game/{game_id}"))
+                items, total = grids(f"/grids/game/{game_id}?dimensions=600x900")
+                if not items:
+                    items, total = grids(f"/grids/game/{game_id}")
 
     if not items:
-        return [], "SteamGridDB has no artwork for this one."
+        if page:
+            # Walked off the end. Not "nothing for this game" -- that would be
+            # a lie told by a page turn.
+            return [], "There is no more artwork for this one.", total
+        return [], "SteamGridDB has no artwork for this one.", total
 
-    items.sort(key=lambda item: item.get("score") or 0, reverse=True)
     found = []
     for item in items[:limit]:
         origin = item.get("url") or ""
@@ -417,7 +465,44 @@ def _sgdb(name: str, appid: str, key: str, timeout: int,
         found.append({"id": candidate_id(origin), "source": "sgdb",
                       "label": f"by {author}" if author else "SteamGridDB",
                       "origin": origin})
-    return found, ""
+    return found, "", total
+
+
+def sgdb_page(conf_dir: str, *, name: str = "", source: str = "",
+              ident: str = "", key: str = "", page: int = 0,
+              timeout: int = 8, workers: int = 8) -> Dict[str, Any]:
+    """One page of SteamGridDB artwork, fetched and cached, on demand.
+
+    Separate from `find_candidates` on purpose. Opening the picker must not
+    reach SteamGridDB at all: it costs a network round trip on a page that is
+    usually answered from the disk, and until somebody asks for community
+    artwork there is nothing to spend it on.
+    """
+    prune_cache(conf_dir)
+    appid = str(ident or "") if source == "steam" else ""
+    page = max(0, page)
+
+    wanted, note, total = _sgdb(name, appid, key, timeout, page=page)
+    if not wanted:
+        return {"candidates": [], "note": note, "total": total,
+                "page": page, "pages": _pages(total)}
+
+    with ThreadPoolExecutor(max_workers=max(1, workers)) as pool:
+        fetched = list(pool.map(
+            lambda c: _fetch_candidate(conf_dir, c, timeout), wanted))
+    candidates = [c for c in fetched if c]
+    if not candidates:
+        note = ("None of the pictures on this page could be fetched. Check the "
+                "network, or try the next page.")
+    return {"candidates": candidates, "note": note, "total": total,
+            "page": page, "pages": _pages(total)}
+
+
+def _pages(total: int) -> int:
+    """How many pages that many results make, at our page size."""
+    if total <= 0:
+        return 0
+    return (total + SGDB_PAGE - 1) // SGDB_PAGE
 
 
 # --------------------------------------------------------------------------
@@ -433,30 +518,36 @@ def find_candidates(conf_dir: str, *, name: str = "", source: str = "",
     *source* and *ident* are the ownership marker's: a "steam" entry carries its
     appid, which unlocks both Valve's CDN and SteamGridDB's Steam lookup. An
     entry without one is searched for by name.
+
+    **SteamGridDB is not consulted here.** It is the only source that is a
+    network round trip to a third party, it has hundreds of results where the
+    others have one or two, and opening this page usually wants none of them --
+    what is already on the disk is normally the right answer. It is fetched a
+    page at a time by `sgdb_page()`, when somebody asks. Issue #30.
     """
     prune_cache(conf_dir)
 
     appid = str(ident or "") if source == "steam" else ""
     notes: List[str] = []
-    # Whether the page should offer somewhere to put a key. Decided here rather
-    # than by matching the note's wording downstream: this is the only place
-    # that knows a key was wanted and missing.
-    offer_sgdb = sgdb_enable and not str(sgdb_key or "").strip()
+    # What the page should offer about community artwork. Decided here rather
+    # than by matching a note's wording downstream: this is the only place that
+    # knows whether a key was wanted and whether there is one.
+    has_key = bool(str(sgdb_key or "").strip())
+    offer_sgdb = sgdb_enable and not has_key       # -> a link to Settings
+    sgdb_ready = sgdb_enable and has_key           # -> a button that fetches
+    if offer_sgdb:
+        notes.append(SGDB_NO_KEY_NOTE)
 
     wanted: List[Dict[str, Any]] = []
     wanted += _ours(source, ident)
     wanted += _steam_local(steam_root, appid)
     wanted += _steam_cdn(appid)
-    if sgdb_enable:
-        sgdb_found, note = _sgdb(name, appid, sgdb_key, timeout)
-        wanted += sgdb_found
-        if note:
-            notes.append(note)
 
     if not wanted:
         if notes:
             notes[0] = "No artwork was found for this one. " + notes[0]
         return {"candidates": [], "offer_sgdb": offer_sgdb,
+                "sgdb_ready": sgdb_ready,
                 "notes": notes or [
                     "Nothing to suggest for this app. Browse for a file "
                     "instead."]}
@@ -466,7 +557,7 @@ def find_candidates(conf_dir: str, *, name: str = "", source: str = "",
             lambda c: _fetch_candidate(conf_dir, c, timeout), wanted))
 
     # Order follows `wanted`, which is the order a person wants to see: what is
-    # already on this machine, then what Valve has now, then community art.
+    # already on this machine, then what Valve has now.
     candidates = [c for c in fetched if c]
     if not candidates and notes:
         notes[0] = "No artwork was found for this one. " + notes[0]
@@ -474,7 +565,7 @@ def find_candidates(conf_dir: str, *, name: str = "", source: str = "",
         notes.append("None of the artwork sources answered. Check the network, "
                      "or browse for a file.")
     return {"candidates": candidates, "notes": notes,
-            "offer_sgdb": offer_sgdb}
+            "offer_sgdb": offer_sgdb, "sgdb_ready": sgdb_ready}
 
 
 def _slug(name: str) -> str:

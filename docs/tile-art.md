@@ -248,6 +248,52 @@ drift. The page says *whether* a key is stored and never renders the key back.
 `--save-sgdb-key` stays. It is how a key gets onto a headless machine, and it
 reads the key on stdin rather than taking it on argv (`docs/security.md`).
 
+## SteamGridDB is fetched on demand, a page at a time
+
+**There is no ranking, and there cannot be one.** `_sgdb()` used to sort by the
+`score` field and keep the best twelve. Measured against the live API on
+2026-09-22: `score` and `upvotes` are **zero on every item of every game
+tried** — 300 items across six pages of Cyberpunk 2077 alone. The sort compared
+equal keys, and a stable sort left the order exactly as it arrived, so it had
+never chosen a best anything. The grids endpoints take no sort or order
+parameter either (`styles`, `dimensions`, `mimes`, `types`, `nsfw`, `humor`,
+`epilepsy`, `oneoftag`, `page`, `limit` — and that is all), so the server
+cannot rank for us. Issue #30.
+
+What replaced it:
+
+- **`find_candidates()` no longer calls SteamGridDB at all.** It is the only
+  source that is a network round trip to a third party, and opening the picker
+  usually wants none of it — what is already on the disk is normally right.
+  `sgdb_page()` fetches, when somebody presses **Show SteamGridDB art**. The
+  button appears only when a key is stored; without one the picker shows the
+  link to Settings instead.
+- **48 at a time, in the API's own order**, in a modal over the picker, with
+  Back and Next. Cyberpunk 2077 has 689.
+- **`limit` is sent with `page`, and this matters.** The API pages by whatever
+  limit it is given; with none it pages by its own 50, and taking 48 of each
+  would drop two items every page, silently, forever. `limit` is capped at 50 —
+  asking for 100 returns 50.
+- **The name lookup is not paged.** `/search/autocomplete/` resolves a game id
+  and has no page 2; asking for one returns nothing, which would have made
+  every page turn past the first claim there was no artwork — but only for
+  entries found by name rather than by appid, which is the hardest kind of bug
+  to notice.
+- **The sheet needs no script.** The page is served `script-src 'self'` with no
+  inline script, and is driven by a gamepad on a television. So the server
+  renders `<dialog open>` when the address says the sheet is up, and every
+  control in it is a link. #28 is why that is not negotiable. An open dialog in
+  the markup paints no `::backdrop`, so a veil is drawn behind it.
+
+## Where the SteamGridDB key comes from
+
+Settings explains it, because nobody arrives knowing: a free account, then
+**Preferences** from the menu under your name, then **API**
+(<https://www.steamgriddb.com/profile/preferences/api>). Through Moonlight that
+address is also a QR code — a television has no address bar and no keyboard, so
+the phone in your hand is the way in, the same reasoning as the bug-report
+page. At the machine it is just a link; a QR code there would be clutter.
+
 Whether the offer belongs on the picker at all was the open half of issue #22.
 It stays, because with the library-cache layout fixed most Steam games never
 reach it — the ones that do are GOG and Epic, where there is genuinely no

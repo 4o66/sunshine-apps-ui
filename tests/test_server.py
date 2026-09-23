@@ -84,6 +84,11 @@ class FakeEngine:
         self.auth = (True, "ok")
         self.listing = {"ok": True, "path": "/home/u", "parent": "/home", "entries": []}
         self.candidates = {"ok": True, "candidates": [], "notes": []}
+        # Every SteamGridDB fetch the handler makes, so a test can assert that
+        # opening the picker makes none at all. Issue #30.
+        self.sgdb_calls = []
+        self.sgdb = {"ok": True, "candidates": [], "note": "", "total": 0,
+                     "page": 0, "pages": 0}
         self.chosen = ""
         self.copies = []
         self.diff = {}
@@ -129,6 +134,12 @@ class FakeEngine:
         self.searched = {"name": name, "source": source, "ident": ident}
         return self.candidates
 
+    def art_sgdb(self, conf_dir, name="", source="", ident="", page=0):
+        self._maybe_fail("art_sgdb")
+        self.sgdb_calls.append({"name": name, "source": source,
+                                "ident": ident, "page": page})
+        return self.sgdb
+
     def art_choose(self, conf_dir, chosen_id, name=""):
         self._maybe_fail("art_choose")
         return self.chosen or f"/img/{name}-{chosen_id}.png"
@@ -167,8 +178,8 @@ class ServerTest(unittest.TestCase):
         self.addCleanup(shutil.rmtree, self.conf_dir, True)
         self.engine = FakeEngine()
         for name in ("get_state", "run_plan", "mutate", "browse", "art_search",
-                     "art_choose", "list_backups", "backup_diff", "check_auth",
-                     "save_auth"):
+                     "art_sgdb", "art_choose", "list_backups", "backup_diff",
+                     "check_auth", "save_auth"):
             patched = mock.patch.object(server_module, name,
                                         getattr(self.engine, name))
             patched.start()
@@ -2448,3 +2459,130 @@ class CommunityArtworkKeyTest(ServerTest):
         status, _ = self.post({"sgdb-key": "good"}, path="/settings/sgdb-key")
         self.assertEqual(status, 404)
         self.assertEqual(seen, {})
+
+
+class SteamGridDbSheetTest(ServerTest):
+    """Issue #30. Community artwork arrives a page at a time, on demand.
+
+    Cyberpunk 2077 has 689 grids and the picker offered twelve of them, chosen
+    by a sort on a `score` field that is zero on every item of every game. The
+    sort is gone. What replaces it is a modal that pages through the lot, and
+    which is never fetched until somebody presses for it.
+    """
+
+    def _key(self, ready=True):
+        self.engine.candidates = {"ok": True, "candidates": [], "notes": [],
+                                  "offer_sgdb": not ready, "sgdb_ready": ready}
+
+    def _page(self, n=0, count=48, total=689):
+        self.engine.sgdb = {
+            "ok": True, "note": "", "total": total, "page": n,
+            "pages": (total + 47) // 48,
+            "candidates": [{"id": f"c{i}", "source": "sgdb", "label": "by nobody",
+                            "origin": f"https://g/{n}-{i}.png",
+                            "path": f"/cache/{n}-{i}.png"} for i in range(count)]}
+
+    def _open(self, page=None):
+        url = "/artwork?key=index:0&token=" + self.token
+        if page is not None:
+            url += f"&sgdb=1&sgdb_page={page}"
+        return self.get(url)[1]
+
+    # --- nothing is fetched until it is asked for --------------------------
+
+    def test_opening_the_picker_fetches_no_community_artwork(self):
+        """The whole point of on demand. This is the assertion that stops it
+        quietly going back to a network round trip on every picker open."""
+        self._key()
+        self._open()
+        self.assertEqual(self.engine.sgdb_calls, [])
+
+    def test_the_button_is_offered_when_a_key_is_stored(self):
+        self._key()
+        body = self._open()
+        self.assertIn("Show SteamGridDB art", body)
+        self.assertIn("sgdb=1", body)
+
+    def test_no_button_without_a_key(self):
+        self._key(ready=False)
+        body = self._open()
+        self.assertNotIn("Show SteamGridDB art", body)
+
+    def test_asking_without_a_key_fetches_nothing(self):
+        """The address can say sgdb=1 whatever the state of the key file."""
+        self._key(ready=False)
+        self._open(page=0)
+        self.assertEqual(self.engine.sgdb_calls, [])
+
+    # --- the sheet ---------------------------------------------------------
+
+    def test_pressing_it_fetches_page_zero(self):
+        self._key(); self._page()
+        self._open(page=0)
+        self.assertEqual(len(self.engine.sgdb_calls), 1)
+        self.assertEqual(self.engine.sgdb_calls[0]["page"], 0)
+
+    def test_the_sheet_is_a_dialog_and_needs_no_script(self):
+        """`script-src 'self'` with no inline script, and a gamepad for a
+        pointer. A modal that needs JavaScript to open is a modal that does not
+        open -- which is exactly what happened to the settings switches (#28)."""
+        self._key(); self._page()
+        body = self._open(page=0)
+        self.assertIn("<dialog", body)
+        self.assertIn("open", body)
+        self.assertNotIn("<script", body)
+
+    def test_it_says_how_far_through_you_are(self):
+        self._key(); self._page(n=1)
+        body = self._open(page=1)
+        self.assertIn("49-96 of 689", body)
+        self.assertIn("Page 2 of 15", body)
+
+    def test_next_and_back_carry_the_page(self):
+        self._key(); self._page(n=1)
+        body = self._open(page=1)
+        self.assertIn("sgdb_page=2", body)
+        self.assertIn("sgdb_page=0", body)
+
+    def test_back_is_dead_on_the_first_page(self):
+        self._key(); self._page(n=0)
+        body = self._open(page=0)
+        self.assertIn('flat">Back', body)
+
+    def test_next_is_dead_on_the_last_page(self):
+        self._key(); self._page(n=14)
+        body = self._open(page=14)
+        self.assertIn('flat">Next', body)
+
+    def test_a_negative_page_is_read_as_the_first(self):
+        self._key(); self._page()
+        self.get(f"/artwork?key=index:0&token={self.token}&sgdb=1&sgdb_page=-4")
+        self.assertEqual(self.engine.sgdb_calls[0]["page"], 0)
+
+    def test_a_nonsense_page_is_read_as_the_first(self):
+        self._key(); self._page()
+        self.get(f"/artwork?key=index:0&token={self.token}&sgdb=1&sgdb_page=banana")
+        self.assertEqual(self.engine.sgdb_calls[0]["page"], 0)
+
+    def test_the_search_term_survives_a_page_turn(self):
+        """Paging through results for a name you typed must keep looking up
+        that name, not fall back to the entry's own title."""
+        self._key(); self._page()
+        self.get(f"/artwork?key=index:0&token={self.token}"
+                 f"&q=Cyberpunk&sgdb=1&sgdb_page=1")
+        self.assertEqual(self.engine.sgdb_calls[0]["name"], "Cyberpunk")
+
+    def test_closing_leads_back_to_the_picker_without_the_sheet(self):
+        self._key(); self._page()
+        body = self._open(page=0)
+        self.assertIn("Close", body)
+        self.assertIn(f"/artwork?key=index%3A0&token={self.token}", body)
+
+    def test_a_failure_leaves_the_picker_standing(self):
+        """The sheet is one source among several. It failing is not the page
+        failing -- everything already found is still on it."""
+        self._key()
+        self.engine.fails = {"art_sgdb": "SteamGridDB is not answering"}
+        body = self._open(page=0)
+        self.assertIn("SteamGridDB is not answering", body)
+        self.assertIn("Artwork for", body)

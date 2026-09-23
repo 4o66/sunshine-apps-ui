@@ -17,7 +17,8 @@ from urllib.parse import parse_qs, urlencode, urlsplit
 
 from . import __version__, security
 from . import artwork, privilege, state
-from .engine import (EngineError, art_choose, art_search, backup_diff, browse,
+from .engine import (EngineError, art_choose, art_search, art_sgdb,
+                     backup_diff, browse,
                      check_auth, get_state, list_backups, mutate, run_plan,
                      save_auth)
 from . import scanjob, updates
@@ -378,18 +379,37 @@ class PlanHandler(BaseHTTPRequestHandler):
             if searched != name:
                 source = ident = ""
             error, doc = "", {"candidates": [], "notes": [],
-                              "offer_sgdb": False}
+                              "offer_sgdb": False, "sgdb_ready": False}
             try:
                 doc = art_search(self.conf_dir, name=searched,
                                  source=source, ident=ident)
             except EngineError as e:
                 error = str(e)
+
+            # The SteamGridDB sheet, only when the address asks for it. This is
+            # the one fetch on this page that reaches a third party, so it
+            # happens because somebody pressed for it and not before. Issue #30.
+            sheet = None
+            if (query.get("sgdb") or [""])[0] == "1" and doc.get("sgdb_ready"):
+                asked = (query.get("sgdb_page") or ["0"])[0]
+                try:
+                    wanted = max(0, int(asked))
+                except ValueError:
+                    wanted = 0
+                try:
+                    sheet = art_sgdb(self.conf_dir, name=searched,
+                                     source=source, ident=ident, page=wanted)
+                except EngineError as e:
+                    sheet = {"candidates": [], "note": str(e), "total": 0,
+                             "page": wanted, "pages": 0}
+
             self._send(200, artwork_page(
                 doc.get("candidates") or [], self.token, key=key,
                 label=name or "this app",
                 current=str(state.draft(key).get("image-path") or ""),
                 notes=doc.get("notes") or [], searched=searched, error=error,
-                offer_sgdb=bool(doc.get("offer_sgdb"))))
+                offer_sgdb=bool(doc.get("offer_sgdb")),
+                sgdb_ready=bool(doc.get("sgdb_ready")), sheet=sheet))
             return
 
         if parts.path == "/connect":

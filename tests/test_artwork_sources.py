@@ -247,45 +247,112 @@ class FindCandidatesTest(_Fixture):
 
 
 class SgdbTest(_Fixture):
-    def _api(self, responses):
+    def _api(self, responses, total=None):
+        self.asked = []
+
         def get(path, key, timeout):
+            self.asked.append(path)
             for prefix, payload in responses.items():
                 if path.startswith(prefix):
-                    return {"data": payload}
+                    doc = {"data": payload}
+                    if total is not None:
+                        doc["total"] = total
+                    return doc
             return {"data": []}
         return mock.patch.object(art, "_sgdb_json", side_effect=get)
 
-    def test_highest_scoring_artwork_comes_first(self):
+    def test_the_order_the_api_gave_is_the_order_shown(self):
+        """There is no ranking, and #30 is why: `score` is zero on every item
+        of every game, so sorting by it compared equal keys and a stable sort
+        changed nothing. The sort is gone; this pins the order it leaves."""
+        grids = [{"url": "https://g/first.png"}, {"url": "https://g/second.png"}]
+        with self._api({"/grids/steam/526870": grids}):
+            found, note, _ = art._sgdb("Satisfactory", "526870", "key", 1)
+        self.assertEqual([c["origin"] for c in found],
+                         ["https://g/first.png", "https://g/second.png"])
+        self.assertEqual(note, "")
+
+    def test_a_score_no_longer_reorders_anything(self):
+        """Were the field ever to come back, it must not silently start
+        reordering results behind a page number."""
         grids = [{"url": "https://g/low.png", "score": 1},
                  {"url": "https://g/high.png", "score": 99}]
         with self._api({"/grids/steam/526870": grids}):
-            found, note = art._sgdb("Satisfactory", "526870", "key", 1)
-        self.assertEqual(found[0]["origin"], "https://g/high.png")
-        self.assertEqual(note, "")
+            found, _, _ = art._sgdb("Satisfactory", "526870", "key", 1)
+        self.assertEqual(found[0]["origin"], "https://g/low.png")
 
     def test_a_non_steam_app_is_searched_for_by_name(self):
         with self._api({"/search/autocomplete/": [{"id": 42}],
-                        "/grids/game/42": [{"url": "https://g/a.png", "score": 5}]}):
-            found, note = art._sgdb("Hades", "", "key", 1)
+                        "/grids/game/42": [{"url": "https://g/a.png"}]}):
+            found, note, _ = art._sgdb("Hades", "", "key", 1)
         self.assertEqual([c["origin"] for c in found], ["https://g/a.png"])
 
     def test_the_artist_is_credited(self):
-        grids = [{"url": "https://g/a.png", "score": 1, "author": {"name": "someone"}}]
+        grids = [{"url": "https://g/a.png", "author": {"name": "someone"}}]
         with self._api({"/grids/steam/526870": grids}):
-            found, _ = art._sgdb("", "526870", "key", 1)
+            found, _, _ = art._sgdb("", "526870", "key", 1)
         self.assertEqual(found[0]["label"], "by someone")
 
     def test_the_list_is_capped(self):
-        grids = [{"url": f"https://g/{i}.png", "score": i} for i in range(200)]
+        grids = [{"url": f"https://g/{i}.png"} for i in range(200)]
         with self._api({"/grids/steam/526870": grids}):
-            found, _ = art._sgdb("", "526870", "key", 1)
-        self.assertEqual(len(found), art.SGDB_LIMIT)
+            found, _, _ = art._sgdb("", "526870", "key", 1)
+        self.assertEqual(len(found), art.SGDB_PAGE)
 
     def test_no_results_is_said_plainly(self):
         with self._api({}):
-            found, note = art._sgdb("Nothing At All", "", "key", 1)
+            found, note, _ = art._sgdb("Nothing At All", "", "key", 1)
         self.assertEqual(found, [])
         self.assertIn("no artwork", note)
+
+    # --- paging, issue #30 -------------------------------------------------
+
+    def test_the_total_comes_back(self):
+        """The API reports how many exist. Without it the picker cannot say
+        how far through you are, or which page is the last."""
+        grids = [{"url": "https://g/a.png"}]
+        with self._api({"/grids/steam/526870": grids}, total=689):
+            _, _, total = art._sgdb("", "526870", "key", 1)
+        self.assertEqual(total, 689)
+
+    def test_the_request_carries_both_limit_and_page(self):
+        """`limit` matters as much as `page`: the API pages by whatever limit
+        it is given, and without one it pages by its own 50 -- so taking 48 of
+        each would drop two every page, silently."""
+        with self._api({"/grids/steam/526870": [{"url": "https://g/a.png"}]}):
+            art._sgdb("", "526870", "key", 1, page=3)
+        asked = self.asked[0]
+        self.assertIn(f"limit={art.SGDB_PAGE}", asked)
+        self.assertIn("page=3", asked)
+
+    def test_the_limit_asked_for_never_exceeds_the_api_maximum(self):
+        with self._api({"/grids/steam/526870": [{"url": "https://g/a.png"}]}):
+            art._sgdb("", "526870", "key", 1, limit=500)
+        self.assertIn(f"limit={art.SGDB_API_PAGE}", self.asked[0])
+
+    def test_the_name_lookup_is_not_paged(self):
+        """Asking autocomplete for page 2 returns nothing, which would make
+        every page turn past the first claim there is no artwork -- but only
+        for entries found by name, which is the hardest kind of bug to see."""
+        with self._api({"/search/autocomplete/": [{"id": 42}],
+                        "/grids/game/42": [{"url": "https://g/a.png"}]}):
+            found, _, _ = art._sgdb("Hades", "", "key", 2)
+        self.assertEqual([c["origin"] for c in found], ["https://g/a.png"])
+        lookup = [p for p in self.asked if p.startswith("/search/autocomplete/")]
+        self.assertTrue(lookup)
+        for path in lookup:
+            self.assertNotIn("page=", path)
+
+    def test_walking_off_the_end_does_not_claim_there_is_nothing(self):
+        with self._api({}):
+            found, note, _ = art._sgdb("", "526870", "key", 1, page=9)
+        self.assertEqual(found, [])
+        self.assertIn("no more", note)
+
+    def test_without_a_key_it_points_at_settings(self):
+        found, note, total = art._sgdb("Anything", "526870", "", 1)
+        self.assertEqual((found, total), ([], 0))
+        self.assertIn("Settings", note)
 
 
 class ChooseTest(_Fixture):

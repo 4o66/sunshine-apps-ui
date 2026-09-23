@@ -20,6 +20,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from . import backups as _backups
 from . import run as _run
 from .artwork_sources import (ArtworkError, choose_artwork, find_candidates,
+                              sgdb_page,
                               find_steam_root, load_sgdb_key, save_sgdb_key)
 from .mutate import MutateError, apply_ops
 from .reconcile import MARKER, SCHEMA_VERSION, backup
@@ -327,6 +328,20 @@ def art_search(conf_dir: str, name: str = "", source: str = "",
         sgdb_key=load_sgdb_key(conf_dir),
         sgdb_enable=str(os.getenv("SGDB_ENABLE", "1")).strip().lower()
                     not in ("0", "false", "no", "off"),
+        timeout=int(os.getenv("SGDB_TIMEOUT", "8") or 8))
+    return {"ok": True, **result}
+
+
+def art_sgdb(conf_dir: str, name: str = "", source: str = "", ident: str = "",
+             page: int = 0) -> Dict[str, Any]:
+    """One page of SteamGridDB artwork, on demand. Issue #30.
+
+    Only ever reached by somebody pressing for it, which is why it is not part
+    of `art_search`: opening the picker should cost nothing on the network.
+    """
+    result = sgdb_page(
+        conf_dir, name=name, source=source, ident=ident,
+        key=load_sgdb_key(conf_dir), page=page,
         timeout=int(os.getenv("SGDB_TIMEOUT", "8") or 8))
     return {"ok": True, **result}
 
