@@ -285,6 +285,57 @@ What replaced it:
   control in it is a link. #28 is why that is not negotiable. An open dialog in
   the markup paints no `::backdrop`, so a veil is drawn behind it.
 
+## The sheet loads a picture at a time, and says so while it works
+
+Issue #31, all three faults found the first time it was used on the television.
+
+**Nothing is downloaded before the page is drawn.** `sgdb_page()` returns as
+soon as the list is known; each tile is `<img src="/sgdb-art?id=...">` and is
+fetched when the browser asks for it. It used to download all 48 first, so the
+window sat there for the length of 48 downloads with nothing on it — the button
+looked broken rather than busy.
+
+**`/sgdb-art` resolves an id against what the session was offered**, never a URL
+from the page. The list the server rendered is the only list it will fetch
+from. A route that took an address from the page would be a proxy onto anything
+this machine can reach, and this one runs on a games box on a home network.
+
+**The wait is on screen.** Pressing the button opens the sheet empty with a
+spinner, and that page carries `<meta http-equiv="refresh">` to the address
+that does the asking. Two addresses instead of one, and no script — the sheet
+cannot depend on JavaScript for the same reason the settings switches could not
+(#28).
+
+### The flex bug, and why it passed review
+
+`.sheet-body` had `flex:1`. That shorthand means `flex-basis:0%`, so the body
+contributed no height of its own, inside a dialog whose height came only from
+`max-height`. **Chrome resolves that to something sensible; WebKitGTK leaves
+the body at zero** — and WebKitGTK is the window this actually runs in. The
+grid rendered as a 40px strip on the box while looking perfect in a browser.
+
+So: the dialog has a **definite `height`**, the body is `flex:1 1 auto` with
+`min-height:0` (which is what lets a flex child shrink below its content so
+`overflow-y` has anything to do), and the bars are `flex:0 0 auto` so a long
+grid scrolls instead of squeezing them.
+
+The lesson is worth more than the fix: **a layout verified only in Chrome has
+not been verified.** The engine that matters is the one in the window.
+
+### Sizing
+
+Measured in a 935×562 window, which is where it was reported:
+
+| | before | after |
+|---|---|---|
+| sheet height | 40px | 528px |
+| head + foot | 154px | 127px |
+| tiles visible | ~1 partial row | 12 |
+
+Sheet tiles are smaller than the picker's on purpose. The picker is telling
+four *sources* apart; the sheet is comparing 48 near-identical covers, where
+what matters is how many reach the eye at once. At 1920×1080 that is 29 of 48.
+
 ## Where the SteamGridDB key comes from
 
 Settings explains it, because nobody arrives knowing: a free account, then

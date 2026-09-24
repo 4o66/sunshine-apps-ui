@@ -88,7 +88,7 @@ class FakeEngine:
         # opening the picker makes none at all. Issue #30.
         self.sgdb_calls = []
         self.sgdb = {"ok": True, "candidates": [], "note": "", "total": 0,
-                     "page": 0, "pages": 0}
+                     "page": 0, "per": 48, "pages": 0}
         self.chosen = ""
         self.copies = []
         self.diff = {}
@@ -134,10 +134,10 @@ class FakeEngine:
         self.searched = {"name": name, "source": source, "ident": ident}
         return self.candidates
 
-    def art_sgdb(self, conf_dir, name="", source="", ident="", page=0):
+    def art_sgdb(self, conf_dir, name="", source="", ident="", page=0, per=0):
         self._maybe_fail("art_sgdb")
         self.sgdb_calls.append({"name": name, "source": source,
-                                "ident": ident, "page": page})
+                                "ident": ident, "page": page, "per": per})
         return self.sgdb
 
     def art_choose(self, conf_dir, chosen_id, name=""):
@@ -2482,10 +2482,12 @@ class SteamGridDbSheetTest(ServerTest):
                             "origin": f"https://g/{n}-{i}.png",
                             "path": f"/cache/{n}-{i}.png"} for i in range(count)]}
 
-    def _open(self, page=None):
+    def _open(self, page=None, go=True):
+        """*go* is the second step: the first draws the spinner, the second
+        does the fetching. Issue #31."""
         url = "/artwork?key=index:0&token=" + self.token
         if page is not None:
-            url += f"&sgdb=1&sgdb_page={page}"
+            url += f"&sgdb=1&sgdb_page={page}" + ("&go=1" if go else "")
         return self.get(url)[1]
 
     # --- nothing is fetched until it is asked for --------------------------
@@ -2522,17 +2524,36 @@ class SteamGridDbSheetTest(ServerTest):
         self.assertEqual(len(self.engine.sgdb_calls), 1)
         self.assertEqual(self.engine.sgdb_calls[0]["page"], 0)
 
-    def test_the_sheet_is_a_dialog_and_needs_no_script(self):
-        """`script-src 'self'` with no inline script, and a gamepad for a
-        pointer. A modal that needs JavaScript to open is a modal that does not
-        open -- which is exactly what happened to the settings switches (#28)."""
+    def test_the_sheet_is_a_dialog_that_opens_without_script(self):
+        """A modal that needs JavaScript to open is a modal that does not open
+        -- which is exactly what happened to the settings switches (#28). It is
+        rendered already open, so nothing has to run for it to be there."""
         self._key(); self._page()
         body = self._open(page=0)
         # The whole opening tag, not just "<dialog": the CSS beside it used to
         # mention the tag in a comment, so the loose assertion passed on a page
         # with no sheet on it at all.
         self.assertIn('<dialog class="sheet" open', body)
-        self.assertNotIn("<script", body)
+        self.assertNotIn("<script>", body)          # nothing inline
+
+    def test_every_control_in_the_sheet_is_a_link(self):
+        """The contract that matters, now that sheet.js exists: script sizes the
+        grid and does nothing else, so with it blocked or broken the sheet is
+        still a sheet you can page, close and choose from with a gamepad."""
+        self._key(); self._page(n=1)
+        body = self._open(page=1)
+        sheet = body[body.index('<dialog class="sheet" open'):]
+        for control in ("sgdb_page=2", "sgdb_page=0", "Close"):
+            self.assertIn(control, sheet)
+        # No button, no form, no handler -- links and images.
+        self.assertNotIn("<button", sheet)
+        self.assertNotIn("onclick", sheet)
+
+    def test_the_results_page_carries_no_script_at_all(self):
+        """Sizing moved to the waiting page, which is the only place that needs
+        to measure anything. What comes back with the pictures is plain HTML."""
+        self._key(); self._page()
+        self.assertNotIn("<script", self._open(page=0))
 
     def test_the_picker_carries_no_open_dialog_until_asked(self):
         """The other half of the one above, and the half that can regress:
@@ -2564,12 +2585,12 @@ class SteamGridDbSheetTest(ServerTest):
 
     def test_a_negative_page_is_read_as_the_first(self):
         self._key(); self._page()
-        self.get(f"/artwork?key=index:0&token={self.token}&sgdb=1&sgdb_page=-4")
+        self.get(f"/artwork?key=index:0&token={self.token}&sgdb=1&sgdb_page=-4&go=1")
         self.assertEqual(self.engine.sgdb_calls[0]["page"], 0)
 
     def test_a_nonsense_page_is_read_as_the_first(self):
         self._key(); self._page()
-        self.get(f"/artwork?key=index:0&token={self.token}&sgdb=1&sgdb_page=banana")
+        self.get(f"/artwork?key=index:0&token={self.token}&sgdb=1&sgdb_page=banana&go=1")
         self.assertEqual(self.engine.sgdb_calls[0]["page"], 0)
 
     def test_the_search_term_survives_a_page_turn(self):
@@ -2577,7 +2598,7 @@ class SteamGridDbSheetTest(ServerTest):
         that name, not fall back to the entry's own title."""
         self._key(); self._page()
         self.get(f"/artwork?key=index:0&token={self.token}"
-                 f"&q=Cyberpunk&sgdb=1&sgdb_page=1")
+                 f"&q=Cyberpunk&sgdb=1&sgdb_page=1&go=1")
         self.assertEqual(self.engine.sgdb_calls[0]["name"], "Cyberpunk")
 
     def test_closing_leads_back_to_the_picker_without_the_sheet(self):
@@ -2594,3 +2615,210 @@ class SteamGridDbSheetTest(ServerTest):
         body = self._open(page=0)
         self.assertIn("SteamGridDB is not answering", body)
         self.assertIn("Artwork for", body)
+
+
+class SteamGridDbWaitingTest(ServerTest):
+    """Issue #31, the first half: the button had no visible effect.
+
+    Pressing it fetched the list *and* downloaded all 48 pictures before the
+    browser was given anything to draw, so the window sat there looking like
+    nothing had happened. The sheet goes up empty with a spinner now, and the
+    page it refreshes to is the one that does the asking.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.engine.candidates = {"ok": True, "candidates": [], "notes": [],
+                                  "offer_sgdb": False, "sgdb_ready": True}
+
+    def _wait_page(self):
+        return self.get(f"/artwork?key=index:0&token={self.token}"
+                        f"&sgdb=1&sgdb_page=0")[1]
+
+    def test_the_first_step_asks_steamgriddb_nothing(self):
+        self._wait_page()
+        self.assertEqual(self.engine.sgdb_calls, [])
+
+    def test_the_sheet_is_already_up(self):
+        """Up, and empty. The point is that it appears at once."""
+        body = self._wait_page()
+        self.assertIn('<dialog class="sheet" open', body)
+        self.assertIn('class="spinner"', body)
+
+    def test_it_refreshes_into_the_fetch(self):
+        body = self._wait_page()
+        self.assertIn('http-equiv="refresh"', body)
+        self.assertIn("go=1", body)
+
+    def test_the_waiting_sheet_measures_how_many_fit(self):
+        """The empty sheet is the box the pictures will go in, so this is where
+        the count is taken. The spinner itself is CSS."""
+        body = self._wait_page()
+        self.assertIn("/sheet.js", body)
+        self.assertNotIn("<script>", body)          # nothing inline
+
+    def test_the_waiting_sheet_works_without_the_script(self):
+        """The meta refresh goes to the same address without a count, and the
+        server falls back to a full page. Script makes it fit, not work."""
+        body = self._wait_page()
+        self.assertIn('http-equiv="refresh"', body)
+        self.assertNotIn("per=", body)
+
+    def test_it_claims_no_count_while_it_is_still_asking(self):
+        """"1-0 of 0" beside a spinner is worse than saying nothing."""
+        body = self._wait_page()
+        self.assertNotIn(" of 0", body)
+        self.assertNotIn("Page 1 of", body)
+
+    def test_paging_is_dead_while_waiting(self):
+        body = self._wait_page()
+        self.assertIn('flat">Back', body)
+        self.assertIn('flat">Next', body)
+
+    def test_the_button_leads_to_the_spinner_not_the_fetch(self):
+        """Otherwise the first thing pressed is the slow thing again."""
+        body = self.get(f"/artwork?key=index:0&token={self.token}")[1]
+        self.assertIn("Show SteamGridDB art", body)
+        start = body.index("Show SteamGridDB art")
+        link = body[max(0, start - 300):start]
+        self.assertIn("sgdb=1", link)
+        self.assertNotIn("go=1", link)
+
+
+class SteamGridDbPictureTest(ServerTest):
+    """One picture per request, so the grid fills in rather than arriving whole.
+
+    And the id is resolved against what this session was actually offered: a
+    route that fetched whatever URL the page handed it would be a proxy onto
+    anything this machine can reach.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.engine.candidates = {"ok": True, "candidates": [], "notes": [],
+                                  "offer_sgdb": False, "sgdb_ready": True}
+        self.engine.sgdb = {
+            "ok": True, "note": "", "total": 2, "page": 0, "pages": 1,
+            "candidates": [{"id": "a" * 16, "source": "sgdb", "label": "by x",
+                            "origin": "https://cdn.example/a.png"}]}
+
+    def _offered(self):
+        self.get(f"/artwork?key=index:0&token={self.token}&sgdb=1&sgdb_page=0&go=1")
+
+    def test_the_sheet_points_at_the_per_picture_route(self):
+        self._offered()
+        body = self.get(f"/artwork?key=index:0&token={self.token}"
+                        f"&sgdb=1&sgdb_page=0&go=1")[1]
+        self.assertIn("/sgdb-art?id=", body)
+
+    def test_an_id_we_never_offered_is_refused(self):
+        """Nothing is fetched for it -- this is the anti-proxy assertion."""
+        seen = []
+        with mock.patch.object(server_module, "art_sgdb_one",
+                               lambda *a, **k: seen.append(a) or ""):
+            status, _ = self.get_no_redirect(
+                f"/sgdb-art?id={'b' * 16}&token={self.token}")
+        self.assertEqual(status, 404)
+        self.assertEqual(seen, [])
+
+    def test_an_offered_id_is_fetched_by_its_origin(self):
+        self._offered()
+        asked = []
+
+        def fetch(conf_dir, origin):
+            asked.append(origin)
+            return ""
+
+        with mock.patch.object(server_module, "art_sgdb_one", fetch):
+            self.get_no_redirect(f"/sgdb-art?id={'a' * 16}&token={self.token}")
+        self.assertEqual(asked, ["https://cdn.example/a.png"])
+
+    def test_it_needs_the_token(self):
+        self._offered()
+        status, _ = self.get_no_redirect(f"/sgdb-art?id={'a' * 16}")
+        self.assertEqual(status, 404)
+
+
+class ChoosingFromTheSheetTest(ServerTest):
+    """Picking a picture whose tile never loaded still works. Issue #31.
+
+    Choosing copies the cached file, and a sheet picture is cached only once
+    the browser has fetched it. That is normally true -- you click what you can
+    see -- but a tile whose image failed is still a link, and "that artwork is
+    no longer cached" is a baffling answer to "I picked this one".
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.engine.candidates = {"ok": True, "candidates": [], "notes": [],
+                                  "offer_sgdb": False, "sgdb_ready": True}
+        self.engine.sgdb = {
+            "ok": True, "note": "", "total": 1, "page": 0, "pages": 1,
+            "candidates": [{"id": "c" * 16, "source": "sgdb", "label": "by x",
+                            "origin": "https://cdn.example/c.png"}]}
+        self.get(f"/artwork?key=index:0&token={self.token}&sgdb=1&sgdb_page=0&go=1")
+
+    def test_it_is_fetched_before_being_chosen(self):
+        asked = []
+        with mock.patch.object(server_module, "art_sgdb_one",
+                               lambda conf, origin: asked.append(origin) or ""):
+            self.get_no_redirect(f"/artwork?key=index:0&choose={'c' * 16}"
+                                 f"&token={self.token}")
+        self.assertEqual(asked, ["https://cdn.example/c.png"])
+
+    def test_a_picture_we_never_offered_is_not_fetched(self):
+        """The same rule as the image route: only what we listed."""
+        asked = []
+        with mock.patch.object(server_module, "art_sgdb_one",
+                               lambda conf, origin: asked.append(origin) or ""):
+            self.get_no_redirect(f"/artwork?key=index:0&choose={'d' * 16}"
+                                 f"&token={self.token}")
+        self.assertEqual(asked, [])
+
+
+class TheLastPageLooksLikeTheLastPageTest(ServerTest):
+    """A short page keeps the tile size and leaves the grid part empty.
+
+    That empty space is the signal. The pages were briefly evened out so every
+    page was the same length, which removed it; Sean's call, 2026-09-22: "the
+    grid not filling a page feels like it's signaling this is the last page."
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.engine.candidates = {"ok": True, "candidates": [], "notes": [],
+                                  "offer_sgdb": False, "sgdb_ready": True}
+
+    def _page(self, n, count, total=689):
+        self.engine.sgdb = {
+            "ok": True, "note": "", "total": total, "page": n,
+            "pages": (total + 47) // 48,
+            "candidates": [{"id": f"{i:016x}", "source": "sgdb", "label": "by x",
+                            "origin": f"https://cdn.example/{n}-{i}.png"}
+                           for i in range(count)]}
+        return self.get(f"/artwork?key=index:0&token={self.token}"
+                        f"&sgdb=1&sgdb_page={n}&go=1")[1]
+
+    def test_the_tiles_are_a_fixed_size_so_a_short_page_is_simply_short(self):
+        """Nothing in the markup tells the grid how many a full page holds any
+        more: the tile is a fixed size -- the main grid's own 164.67px -- so
+        seventeen pictures are seventeen tiles and the rest of the box is
+        empty. That empty space is the end-of-list signal."""
+        body = self._page(14, 17)
+        self.assertNotIn("data-full", body)
+        self.assertEqual(body.count("/sgdb-art?id="), 17)
+
+    def test_a_full_page_uses_the_same_tile(self):
+        self.assertNotIn("data-full", self._page(0, 48))
+
+    def test_the_count_says_where_the_end_is(self):
+        self.assertIn("673-689 of 689", self._page(14, 17))
+
+    def test_next_is_dead_on_the_last_page(self):
+        self.assertIn('flat">Next', self._page(14, 17))
+
+    def test_pages_are_full_sized_throughout(self):
+        """Fourteen pages of 48 and then one of 17 -- not fifteen of 46."""
+        body = self._page(1, 48)
+        self.assertIn("49-96 of 689", body)
+        self.assertIn("Page 2 of 15", body)

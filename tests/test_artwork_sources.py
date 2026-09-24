@@ -475,3 +475,115 @@ class NotesTest(_Fixture):
             result = art.find_candidates(self.conf, name="Zz Reboot Host",
                                          source="launcher", ident="reboot")
         self.assertTrue(any("SteamGridDB" in n for n in result["notes"]))
+
+
+class SgdbPageIsListOnlyTest(_Fixture):
+    """Issue #31. `sgdb_page` returns the list; it downloads nothing.
+
+    It used to fetch all 48 pictures before returning, which is why the button
+    looked dead: the whole page waited on 48 downloads. Each tile is fetched by
+    its own request now.
+    """
+
+    def _api(self, items, total=80):
+        def get(path, key, timeout):
+            return {"data": items, "total": total}
+        return mock.patch.object(art, "_sgdb_json", side_effect=get)
+
+    def test_it_downloads_nothing(self):
+        items = [{"url": f"https://g/{i}.png"} for i in range(48)]
+        with self._api(items, total=96):
+            with mock.patch.object(art, "_fetch_candidate") as fetched:
+                result = art.sgdb_page(self.conf, source="steam", ident="526870",
+                                       key="key", timeout=1)
+        fetched.assert_not_called()
+        # 96 over two pages is 48 each, so nothing is trimmed here.
+        self.assertEqual(len(result["candidates"]), 48)
+
+    def test_the_candidates_carry_what_a_later_fetch_needs(self):
+        with self._api([{"url": "https://g/a.png"}]):
+            result = art.sgdb_page(self.conf, source="steam", ident="526870",
+                                   key="key", timeout=1)
+        one = result["candidates"][0]
+        self.assertEqual(one["origin"], "https://g/a.png")
+        self.assertEqual(one["id"], art.candidate_id("https://g/a.png"))
+        # No path: nothing has been downloaded, and claiming one would have the
+        # page point at a file that is not there.
+        self.assertNotIn("path", one)
+
+    def test_the_total_and_page_count_come_through(self):
+        with self._api([{"url": "https://g/a.png"}], total=689):
+            result = art.sgdb_page(self.conf, source="steam", ident="526870",
+                                   key="key", timeout=1, page=2)
+        self.assertEqual(result["total"], 689)
+        self.assertEqual(result["page"], 2)
+        self.assertEqual(result["pages"], 15)
+
+    def test_one_picture_is_fetched_by_origin(self):
+        with self.fake_fetch():
+            path = art.sgdb_fetch_one(self.conf, "https://g/one.png", timeout=1)
+        self.assertTrue(path.endswith(".png"))
+        self.assertTrue(os.path.isfile(path))
+
+    def test_a_picture_that_cannot_be_had_returns_nothing(self):
+        with mock.patch.object(art, "_origin_bytes", side_effect=OSError("no")):
+            self.assertEqual(
+                art.sgdb_fetch_one(self.conf, "https://g/gone.png", timeout=1), "")
+
+
+class TheLastPageIsShortOnPurposeTest(unittest.TestCase):
+    """Every page is full except the last, and that is the signal. Issue #31.
+
+    The pages were briefly evened out -- 689 as fifteen pages of 46 rather than
+    fourteen of 48 and a last one of 17 -- because a short page looked like a
+    mistake. It is the opposite: the grid fills the screen exactly, so a page
+    that is not full is the only thing saying you have reached the end.
+    Reverted on Sean's call, 2026-09-22.
+    """
+
+    def test_every_page_but_the_last_is_full(self):
+        for total in (689, 80, 100, 145, 500):
+            pages = art._pages(total)
+            with self.subTest(total=total):
+                self.assertEqual(pages, -(-total // art.SGDB_PAGE))
+                # Which leaves the remainder, whatever it is, on the last page.
+                self.assertEqual(total - (pages - 1) * art.SGDB_PAGE,
+                                 total - (pages - 1) * art.SGDB_PAGE)
+
+    def test_the_short_last_page_is_the_remainder(self):
+        for total, last in ((689, 17), (80, 32), (96, 48), (10, 10)):
+            pages = art._pages(total)
+            with self.subTest(total=total):
+                self.assertEqual(total - (pages - 1) * art.SGDB_PAGE, last)
+
+    def test_nothing_at_all_is_no_pages(self):
+        self.assertEqual(art._pages(0), 0)
+
+
+class SgdbPageAsksForOneFullPageTest(_Fixture):
+    """One request per page, always the same size."""
+
+    def _api(self, total, seen):
+        def get(path, key, timeout):
+            seen.append(path)
+            return {"data": [{"url": f"https://g/{i}.png"} for i in range(48)],
+                    "total": total}
+        return mock.patch.object(art, "_sgdb_json", side_effect=get)
+
+    def test_one_request_and_a_full_page(self):
+        seen = []
+        with self._api(689, seen):
+            result = art.sgdb_page(self.conf, source="steam", ident="526870",
+                                   key="key", timeout=1)
+        self.assertEqual(len(seen), 1)
+        self.assertIn(f"limit={art.SGDB_PAGE}", seen[0])
+        self.assertEqual(len(result["candidates"]), 48)
+        self.assertEqual(result["pages"], 15)
+
+    def test_a_deeper_page_still_costs_one_request(self):
+        seen = []
+        with self._api(689, seen):
+            art.sgdb_page(self.conf, source="steam", ident="526870",
+                          key="key", timeout=1, page=7)
+        self.assertEqual(len(seen), 1)
+        self.assertIn("page=7", seen[0])

@@ -20,7 +20,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from . import backups as _backups
 from . import run as _run
 from .artwork_sources import (ArtworkError, choose_artwork, find_candidates,
-                              sgdb_page,
+                              sgdb_page, sgdb_fetch_one,
                               find_steam_root, load_sgdb_key, save_sgdb_key)
 from .mutate import MutateError, apply_ops
 from .reconcile import MARKER, SCHEMA_VERSION, backup
@@ -333,7 +333,7 @@ def art_search(conf_dir: str, name: str = "", source: str = "",
 
 
 def art_sgdb(conf_dir: str, name: str = "", source: str = "", ident: str = "",
-             page: int = 0) -> Dict[str, Any]:
+             page: int = 0, per: int = 0) -> Dict[str, Any]:
     """One page of SteamGridDB artwork, on demand. Issue #30.
 
     Only ever reached by somebody pressing for it, which is why it is not part
@@ -341,9 +341,15 @@ def art_sgdb(conf_dir: str, name: str = "", source: str = "", ident: str = "",
     """
     result = sgdb_page(
         conf_dir, name=name, source=source, ident=ident,
-        key=load_sgdb_key(conf_dir), page=page,
+        key=load_sgdb_key(conf_dir), page=page, per=per,
         timeout=int(os.getenv("SGDB_TIMEOUT", "8") or 8))
     return {"ok": True, **result}
+
+
+def art_sgdb_one(conf_dir: str, origin: str) -> str:
+    """Cache one SteamGridDB picture and return its file. Issue #31."""
+    return sgdb_fetch_one(conf_dir, origin,
+                          timeout=int(os.getenv("SGDB_TIMEOUT", "8") or 8))
 
 
 def art_choose(conf_dir: str, chosen_id: str, name: str = "") -> str:

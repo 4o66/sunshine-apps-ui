@@ -1739,7 +1739,17 @@ padding:.5rem .7rem;font:inherit}
    renders the dialog already open when the address says the sheet is up, and
    every control in it -- forward, back, close, choose -- is a link. A
    gamepad can reach all of them, which a JS-driven overlay cannot promise. */
-dialog.sheet{position:fixed;inset:0;width:min(1100px,94vw);max-height:92vh;
+/* A *definite* height, not max-height. The body below is a flex child that
+   scrolls, and a scrolling child needs a parent whose height is known --
+   with `height:auto` capped by `max-height`, WebKitGTK (which is the window
+   this actually runs in) left the body at its zero flex basis and the whole
+   grid became a 40px strip. Chrome inflated it and looked fine, which is how
+   it shipped. */
+/* The height cap only bites on a display taller than about 1490px -- at 1080p
+   94vh is 1015 and wins. It was 1100, which made the sheet *smaller* on a 4K
+   screen than on a 1080p one: fewer rows fit, so the pictures came out at 140
+   where 1080p managed 164. */
+dialog.sheet{position:fixed;inset:0;width:min(1500px,94vw);height:min(94vh,1400px);
 margin:auto;padding:0;border:1px solid var(--border-strong);
 border-radius:var(--radius-lg,12px);background:var(--bg-base);color:var(--text);
 box-shadow:0 24px 60px rgba(0,0,0,.45);overflow:hidden;
@@ -1748,21 +1758,77 @@ dialog.sheet::backdrop{background:rgba(0,0,0,.6)}
 /* ::backdrop only paints for a dialog opened by script. This one is open in
    the markup, so it gets a backdrop of its own. */
 .sheet-veil{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:10}
+/* The bars must not shrink, or a long grid squeezes them instead of scrolling. */
+.sheet-head,.sheet-foot{flex:0 0 auto}
 .sheet-head{display:flex;align-items:baseline;gap:.75rem;flex-wrap:wrap;
 padding:1rem 1.25rem;border-bottom:1px solid var(--border);
 background:var(--bg-subtle)}
 .sheet-head h2{margin:0;font-size:1.05rem}
 .sheet-head .count{font-size:.85rem;color:var(--text-muted)}
 .sheet-head .shut{margin-left:auto}
-.sheet-body{padding:1.25rem;overflow-y:auto;flex:1}
-.sheet-body .arts{margin:0}
+/* `flex:1 1 auto` and not `flex:1`: the shorthand means basis 0%, which makes
+   the body contribute no height of its own. `min-height:0` is what lets a flex
+   child shrink below its content so `overflow-y` has something to do. */
+/* The sheet's tiles are the interface's tiles. `.arts` above already says
+   what that is -- `minmax(150px,1fr)` at 2:3, the same rule the main grid and
+   the picker use -- so the sheet adds nothing about size and inherits it.
+   It used to size them to fill the screen, which made them about two thirds
+   the size of every other tile in the program. Sean, 2026-09-22: "make ALL of
+   them match the size of the tiles on the main page."
+   What fills the screen instead is the *number* of them: the browser measures
+   how many fit and the server sends that many. So a full page still fills the
+   box exactly and a short last page still leaves it visibly empty -- at the
+   same tile size either way. */
+.sheet-body{padding:1rem;flex:1 1 auto;min-height:0;
+/* Never hidden. If the measurement is wrong, or script is off and the fallback
+   page size is too big for this screen, the extra has to be reachable rather
+   than clipped away. */
+overflow-y:auto}
+/* The tile is the *same width* as one on the main grid, not merely laid out
+   by the same rule. `minmax(150px,1fr)` stretches to whatever box it is in,
+   and the sheet's box is much wider than the page's 1100px wrap -- so the same
+   rule would still have produced a different size. This is the main grid's
+   arithmetic written out: its wrap is 1100px with 1rem of padding each side
+   and 1rem gaps, which at its full width is six columns of
+   (1100 - 32 - 5*16) / 6. Change either and this wants changing with it.
+   Columns are then however many of those fit, centred in the sheet. */
+.sheet-body .arts{margin:0;align-content:start;justify-content:center;
+grid-template-columns:repeat(auto-fill,164.67px)}
+
+
 .sheet-foot{display:flex;align-items:center;gap:.75rem;flex-wrap:wrap;
 padding:.9rem 1.25rem;border-top:1px solid var(--border);
 background:var(--bg-subtle)}
 .sheet-foot .where{font-size:.85rem;color:var(--text-muted);margin-left:auto}
 .btn.flat{opacity:.45;pointer-events:none}
+/* Waiting, with no script to animate it. The sheet is put up empty the moment
+   the button is pressed and refreshes into the real results, so the wait
+   happens somewhere visible instead of behind a button that looked dead.
+   Issue #31. */
+.sheet-wait{display:flex;flex-direction:column;align-items:center;
+justify-content:center;gap:1rem;height:100%;min-height:14rem;
+color:var(--text-muted)}
+.spinner{width:2.75rem;height:2.75rem;border-radius:50%;
+border:4px solid var(--border);border-top-color:var(--primary);
+animation:spin 900ms linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+/* Someone who has asked for less movement gets a bar that breathes instead of
+   a thing that whirls. It still says "working", which is the whole job. */
+@media (prefers-reduced-motion:reduce){
+  .spinner{animation:none;border-top-color:var(--border);
+  opacity:.6}
+}
+/* On a short window the bars were taking 154px of a 513px sheet -- a third of
+   it, to say "From SteamGridDB" and hold two buttons. They keep their size on
+   anything tall enough to spare it. */
+@media (max-height:800px){
+  .sheet-head{padding:.55rem .9rem}
+  .sheet-foot{padding:.5rem .9rem}
+  .sheet-head h2{font-size:.95rem}
+  .sheet-body{padding:.8rem}
+}
 @media (max-width:560px){
-  dialog.sheet{width:100vw;max-height:100vh;border-radius:0;border:0}
+  dialog.sheet{width:100vw;height:100vh;border-radius:0;border:0}
 }
 """
 
@@ -1786,15 +1852,27 @@ _ART_SOURCES = [
 ]
 
 
-def _sheet_url(key: str, token: str, searched: str = "", page: int = 0) -> str:
+def _sheet_url(key: str, token: str, searched: str = "", page: int = 0,
+               go: bool = False, per: int = 0) -> str:
     """The picker with the SteamGridDB sheet open at *page*.
 
     The sheet's state lives in the address, which is what makes every control
     in it an ordinary link and the browser's Back button do the obvious thing.
+
+    Without *go* this is the empty sheet with a spinner in it, which the browser
+    can draw immediately; the page it refreshes to carries *go* and is the one
+    that actually calls SteamGridDB. Two addresses rather than one so there is
+    something on screen during a wait that is nobody's idea of instant.
     """
     bits = [f"key={_eq(key)}", f"token={_eq(token)}", "sgdb=1", f"sgdb_page={int(page)}"]
     if searched:
         bits.append(f"q={_eq(searched)}")
+    if go:
+        bits.append("go=1")
+    # How many the screen holds, measured once and then carried, so every page
+    # of the same run is the same size and the grid never changes shape.
+    if per:
+        bits.append(f"per={int(per)}")
     return "/artwork?" + "&".join(bits)
 
 
@@ -1810,23 +1888,36 @@ def _sgdb_sheet(sheet: Dict[str, Any], token: str, *, key: str, searched: str,
     pages = int(sheet.get("pages") or 0)
     total = int(sheet.get("total") or 0)
     note = str(sheet.get("note") or "")
+    waiting = bool(sheet.get("loading"))
+    per = int(sheet.get("per") or 0) or SGDB_PAGE
 
     def tile(candidate: Dict[str, Any]) -> str:
-        path = str(candidate.get("path") or "")
-        origin = str(candidate.get("origin") or "")
-        is_current = bool(current) and current in (path, origin)
-        # Choosing from the sheet returns to the picker, not to the sheet: the
-        # choice is made, and leaving the modal up over the answer would be
-        # asking the same question again.
+        cid = str(candidate.get("id") or "")
+        # A chosen picture is copied to `chosen/<slug>-<id>.png`, so the id is
+        # what survives into the entry's image-path. Comparing cache paths, the
+        # way the picker does, cannot work here: these candidates have no cached
+        # file yet -- that is the point of fetching them one at a time.
+        is_current = bool(current) and bool(cid) and cid in current
+        # The picture comes from /sgdb-art, which fetches that one when the
+        # browser asks for it. The grid is on screen before any of them exist
+        # and they arrive into it. Issue #31. No `loading="lazy"`: in a sheet
+        # that scrolls inside itself it left whole rows blank until they were
+        # scrolled to, which looks exactly like the thing this was fixing.
+        #
+        # Choosing returns to the picker rather than to the sheet: the choice
+        # is made, and leaving the modal up over the answer asks it again.
         return (f'<figure class="{"current" if is_current else ""}">'
-                f'<a href="/artwork?key={_eq(key)}'
-                f'&choose={_eq(str(candidate.get("id")))}'
+                f'<a href="/artwork?key={_eq(key)}&choose={_eq(cid)}'
                 f'&q={_eq(searched)}&token={_e(token)}">'
-                f'<img src="/art?p={_eq(path)}&token={_e(token)}" alt="" loading="lazy"></a>'
+                f'<img src="/sgdb-art?id={_eq(cid)}&token={_e(token)}" alt=""></a>'
                 f'<figcaption><b>{_e(str(candidate.get("label") or ""))}</b>'
                 f'{"in use" if is_current else "choose"}</figcaption></figure>')
 
-    if found:
+    if waiting:
+        body = ('<div class="sheet-wait"><div class="spinner" role="img" '
+                'aria-label="Loading"></div>'
+                '<p class="why">Asking SteamGridDB&hellip;</p></div>')
+    elif found:
         body = f'<div class="arts">{"".join(tile(c) for c in found)}</div>'
     else:
         body = (f'<p class="why">{_e(note or "Nothing on this page.")}</p>')
@@ -1842,19 +1933,23 @@ def _sgdb_sheet(sheet: Dict[str, Any], token: str, *, key: str, searched: str,
         wanted = page + delta
         # A dead end is shown flat rather than hidden: a control that vanishes
         # moves everything beside it, and on a gamepad that means the button
-        # under the cursor is suddenly a different button.
-        if wanted < 0 or (pages and wanted >= pages) or not found and delta > 0:
+        # under the cursor is suddenly a different button. While waiting, both
+        # are flat -- there is nothing yet to page away from.
+        if (waiting or wanted < 0 or (pages and wanted >= pages)
+                or (not found and delta > 0)):
             return f'<span class="btn sec flat">{text}</span>'
         return (f'<a class="btn sec" href="'
-                f'{_e(_sheet_url(key, token, searched, wanted))}">{text}</a>')
+                f'{_e(_sheet_url(key, token, searched, wanted, per=per))}">'
+                f'{text}</a>')
 
-    first = page * SGDB_PAGE + 1
-    last = page * SGDB_PAGE + len(found)
-    where = (f"{first}-{last} of {total}" if found and total
-             else (f"{total} in all" if total else ""))
+    first = page * per + 1
+    last = page * per + len(found)
+    where = ("" if waiting else
+             (f"{first}-{last} of {total}" if found and total
+              else (f"{total} in all" if total else "")))
     counted = (f'<span class="count">{_e(where)}</span>' if where else "")
     of_pages = (f'<span class="where">Page {page + 1} of {pages}</span>'
-                if pages else "")
+                if pages and not waiting else "")
 
     return (f'<div class="sheet-veil"></div>'
             f'<dialog class="sheet" open aria-label="SteamGridDB artwork for {_e(label)}">'
@@ -1868,7 +1963,8 @@ def artwork_page(candidates: List[Dict[str, Any]], token: str, *, key: str,
                  label: str, current: str = "", notes: Optional[List[str]] = None,
                  searched: str = "", error: str = "",
                  offer_sgdb: bool = False, sgdb_ready: bool = False,
-                 sheet: Optional[Dict[str, Any]] = None) -> str:
+                 sheet: Optional[Dict[str, Any]] = None,
+                 refresh_to: str = "") -> str:
     """Choose cover art from everything that could be found for one app.
 
     *sheet*, when given, is a page of SteamGridDB results and puts the modal up
@@ -1923,6 +2019,7 @@ def artwork_page(candidates: List[Dict[str, Any]], token: str, *, key: str,
             f'<div class="actions" style="margin:-.5rem 0 1.25rem">'
             f'<a class="btn sec" href="{_e(_sheet_url(key, token, searched, 0))}">'
             f'Show SteamGridDB art</a></div>')
+
     problem = (f'<section class="err"><p class="why">{_e(error)}</p></section>'
                if error else "")
 
@@ -1937,11 +2034,25 @@ def artwork_page(candidates: List[Dict[str, Any]], token: str, *, key: str,
 
     modal = _sgdb_sheet(sheet, token, key=key, searched=searched,
                         label=label, current=current) if sheet else ""
+    # How the spinner becomes results, with no script: the browser draws this
+    # page, then follows the refresh to the address that does the fetching.
+    # Issue #31.
+    onward = (f'<meta http-equiv="refresh" content="0;url={_e(refresh_to)}">'
+              if refresh_to else "")
+    # Sizing only, and only when there is a sheet to size. The grid is already
+    # laid out and every control in it is already a link; this picks the column
+    # count that fits the screen best. See the comment at the top of sheet.js
+    # for why that is the only thing it is allowed to do.
+    # On the *waiting* page, not the results one: it measures the empty sheet
+    # to decide how many pictures the screen holds, then goes on to fetch that
+    # many. The results page needs no script at all. Issue #31.
+    fitter = (f'<script src="/sheet.js?token={_e(token)}"></script>'
+              if sheet and sheet.get("loading") and refresh_to else "")
 
     return f"""<!doctype html>
 {_html()}<head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>{_title('Artwork for ' + _e(label))}</title>
+<title>{_title('Artwork for ' + _e(label))}</title>{onward}
 <style>{_CSS}{_APP_CSS}{_ARTWORK_CSS}</style></head>
 <body>
 <div class="navbar"><span class="brand">Sunshine</span><span class="sep">/</span>
@@ -1954,7 +2065,7 @@ def artwork_page(candidates: List[Dict[str, Any]], token: str, *, key: str,
 <a class="btn sec" href="{_e(_form_url(key, token))}">Back</a>
 <a class="btn sec" href="/browse?key={_eq(key)}&field=image-path&token={_e(token)}">
 Browse for a file</a></div>
-</div>{modal}</body></html>"""
+</div>{modal}{fitter}</body></html>"""
 
 
 def app_page(entry: Dict[str, Any], token: str, *, is_new: bool = False,

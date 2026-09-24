@@ -18,10 +18,11 @@ from urllib.parse import parse_qs, urlencode, urlsplit
 from . import __version__, security
 from . import artwork, privilege, state
 from .engine import (EngineError, art_choose, art_search, art_sgdb,
-                     backup_diff, browse,
+                     art_sgdb_one, backup_diff, browse,
                      check_auth, get_state, list_backups, mutate, run_plan,
                      save_auth)
 from . import scanjob, updates
+from .render import _sheet_url as render_sheet_url
 from .render import (LOCK_NOTE, app_page, applied_page, artwork_page,
                      closing_page, leaving_with_changes_page,
                      render_elevating,
@@ -114,6 +115,41 @@ class PlanHandler(BaseHTTPRequestHandler):
             body, content_type = found
             self.send_response(200)
             self.send_header("Content-Type", content_type)
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("X-Content-Type-Options", "nosniff")
+            self.send_header("Content-Security-Policy", "default-src 'none'")
+            self.end_headers()
+            if self.command != "HEAD":
+                self.wfile.write(body)
+            return
+
+        if parts.path == "/sgdb-art":
+            # One picture, fetched when the browser asks for it rather than all
+            # 48 before the page is allowed to exist. Issue #31.
+            asked = (query.get("id") or [""])[0]
+            origin = _SGDB_SEEN.get(self.token, {}).get(asked, "")
+            if not origin:
+                # Not something we offered this session: a stale page after a
+                # restart, or somebody guessing.
+                self._send(404, error_page("Not found.", token=self.token))
+                return
+            try:
+                path = art_sgdb_one(self.conf_dir, origin)
+            except EngineError:
+                path = ""
+            body = b""
+            if path:
+                try:
+                    with open(path, "rb") as handle:
+                        body = handle.read()
+                except OSError:
+                    body = b""
+            if not body:
+                self._send(404, error_page("Not found.", token=self.token))
+                return
+            self.send_response(200)
+            self.send_header("Content-Type", "image/png")
             self.send_header("Content-Length", str(len(body)))
             self.send_header("Cache-Control", "no-store")
             self.send_header("X-Content-Type-Options", "nosniff")
@@ -223,6 +259,10 @@ class PlanHandler(BaseHTTPRequestHandler):
 
         if parts.path == "/scanning.js":
             self._send_asset("scanning.js", "text/javascript; charset=utf-8")
+            return
+
+        if parts.path == "/sheet.js":
+            self._send_asset("sheet.js", "text/javascript; charset=utf-8")
             return
 
         if parts.path == "/app.js":
@@ -361,6 +401,18 @@ class PlanHandler(BaseHTTPRequestHandler):
 
             chosen = (query.get("choose") or [""])[0]
             if chosen:
+                # Choosing copies the cached file, and a picture from the sheet
+                # is only cached once the browser has asked for it. Normally it
+                # has -- you are clicking something you can see. But an image
+                # that failed to load leaves a tile you can still click, and
+                # "that artwork is no longer cached" is a baffling answer to
+                # "I picked this one". Fetch it and carry on. Issue #31.
+                origin = _SGDB_SEEN.get(self.token, {}).get(chosen, "")
+                if origin:
+                    try:
+                        art_sgdb_one(self.conf_dir, origin)
+                    except EngineError:
+                        pass
                 try:
                     picked = art_choose(self.conf_dir, chosen, name)
                 except EngineError as e:
@@ -389,7 +441,7 @@ class PlanHandler(BaseHTTPRequestHandler):
             # The SteamGridDB sheet, only when the address asks for it. This is
             # the one fetch on this page that reaches a third party, so it
             # happens because somebody pressed for it and not before. Issue #30.
-            sheet = None
+            sheet, refresh_to = None, ""
             if (query.get("sgdb") or [""])[0] == "1" and doc.get("sgdb_ready"):
                 asked = (query.get("sgdb_page") or ["0"])[0]
                 try:
@@ -397,11 +449,28 @@ class PlanHandler(BaseHTTPRequestHandler):
                 except ValueError:
                     wanted = 0
                 try:
-                    sheet = art_sgdb(self.conf_dir, name=searched,
-                                     source=source, ident=ident, page=wanted)
-                except EngineError as e:
-                    sheet = {"candidates": [], "note": str(e), "total": 0,
-                             "page": wanted, "pages": 0}
+                    per = max(0, int((query.get("per") or ["0"])[0]))
+                except ValueError:
+                    per = 0
+                if (query.get("go") or [""])[0] != "1":
+                    # The sheet, empty, with a spinner in it -- drawn at once,
+                    # before anything is asked of SteamGridDB. The refresh in
+                    # its head leads to the address that does the asking, so
+                    # the wait happens on screen instead of behind a button
+                    # that looked like it had not been pressed. Issue #31.
+                    sheet = {"loading": True, "candidates": [], "note": "",
+                             "total": 0, "page": wanted, "pages": 0}
+                    refresh_to = render_sheet_url(key, self.token, searched,
+                                                  wanted, go=True, per=per)
+                else:
+                    try:
+                        sheet = art_sgdb(self.conf_dir, name=searched,
+                                         source=source, ident=ident,
+                                         page=wanted, per=per)
+                    except EngineError as e:
+                        sheet = {"candidates": [], "note": str(e), "total": 0,
+                                 "page": wanted, "pages": 0}
+                    self._remember_sgdb(sheet.get("candidates") or [])
 
             self._send(200, artwork_page(
                 doc.get("candidates") or [], self.token, key=key,
@@ -409,7 +478,8 @@ class PlanHandler(BaseHTTPRequestHandler):
                 current=str(state.draft(key).get("image-path") or ""),
                 notes=doc.get("notes") or [], searched=searched, error=error,
                 offer_sgdb=bool(doc.get("offer_sgdb")),
-                sgdb_ready=bool(doc.get("sgdb_ready")), sheet=sheet))
+                sgdb_ready=bool(doc.get("sgdb_ready")), sheet=sheet,
+                refresh_to=refresh_to))
             return
 
         if parts.path == "/connect":
@@ -994,6 +1064,19 @@ class PlanHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", "0")
         self.end_headers()
 
+    def _remember_sgdb(self, candidates: List[Dict[str, Any]]) -> None:
+        """Note the pictures this sheet offered, so their ids can be resolved."""
+        seen = _SGDB_SEEN.setdefault(self.token, {})
+        for candidate in candidates:
+            found = str(candidate.get("id") or "")
+            origin = str(candidate.get("origin") or "")
+            if found and origin:
+                seen[found] = origin
+        # Bounded: a long session paging through a big game would otherwise
+        # keep every url it ever showed.
+        while len(seen) > _SGDB_SEEN_MAX:
+            seen.pop(next(iter(seen)))
+
     def _sgdb_panel(self) -> Dict[str, Any]:
         """What the community-artwork section knows: whether a key is stored,
         and the outcome of the last attempt to store one.
@@ -1024,6 +1107,14 @@ _ART: Dict[str, Dict[str, Any]] = {}
 # The outcome of saving a SteamGridDB key, waiting for the redirect that shows
 # it. Never the key itself -- only whether it was accepted, and why not.
 _SGDB: Dict[str, Dict[str, Any]] = {}
+# Which SteamGridDB pictures this session has actually been offered: id ->
+# origin, per token. The image route resolves an id through this and never
+# takes a URL from the page -- a server that fetches whatever address it is
+# handed is a server that can be aimed at anything it can reach, including
+# whatever else is listening on this machine. Issue #31.
+_SGDB_SEEN: Dict[str, Dict[str, str]] = {}
+# Two pages' worth, so paging back does not orphan the pictures behind you.
+_SGDB_SEEN_MAX = 2 * 48
 
 
 def _tile_language() -> str:

@@ -37,12 +37,29 @@ CACHE_DIRNAME = ".candidates"
 CACHE_TTL = 7 * 24 * 3600
 CHOSEN_DIRNAME = "chosen"
 
-# How many SteamGridDB results to show at once. A popular game has hundreds --
-# Cyberpunk 2077 had 689 the day this was written -- so they arrive a page at a
-# time and the picker walks through them.
+# How many to show at once. A popular game has hundreds -- Cyberpunk 2077 had
+# 689 the day this was written -- so they arrive a page at a time and the
+# picker walks through them.
 #
-# Not 50, which is the API's own page size, because 48 lays out in a grid
-# without a ragged last row. One request per page either way.
+# Not 50, which is the API's own maximum, because 48 divides into a grid
+# without a ragged row: 12x4 on a widescreen, 8x6, 6x8. One request per page
+# either way.
+#
+# This is the **most** a page can hold. What a page actually holds is however
+# many tiles fit on the screen at the size the rest of the interface uses --
+# the browser measures that and hands it back, because the tile size is fixed
+# and the screen is not. Sean's instruction, 2026-09-22: "make ALL of them
+# match the size of the tiles on the main page".
+#
+# **Every page is full except the last, and that is the point.** The
+# pages were briefly evened out instead -- 689 as fifteen pages of 46 rather
+# than fourteen of 48 and a last one of 17 -- on the reasoning that a short
+# page looks like a mistake. It does not. The grid fills the screen exactly
+# (`sheet.js`), so a page that is not full is the only thing telling you that
+# you have reached the end, and evening the pages out threw that away in
+# exchange for tidier arithmetic nobody sees. Sean's call, 2026-09-22, on
+# seeing it: "the grid not filling a page feels like it's signaling this is
+# the last page."
 SGDB_PAGE = 48
 
 # The API's maximum page size. Asking for more is ignored, so this is the
@@ -469,40 +486,51 @@ def _sgdb(name: str, appid: str, key: str, timeout: int,
 
 
 def sgdb_page(conf_dir: str, *, name: str = "", source: str = "",
-              ident: str = "", key: str = "", page: int = 0,
-              timeout: int = 8, workers: int = 8) -> Dict[str, Any]:
-    """One page of SteamGridDB artwork, fetched and cached, on demand.
+              ident: str = "", key: str = "", page: int = 0, per: int = 0,
+              timeout: int = 8) -> Dict[str, Any]:
+    """One page of SteamGridDB artwork, on demand. **Nothing is downloaded.**
 
     Separate from `find_candidates` on purpose. Opening the picker must not
     reach SteamGridDB at all: it costs a network round trip on a page that is
     usually answered from the disk, and until somebody asks for community
     artwork there is nothing to spend it on.
+
+    And this returns as soon as the *list* is known, before a single picture
+    has been fetched. Downloading all 48 first meant the window sat there for
+    the length of 48 downloads with nothing on screen -- one stall instead of
+    a grid filling in. Each tile is fetched by its own request now, so the
+    browser renders the grid immediately and the pictures arrive into it.
+    Issue #31.
     """
     prune_cache(conf_dir)
     appid = str(ident or "") if source == "steam" else ""
     page = max(0, page)
+    # How many fit on the screen, measured by the browser and handed back in
+    # the address -- so it is whatever somebody could have typed there.
+    per = per if 1 <= per <= SGDB_PAGE else SGDB_PAGE
 
-    wanted, note, total = _sgdb(name, appid, key, timeout, page=page)
-    if not wanted:
-        return {"candidates": [], "note": note, "total": total,
-                "page": page, "pages": _pages(total)}
-
-    with ThreadPoolExecutor(max_workers=max(1, workers)) as pool:
-        fetched = list(pool.map(
-            lambda c: _fetch_candidate(conf_dir, c, timeout), wanted))
-    candidates = [c for c in fetched if c]
-    if not candidates:
-        note = ("None of the pictures on this page could be fetched. Check the "
-                "network, or try the next page.")
-    return {"candidates": candidates, "note": note, "total": total,
-            "page": page, "pages": _pages(total)}
+    wanted, note, total = _sgdb(name, appid, key, timeout, limit=per, page=page)
+    return {"candidates": wanted, "note": note, "total": total,
+            "page": page, "per": per, "pages": _pages(total, per)}
 
 
-def _pages(total: int) -> int:
-    """How many pages that many results make, at our page size."""
-    if total <= 0:
+def sgdb_fetch_one(conf_dir: str, origin: str, timeout: int = 8) -> str:
+    """Cache one candidate's picture and return the file. "" if it cannot be had.
+
+    The caller supplies the origin from a list *it* produced, never from the
+    request: a server that fetches whatever URL a page hands it is a server
+    that can be pointed at anything it can reach.
+    """
+    candidate = {"id": candidate_id(origin), "origin": origin}
+    got = _fetch_candidate(conf_dir, candidate, timeout)
+    return str(got.get("path") or "") if got else ""
+
+
+def _pages(total: int, per: int) -> int:
+    """How many pages that many results make, at that page size."""
+    if total <= 0 or per <= 0:
         return 0
-    return (total + SGDB_PAGE - 1) // SGDB_PAGE
+    return (total + per - 1) // per
 
 
 # --------------------------------------------------------------------------
