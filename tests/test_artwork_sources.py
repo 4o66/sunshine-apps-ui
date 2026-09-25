@@ -543,7 +543,7 @@ class TheLastPageIsShortOnPurposeTest(unittest.TestCase):
 
     def test_every_page_but_the_last_is_full(self):
         for total in (689, 80, 100, 145, 500):
-            pages = art._pages(total)
+            pages = art._pages(total, art.SGDB_PAGE)
             with self.subTest(total=total):
                 self.assertEqual(pages, -(-total // art.SGDB_PAGE))
                 # Which leaves the remainder, whatever it is, on the last page.
@@ -552,12 +552,12 @@ class TheLastPageIsShortOnPurposeTest(unittest.TestCase):
 
     def test_the_short_last_page_is_the_remainder(self):
         for total, last in ((689, 17), (80, 32), (96, 48), (10, 10)):
-            pages = art._pages(total)
+            pages = art._pages(total, art.SGDB_PAGE)
             with self.subTest(total=total):
                 self.assertEqual(total - (pages - 1) * art.SGDB_PAGE, last)
 
     def test_nothing_at_all_is_no_pages(self):
-        self.assertEqual(art._pages(0), 0)
+        self.assertEqual(art._pages(0, art.SGDB_PAGE), 0)
 
 
 class SgdbPageAsksForOneFullPageTest(_Fixture):

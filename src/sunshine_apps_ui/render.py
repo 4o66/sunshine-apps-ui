@@ -1750,7 +1750,7 @@ padding:.5rem .7rem;font:inherit}
    screen than on a 1080p one: fewer rows fit, so the pictures came out at 140
    where 1080p managed 164. */
 dialog.sheet{position:fixed;inset:0;width:min(1500px,94vw);height:min(94vh,1400px);
-margin:auto;padding:0;border:1px solid var(--border-strong);
+max-width:100vw;max-height:100vh;margin:auto;padding:0;border:1px solid var(--border-strong);
 border-radius:var(--radius-lg,12px);background:var(--bg-base);color:var(--text);
 box-shadow:0 24px 60px rgba(0,0,0,.45);overflow:hidden;
 display:flex;flex-direction:column;z-index:20}
@@ -1794,6 +1794,11 @@ overflow-y:auto}
    Columns are then however many of those fit, centred in the sheet. */
 .sheet-body .arts{margin:0;align-content:start;justify-content:center;
 grid-template-columns:repeat(auto-fill,164.67px)}
+/* One line of name, always. The sheet is cut to fit a measured row height,
+   and a name long enough to wrap would make its row taller than that --
+   the grid would overflow by a line and a scrollbar would take a column. */
+.sheet-body .arts figcaption b{white-space:nowrap;overflow:hidden;
+text-overflow:ellipsis}
 
 
 .sheet-foot{display:flex;align-items:center;gap:.75rem;flex-wrap:wrap;
@@ -1853,7 +1858,7 @@ _ART_SOURCES = [
 
 
 def _sheet_url(key: str, token: str, searched: str = "", page: int = 0,
-               go: bool = False, per: int = 0) -> str:
+               go: bool = False, per: int = 0, fit: str = "") -> str:
     """The picker with the SteamGridDB sheet open at *page*.
 
     The sheet's state lives in the address, which is what makes every control
@@ -1873,6 +1878,11 @@ def _sheet_url(key: str, token: str, searched: str = "", page: int = 0,
     # of the same run is the same size and the grid never changes shape.
     if per:
         bits.append(f"per={int(per)}")
+    # And the size of sheet that holds exactly that many, for the same reason:
+    # the last page is drawn in the same box as the full ones, so its empty
+    # space is the only empty space there is.
+    if fit:
+        bits.append(f"fit={_eq(fit)}")
     return "/artwork?" + "&".join(bits)
 
 
@@ -1890,6 +1900,7 @@ def _sgdb_sheet(sheet: Dict[str, Any], token: str, *, key: str, searched: str,
     note = str(sheet.get("note") or "")
     waiting = bool(sheet.get("loading"))
     per = int(sheet.get("per") or 0) or SGDB_PAGE
+    fit = str(sheet.get("fit") or "")
 
     def tile(candidate: Dict[str, Any]) -> str:
         cid = str(candidate.get("id") or "")
@@ -1939,7 +1950,7 @@ def _sgdb_sheet(sheet: Dict[str, Any], token: str, *, key: str, searched: str,
                 or (not found and delta > 0)):
             return f'<span class="btn sec flat">{text}</span>'
         return (f'<a class="btn sec" href="'
-                f'{_e(_sheet_url(key, token, searched, wanted, per=per))}">'
+                f'{_e(_sheet_url(key, token, searched, wanted, per=per, fit=fit))}">'
                 f'{text}</a>')
 
     first = page * per + 1
@@ -1951,8 +1962,16 @@ def _sgdb_sheet(sheet: Dict[str, Any], token: str, *, key: str, searched: str,
     of_pages = (f'<span class="where">Page {page + 1} of {pages}</span>'
                 if pages and not waiting else "")
 
+    # Sized to the grid it holds when sheet.js has measured one (see there);
+    # the stylesheet's size, which is the screen's, when it has not. The
+    # server rebuilt *fit* from two integers, so nothing else reaches here.
+    sized = ""
+    if fit:
+        w, _, h = fit.partition("x")
+        sized = f' style="width:{int(w)}px;height:{int(h)}px"'
+
     return (f'<div class="sheet-veil"></div>'
-            f'<dialog class="sheet" open aria-label="SteamGridDB artwork for {_e(label)}">'
+            f'<dialog class="sheet"{sized} open aria-label="SteamGridDB artwork for {_e(label)}">'
             f'<div class="sheet-head"><h2>From SteamGridDB</h2>{counted}{shut}</div>'
             f'<div class="sheet-body">{body}</div>'
             f'<div class="sheet-foot">{step(-1, "Back")}{step(1, "Next")}'

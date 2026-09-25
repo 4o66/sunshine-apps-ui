@@ -452,6 +452,7 @@ class PlanHandler(BaseHTTPRequestHandler):
                     per = max(0, int((query.get("per") or ["0"])[0]))
                 except ValueError:
                     per = 0
+                fit = _sheet_fit((query.get("fit") or [""])[0])
                 if (query.get("go") or [""])[0] != "1":
                     # The sheet, empty, with a spinner in it -- drawn at once,
                     # before anything is asked of SteamGridDB. The refresh in
@@ -459,9 +460,11 @@ class PlanHandler(BaseHTTPRequestHandler):
                     # the wait happens on screen instead of behind a button
                     # that looked like it had not been pressed. Issue #31.
                     sheet = {"loading": True, "candidates": [], "note": "",
-                             "total": 0, "page": wanted, "pages": 0}
+                             "total": 0, "page": wanted, "pages": 0,
+                             "per": per, "fit": fit}
                     refresh_to = render_sheet_url(key, self.token, searched,
-                                                  wanted, go=True, per=per)
+                                                  wanted, go=True, per=per,
+                                                  fit=fit)
                 else:
                     try:
                         sheet = art_sgdb(self.conf_dir, name=searched,
@@ -470,6 +473,7 @@ class PlanHandler(BaseHTTPRequestHandler):
                     except EngineError as e:
                         sheet = {"candidates": [], "note": str(e), "total": 0,
                                  "page": wanted, "pages": 0}
+                    sheet["fit"] = fit
                     self._remember_sgdb(sheet.get("candidates") or [])
 
             self._send(200, artwork_page(
@@ -1115,6 +1119,22 @@ _SGDB: Dict[str, Dict[str, Any]] = {}
 _SGDB_SEEN: Dict[str, Dict[str, str]] = {}
 # Two pages' worth, so paging back does not orphan the pictures behind you.
 _SGDB_SEEN_MAX = 2 * 48
+
+
+def _sheet_fit(asked: str) -> str:
+    """The sheet's size as sheet.js measured it, "WxH" in pixels, or "".
+
+    It goes back out inside a style attribute, so it is rebuilt from two
+    integers rather than passed through, and anything implausible is dropped:
+    the sheet then falls back to its stylesheet size, which is only less snug.
+    """
+    w, sep, h = asked.partition("x")
+    if not sep or not w.isdigit() or not h.isdigit():
+        return ""
+    w_px, h_px = int(w), int(h)
+    if not (200 <= w_px <= 8000 and 200 <= h_px <= 8000):
+        return ""
+    return f"{w_px}x{h_px}"
 
 
 def _tile_language() -> str:

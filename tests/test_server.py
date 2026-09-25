@@ -2685,6 +2685,63 @@ class SteamGridDbWaitingTest(ServerTest):
         self.assertNotIn("go=1", link)
 
 
+class SheetFitsItsGridTest(ServerTest):
+    """The sheet is drawn to the size of the grid it holds.
+
+    Whole rows in a screen-sized sheet leave up to a row of empty space at the
+    bottom, and empty space is what says "this is the last page" -- so a full
+    page looked like the end. sheet.js measures the size that holds exactly
+    the rows that fit, and every page of the run is drawn at it, the last one
+    included, so a short last page is still the only one with a gap.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.engine.candidates = {"ok": True, "candidates": [], "notes": [],
+                                  "offer_sgdb": False, "sgdb_ready": True}
+        self.engine.sgdb = {"ok": True, "candidates": [
+            {"id": str(i), "label": "by someone", "origin": "x"}
+            for i in range(30)], "total": 689, "page": 1, "per": 30,
+            "pages": 23, "note": ""}
+
+    def _get(self, extra, go=True):
+        return self.get(f"/artwork?key=index:0&token={self.token}"
+                        f"&sgdb=1&sgdb_page=1&per=30{extra}"
+                        + ("&go=1" if go else ""))[1]
+
+    def _dialog(self, body):
+        at = body.index('<dialog class="sheet"')
+        return body[at:body.index(">", at) + 1]
+
+    def test_the_measured_size_is_the_sheet_size(self):
+        self.assertIn('style="width:1010px;height:900px"',
+                      self._dialog(self._get("&fit=1010x900")))
+
+    def test_the_waiting_sheet_is_already_that_size(self):
+        """Otherwise the sheet jumps when the pictures arrive."""
+        body = self._get("&fit=1010x900", go=False)
+        self.assertIn('style="width:1010px;height:900px"', self._dialog(body))
+        self.assertIn("fit=1010x900", body)          # carried into the fetch
+
+    def test_next_and_back_keep_the_size(self):
+        """The last page must be drawn in the same box as the full ones, or
+        its gap stops meaning anything."""
+        body = self._get("&fit=1010x900")
+        foot = body[body.index('class="sheet-foot"'):]
+        self.assertEqual(foot.count("fit=1010x900"), 2)
+
+    def test_without_a_measurement_the_stylesheet_decides(self):
+        self.assertNotIn("style=", self._dialog(self._get("")))
+
+    def test_nothing_but_two_numbers_reaches_the_style(self):
+        for asked in ("1010x900;background:red", "1010", "x900", "abcxdef",
+                      "10x10", "99999x900", "1010x900x3", "-5x900"):
+            with self.subTest(fit=asked):
+                body = self._get("&fit=" + asked)
+                self.assertNotIn("style=", self._dialog(body))
+                self.assertNotIn("red", self._dialog(body))
+
+
 class SteamGridDbPictureTest(ServerTest):
     """One picture per request, so the grid fills in rather than arriving whole.
 
