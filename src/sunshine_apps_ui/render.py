@@ -866,6 +866,14 @@ def _tree_kind(path: str) -> str:
         return "The macOS app"
     if path.replace("\\", "/").rstrip("/").endswith("/.config/sunshine"):
         return "Installed from a package"
+    # Windows keeps config\ beside Sunshine.exe, so two installs differ only by
+    # where they are -- and "Installed beside Sunshine" twice, which is what
+    # the Windows rig showed, told nobody anything. Name the folder.
+    folder = path.replace("\\", "/").rstrip("/")
+    if folder.lower().endswith("/config"):
+        install = path.rstrip("\\/")[:-len("config")].rstrip("\\/")
+        if install:
+            return f"Installed in {install}"
     return "Installed beside Sunshine"
 
 

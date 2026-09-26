@@ -146,6 +146,13 @@ class TreeKindTest(unittest.TestCase):
         self.assertEqual(render._tree_kind(f"/home/u/{FLATPAK}"),
                          "Flatpak (dev.lizardbyte.app.Sunshine)")
 
+    def test_two_windows_installs_are_told_apart_by_their_folders(self):
+        """The Windows rig showed "Installed beside Sunshine" twice."""
+        self.assertEqual(render._tree_kind(r"C:\Program Files\Sunshine\config"),
+                         r"Installed in C:\Program Files\Sunshine")
+        self.assertEqual(render._tree_kind(r"C:\SunshinePortable\config"),
+                         r"Installed in C:\SunshinePortable")
+
     def test_the_native_tree_is_not_called_a_flatpak(self):
         """The native RPM's unit name looks like a Flatpak's. Its tree does not."""
         self.assertEqual(render._tree_kind(f"/home/u/{NATIVE}"),

@@ -674,7 +674,20 @@ def install(prefix: Optional[str] = None, *,
     os.makedirs(where["install"], exist_ok=True)
     os.makedirs(where["bin"], exist_ok=True)
 
-    for item in INSTALLED:
+    # Run from the installed copy itself -- `sunshine-apps-ui --install`, or
+    # an embeddable Python that ignored PYTHONPATH and imported the installed
+    # package -- the source and the target are one directory. Each item is
+    # removed before it is copied, so that deleted the source and then failed
+    # to copy it: the whole of src/ gone, and the program with it. Found on the
+    # Windows rig, 2026-09-26. The files are already where they belong; leave
+    # them, and do the rest.
+    here = os.path.normcase(os.path.realpath(source)) == \
+        os.path.normcase(os.path.realpath(where["install"]))
+    if here:
+        messages.append(f"Already installed at {where['install']}; its files "
+                        f"are left as they are.")
+
+    for item in () if here else INSTALLED:
         origin = os.path.join(source, item)
         if not os.path.exists(origin):
             continue

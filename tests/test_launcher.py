@@ -776,6 +776,7 @@ class FirefoxProfileTest(unittest.TestCase):
         self.assertIn('user_pref("browser.aboutwelcome.enabled", false);', text)
         self.assertIn('user_pref("browser.startup.homepage_override.mstone", "ignore");', text)
 
+    @unittest.skipIf(os.name == "nt", "Windows browsers are launched by winbrowser")
     def test_native_firefox_gets_it_too(self):
         tmp = tempfile.mkdtemp()
         self.addCleanup(shutil.rmtree, tmp, True)
@@ -787,6 +788,7 @@ class FirefoxProfileTest(unittest.TestCase):
         self.assertTrue(os.path.exists(os.path.join(tmp, "user.js")))
 
 
+@unittest.skipIf(os.name == "nt", "Windows browsers are launched by winbrowser, with DPAPI")
 class KeyringTest(unittest.TestCase):
     """Chrome waits for ever on a keyring nothing has unlocked. #34."""
 

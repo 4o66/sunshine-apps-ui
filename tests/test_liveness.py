@@ -35,6 +35,7 @@ ExecStart={ path=/usr/bin/steam ; argv[]=/usr/bin/steam -silent ; ignore_errors=
 """
 
 
+@unittest.skipIf(os.name == "nt", "Linux only: there is no /proc or systemctl to ask")
 class CommandTest(unittest.TestCase):
     def test_the_native_binary_reads_the_native_tree(self):
         self.assertEqual(liveness.tree_for_command(["/usr/bin/sunshine"], HOME), [NATIVE])
@@ -72,6 +73,7 @@ class CommandTest(unittest.TestCase):
             ["flatpak", "run", "com.valvesoftware.Steam"], HOME), [])
 
 
+@unittest.skipIf(os.name == "nt", "Linux only: there is no /proc or systemctl to ask")
 class ServiceTest(unittest.TestCase):
     def test_the_boxs_units_point_at_the_native_tree(self):
         """app-dev.lizardbyte.app.Sunshine.service is the native RPM, not a Flatpak."""

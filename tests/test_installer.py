@@ -66,6 +66,17 @@ class InstallTest(unittest.TestCase):
         installer.install(self.prefix)
         self.assertFalse(os.path.exists(stray))
 
+    def test_installing_from_the_installed_copy_leaves_it_whole(self):
+        """Source and target the same directory used to delete src/ and then fail."""
+        installer.install(self.prefix)
+        installed = os.path.join(self.prefix, "share", "sunshine-apps-ui")
+        with mock.patch.object(installer, "_source_root", return_value=installed):
+            ok, messages = installer.install(self.prefix)
+        self.assertTrue(ok)
+        self.assertTrue(os.path.isfile(
+            os.path.join(installed, "src", "sunshine_apps_ui", "__init__.py")))
+        self.assertTrue(any("left as they are" in m for m in messages))
+
     def test_nothing_needs_root(self):
         """Installing the program needs no root.
 

@@ -742,11 +742,13 @@ class PlanHandler(BaseHTTPRequestHandler):
             if queued and "anyway" not in fields:
                 self._send(200, leaving_with_changes_page(self.token, len(queued)))
                 return
-            self._send(200, closing_page(self.via_sunshine))
             # The launcher watches the server as well as the window, and takes
             # the window down when we go. So stopping here is the whole of it:
-            # there is nothing to ask the window to do.
+            # there is nothing to ask the window to do. Marked before the page
+            # is sent, not after: whoever reads "Closed" must find the server
+            # already going. The other order was a race the Windows rig lost.
             self._stop_soon()
+            self._send(200, closing_page(self.via_sunshine))
             return
 
         if parts.path == "/config-dir":
