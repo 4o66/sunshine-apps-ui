@@ -466,9 +466,9 @@ def _snap_name(path: str) -> str:
 
     Stock Ubuntu's only browser is Firefox as a snap, and `firefox` on PATH is
     not /snap/bin/firefox but /usr/bin/firefox: a shell script that runs it.
-    Ubuntu's `chromium-browser` is packaged the same way, though that one has
-    not been seen on a test machine. So a path outside /snap/bin can still be
-    a snap, and the script naming /snap/bin/<name> is how to tell. Issue #36.
+    Ubuntu's `chromium-browser` is packaged the same way (it execs
+    /snap/bin/chromium). So a path outside /snap/bin can still be a snap, and
+    the script naming /snap/bin/<name> is how to tell. Issue #36.
     """
     try:
         if os.path.dirname(os.path.abspath(path)) == SNAP_BIN:
