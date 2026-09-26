@@ -927,7 +927,19 @@ def config_banner(config: Optional[Dict[str, Any]], token: str) -> str:
     config = config or {}
     how = config.get("how")
     candidates = config.get("candidates") or []
-    if how not in ("newest", "tie") or len(candidates) < 2:
+    if config.get("missing"):
+        # The worst case, and the one #19 was found in: the install Sunshine
+        # will run has not made its config yet, and what is here was left by
+        # one that is gone. Everything done on this page would change nothing.
+        missing = _e(str(config["missing"]))
+        chosen = _e(str(config.get("chosen") or ""))
+        return (f'<section class="err"><h2>This is not the Sunshine that runs</h2>'
+                f'<p class="why">Sunshine is set up to use <code>{missing}</code>, '
+                f'which does not exist yet &mdash; Sunshine creates it the first '
+                f'time it starts. What is shown here is <code>{chosen}</code>, left '
+                f'by another install, and changes to it will do nothing. Start '
+                f'Sunshine once, then open this again.</p></section>')
+    if (how not in ("newest", "tie") and not config.get("stale")) or len(candidates) < 2:
         # Nothing to ask, but a refused switch still has to say why.
         notice = str(config.get("notice") or "")
         return f'<section class="warn"><p>{_e(notice)}</p></section>' if notice else ""
@@ -935,9 +947,18 @@ def config_banner(config: Optional[Dict[str, Any]], token: str) -> str:
     if config.get("stale"):
         was = _e(str(config.get("was") or ""))
         title = "The config you chose earlier has been set aside"
-        why = (f"You chose <code>{was}</code>, but another Sunshine config has been "
-               f"used since, so this is showing <code>{chosen}</code>, the one "
-               f"used most recently. Choose again if that is wrong.")
+        if config.get("stale_reason") == "running":
+            why = (f"You chose <code>{was}</code>, but Sunshine is running from "
+                   f"<code>{chosen}</code>, so that is the one showing.")
+        elif how == "service":
+            why = (f"You chose <code>{was}</code>, but another Sunshine config has "
+                   f"been used since, so this is showing <code>{chosen}</code>, "
+                   f"the one Sunshine's service starts. Choose again if that is "
+                   f"wrong.")
+        else:
+            why = (f"You chose <code>{was}</code>, but another Sunshine config has "
+                   f"been used since, so this is showing <code>{chosen}</code>, "
+                   f"the one used most recently. Choose again if that is wrong.")
         cls = "warn"
     elif how == "tie":
         never = all(not c.get("last_used") for c in candidates[:2])
@@ -980,9 +1001,16 @@ def config_setting(config: Optional[Dict[str, Any]], token: str) -> str:
         body = ('<p class="why">This machine has one, so there is nothing to '
                 'choose.</p>' + _config_trees(config, token, back="settings"))
     else:
-        body = ('<p class="why">More than one install of Sunshine has left a config '
-                'here. The one Sunshine used most recently is normally the live one; '
-                'the app counts are the quickest way to tell.</p>'
+        reason = {
+            "running": "Sunshine is running from the one in use, so that one is "
+                       "certainly live.",
+            "service": "Sunshine is not running; the one in use is the one its "
+                       "service starts.",
+            "preferred": "The one in use is the one you chose.",
+        }.get(str(how), "The one Sunshine used most recently is normally the live "
+                        "one; the app counts are the quickest way to tell.")
+        body = (f'<p class="why">More than one install of Sunshine has left a '
+                f'config here. {reason}</p>'
                 + _config_trees(config, token, back="settings"))
     return f'<div class="setting"><h3>Which Sunshine</h3>{body}</div>'
 

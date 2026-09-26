@@ -21,7 +21,8 @@ sys.path.insert(0, os.path.join(ROOT, "src"))
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from sunshine_apps_ui import engine, render, state  # noqa: E402
-from sunshine_apps_ui.core import api  # noqa: E402
+from sunshine_apps_ui.core import api, liveness  # noqa: E402
+from unittest import mock  # noqa: E402
 from sunshine_apps_ui.server import serve  # noqa: E402
 
 import test_server  # noqa: E402
@@ -58,6 +59,11 @@ class ConfigChoiceTest(unittest.TestCase):
         self.addCleanup(self.homes.cleanup)
         self.home = self.homes.home
         self._override = os.environ.pop("SUNSHINE_CONF_DIR", None)
+        # Nothing about this machine's own Sunshine leaks into these.
+        quiet = mock.patch.object(liveness, "evidence",
+                                  lambda home: {"running": [], "service": []})
+        quiet.start()
+        self.addCleanup(quiet.stop)
 
     def tearDown(self):
         if self._override is not None:
@@ -155,6 +161,10 @@ class SwitchTest(test_server.ServerTest):
         self._override = os.environ.pop("SUNSHINE_CONF_DIR", None)
         self.homes = Homes()
         self.addCleanup(self.homes.cleanup)
+        self.evidence = {"running": [], "service": []}
+        quiet = mock.patch.object(liveness, "evidence", lambda home: self.evidence)
+        quiet.start()
+        self.addCleanup(quiet.stop)
 
     def tearDown(self):
         super().tearDown()

@@ -157,34 +157,49 @@ def _last_used(conf_dir: str) -> float:
 
 
 def config_choice(home: Optional[str] = None,
-                  preferred: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+                  preferred: Optional[Dict[str, Any]] = None,
+                  evidence: Optional[Dict[str, List[str]]] = None) -> Dict[str, Any]:
     """Which config directory to use, and how sure that choice is.
 
     Returns the directory in "chosen", every existing candidate newest first in
     "candidates" (each with the time Sunshine last used it, 0 for never), and
-    in "how" the reason:
+    in "how" the reason, strongest first:
 
       override  SUNSHINE_CONF_DIR named it; nothing else was looked at
       none      no candidate exists, so the native default
       only      exactly one exists
+      running   a sunshine process running as this user reads it
       preferred the one somebody picked, still valid (see below)
+      service   nothing is running, and an enabled service would start this one
       newest    Sunshine used this one most recently; the others are older
       tie       the newest ones cannot be told apart -- two trees last used at
-                the same moment, or all of them never used, which is what a
-                fresh install beside an abandoned one looks like
+                the same moment, or all of them never used
 
     "tie" is a guess, and "newest" is a judgment somebody may disagree with.
     Both used to be decided and logged to a console nobody watching a
     television sees, and a scan written to the wrong tree fails silently by
-    construction. Issue #19.
+    construction. Issue #19. "running" and "service" come from Sunshine
+    itself, via core/liveness.py, and are what settle most of those without
+    asking. A service outranks the newest tree on purpose: a fresh native
+    install that has never run, beside an abandoned Flatpak with an old log,
+    is exactly the case the ranking gets wrong.
 
     `preferred` is what someone chose, as {"path": ..., "at": time chosen}. It
-    wins while it still exists and no other tree has been used since it was
-    chosen. The second condition is what stops a choice from outliving its
-    reason: pinning a tree is exactly how the abandoned-Flatpak bug would come
-    back, the day the install it pointed at goes away. When it lapses, "stale"
-    is set so the page can say the choice was set aside rather than silently
+    wins while it still exists, no other tree has been used since it was
+    chosen, and Sunshine is not running from another. That is what stops a
+    choice from outliving its reason: pinning a tree is exactly how the
+    abandoned-Flatpak bug would come back, the day the install it pointed at
+    goes away. When it lapses, "stale" is set -- and "stale_reason" says why --
+    so the page can say the choice was set aside rather than silently
     ignoring it.
+
+    `evidence` is liveness.evidence(), passed in by tests; None asks.
+
+    When that evidence names a tree that does not exist yet -- a native install
+    whose service is enabled but which has never run, beside the tree an
+    uninstalled Flatpak left -- "missing" names it. The tree left behind is
+    still what is shown, because it is all there is, but it is the wrong one,
+    and the page says so. That is the case #19 was found in.
     """
     override = os.getenv("SUNSHINE_CONF_DIR", "").strip()
     if override:
@@ -194,17 +209,65 @@ def config_choice(home: Optional[str] = None,
 
     home = home or str(Path.home())
     existing = [d for d in _candidates(home) if os.path.isdir(d)]
+    if existing and evidence is None:
+        from . import liveness
+        evidence = liveness.evidence(home)
+    evidence = evidence or {}
+    said = list(evidence.get("running") or []) + list(evidence.get("service") or [])
+    missing = next((t for t in said if not os.path.isdir(t)), "")
+
+    # A tree Sunshine is actually using is a candidate even if it is not one of
+    # the usual places -- a config file given on its command line, say.
+    known = {os.path.realpath(d) for d in existing}
+    for tree in list(evidence.get("running") or []) + list(evidence.get("service") or []):
+        if os.path.isdir(tree) and os.path.realpath(tree) not in known:
+            existing.append(tree)
+            known.add(os.path.realpath(tree))
+
     ranked = sorted(({"path": d, "last_used": _last_used(d)} for d in existing),
                     key=lambda c: c["last_used"], reverse=True)
+
+    def among_real(trees, pool) -> bool:
+        real = {os.path.realpath(c["path"]) for c in pool}
+        return any(os.path.realpath(t) in real for t in trees or [])
+
     if not ranked:
         return {"chosen": os.path.join(home, ".config", "sunshine"),
                 "how": "none", "candidates": [], "stale": False}
     if len(ranked) == 1:
-        return {"chosen": ranked[0]["path"], "how": "only",
+        only = {"chosen": ranked[0]["path"], "how": "only",
                 "candidates": ranked, "stale": False}
+        if missing and not among_real(said, ranked):
+            only["missing"] = missing
+        return only
 
-    stale = False
+    def among(trees) -> str:
+
+        """The first of *trees* that is a candidate, as the candidate spells it."""
+        by_real = {os.path.realpath(c["path"]): c["path"] for c in ranked}
+        for tree in trees or []:
+            if os.path.realpath(tree) in by_real:
+                return by_real[os.path.realpath(tree)]
+        return ""
+
+    def result(chosen: str, how: str, stale_reason: str = "") -> Dict[str, Any]:
+        out = {"chosen": chosen, "how": how, "candidates": ranked,
+               "stale": bool(stale_reason)}
+        if missing and how not in ("running", "service"):
+            out["missing"] = missing
+        if stale_reason:
+            out["was"] = wanted
+            out["stale_reason"] = stale_reason
+        return out
+
     wanted = str((preferred or {}).get("path") or "")
+    live = among(evidence.get("running"))
+    if live:
+        log(f"Sunshine is running from {live}")
+        lapsed = wanted and os.path.realpath(wanted) != os.path.realpath(live)
+        return result(live, "running", "running" if lapsed else "")
+
+    lapsed_reason = ""
     if wanted:
         try:
             at = float((preferred or {}).get("at") or 0)
@@ -214,9 +277,13 @@ def config_choice(home: Optional[str] = None,
         used_since = any(c["last_used"] > at for c in ranked
                          if c["path"] != wanted)
         if wanted in paths and not used_since:
-            return {"chosen": wanted, "how": "preferred",
-                    "candidates": ranked, "stale": False}
-        stale = True
+            return result(wanted, "preferred")
+        lapsed_reason = "used"
+
+    started = among(evidence.get("service"))
+    if started:
+        log(f"Sunshine is not running; its service would start {started}")
+        return result(started, "service", lapsed_reason)
 
     how = "tie" if ranked[0]["last_used"] == ranked[1]["last_used"] else "newest"
     log("Multiple Sunshine config directories found; choosing the most recently used:")
@@ -228,11 +295,7 @@ def config_choice(home: Optional[str] = None,
         log(f"  {mark} {candidate['path']}  ({when})")
     if how == "tie":
         log("  (a guess: the newest cannot be told apart)")
-    result = {"chosen": ranked[0]["path"], "how": how, "candidates": ranked,
-              "stale": stale}
-    if stale:
-        result["was"] = wanted
-    return result
+    return result(ranked[0]["path"], how, lapsed_reason)
 
 
 def config_dir(home: Optional[str] = None) -> str:
