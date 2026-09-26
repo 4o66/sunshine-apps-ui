@@ -733,11 +733,12 @@ def _offer_unhide_tile(confirm=None) -> List[str]:
     silently ignored it.
     """
     try:
+        from . import engine
         from .core import api
     except ImportError:                          # pragma: no cover - defensive
         return []
     try:
-        conf_dir = api.config_dir()
+        conf_dir = engine.config_dir()
         hidden = [t for t in api.state(conf_dir).get("hidden") or []
                   if t.get("source") == "launcher" and t.get("id") == "apps-ui"]
     except Exception:                            # noqa: BLE001 - not worth failing an install
@@ -903,11 +904,12 @@ def uninstall(prefix: Optional[str] = None, *, keep_state: bool = False,
 def _remove_tile() -> Tuple[bool, str]:
     """Delete this manager's own tile, by its marker rather than its name."""
     try:
+        from . import engine
         from .core import api
     except ImportError as e:                     # pragma: no cover - defensive
         return False, f"Could not load the engine to remove the tile: {e}"
     try:
-        conf_dir = api.config_dir()
+        conf_dir = engine.config_dir()
         found = [a for a in api.state(conf_dir).get("apps") or []
                  if a.get("source") == "launcher" and a.get("id") == "apps-ui"]
     except Exception as e:                       # noqa: BLE001 - reported

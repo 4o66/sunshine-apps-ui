@@ -156,33 +156,94 @@ def _last_used(conf_dir: str) -> float:
     return newest
 
 
+def config_choice(home: Optional[str] = None,
+                  preferred: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """Which config directory to use, and how sure that choice is.
+
+    Returns the directory in "chosen", every existing candidate newest first in
+    "candidates" (each with the time Sunshine last used it, 0 for never), and
+    in "how" the reason:
+
+      override  SUNSHINE_CONF_DIR named it; nothing else was looked at
+      none      no candidate exists, so the native default
+      only      exactly one exists
+      preferred the one somebody picked, still valid (see below)
+      newest    Sunshine used this one most recently; the others are older
+      tie       the newest ones cannot be told apart -- two trees last used at
+                the same moment, or all of them never used, which is what a
+                fresh install beside an abandoned one looks like
+
+    "tie" is a guess, and "newest" is a judgment somebody may disagree with.
+    Both used to be decided and logged to a console nobody watching a
+    television sees, and a scan written to the wrong tree fails silently by
+    construction. Issue #19.
+
+    `preferred` is what someone chose, as {"path": ..., "at": time chosen}. It
+    wins while it still exists and no other tree has been used since it was
+    chosen. The second condition is what stops a choice from outliving its
+    reason: pinning a tree is exactly how the abandoned-Flatpak bug would come
+    back, the day the install it pointed at goes away. When it lapses, "stale"
+    is set so the page can say the choice was set aside rather than silently
+    ignoring it.
+    """
+    override = os.getenv("SUNSHINE_CONF_DIR", "").strip()
+    if override:
+        chosen = os.path.abspath(os.path.expanduser(os.path.expandvars(override)))
+        return {"chosen": chosen, "how": "override", "candidates": [],
+                "stale": False}
+
+    home = home or str(Path.home())
+    existing = [d for d in _candidates(home) if os.path.isdir(d)]
+    ranked = sorted(({"path": d, "last_used": _last_used(d)} for d in existing),
+                    key=lambda c: c["last_used"], reverse=True)
+    if not ranked:
+        return {"chosen": os.path.join(home, ".config", "sunshine"),
+                "how": "none", "candidates": [], "stale": False}
+    if len(ranked) == 1:
+        return {"chosen": ranked[0]["path"], "how": "only",
+                "candidates": ranked, "stale": False}
+
+    stale = False
+    wanted = str((preferred or {}).get("path") or "")
+    if wanted:
+        try:
+            at = float((preferred or {}).get("at") or 0)
+        except (TypeError, ValueError):
+            at = 0.0
+        paths = [c["path"] for c in ranked]
+        used_since = any(c["last_used"] > at for c in ranked
+                         if c["path"] != wanted)
+        if wanted in paths and not used_since:
+            return {"chosen": wanted, "how": "preferred",
+                    "candidates": ranked, "stale": False}
+        stale = True
+
+    how = "tie" if ranked[0]["last_used"] == ranked[1]["last_used"] else "newest"
+    log("Multiple Sunshine config directories found; choosing the most recently used:")
+    for candidate in ranked:
+        stamp = candidate["last_used"]
+        when = (time.strftime("%Y-%m-%d %H:%M", time.localtime(stamp))
+                if stamp else "never used")
+        mark = "->" if candidate is ranked[0] else "  "
+        log(f"  {mark} {candidate['path']}  ({when})")
+    if how == "tie":
+        log("  (a guess: the newest cannot be told apart)")
+    result = {"chosen": ranked[0]["path"], "how": how, "candidates": ranked,
+              "stale": stale}
+    if stale:
+        result["was"] = wanted
+    return result
+
+
 def config_dir(home: Optional[str] = None) -> str:
-    """Where Sunshine keeps its configuration.
+    """Where Sunshine keeps its configuration. See config_choice().
 
     SUNSHINE_CONF_DIR overrides everything. Otherwise, when more than one
     candidate exists, the one Sunshine used most recently wins rather than the
     first that happens to exist: an uninstalled Flatpak leaves its whole config
     tree behind, and writing to it silently does nothing.
     """
-    override = os.getenv("SUNSHINE_CONF_DIR", "").strip()
-    if override:
-        return os.path.abspath(os.path.expanduser(os.path.expandvars(override)))
-
-    home = home or str(Path.home())
-    existing = [d for d in _candidates(home) if os.path.isdir(d)]
-    if not existing:
-        return os.path.join(home, ".config", "sunshine")
-    if len(existing) == 1:
-        return existing[0]
-
-    ranked = sorted(existing, key=_last_used, reverse=True)
-    log("Multiple Sunshine config directories found; choosing the most recently used:")
-    for directory in ranked:
-        stamp = _last_used(directory)
-        when = (time.strftime("%Y-%m-%d %H:%M", time.localtime(stamp))
-                if stamp else "never used")
-        log(f"  {'->' if directory == ranked[0] else '  '} {directory}  ({when})")
-    return ranked[0]
+    return config_choice(home)["chosen"]
 
 
 def apps_json_path(conf_dir: str) -> str:

@@ -19,7 +19,8 @@ from . import __version__, security
 from . import artwork, privilege, state
 from .engine import (EngineError, art_choose, art_search, art_sgdb,
                      art_sgdb_one, backup_diff, browse,
-                     check_auth, get_state, list_backups, mutate, run_plan,
+                     check_auth, choose_config, config_choice, forget_state,
+                     get_state, list_backups, mutate, run_plan,
                      save_auth)
 from . import scanjob, updates
 from .render import _sheet_url as render_sheet_url
@@ -52,6 +53,11 @@ class PlanHandler(BaseHTTPRequestHandler):
     # Set by serve().
     token: str = ""
     conf_dir: str = ""
+    # How conf_dir was arrived at, as config_choice() reports it, so the page
+    # can say which tree it picked when the pick was a judgment. Issue #19.
+    config: Dict[str, Any] = {"how": "only", "candidates": [], "stale": False}
+    # Where to look for config trees; None is the user's home. For tests.
+    config_home: Optional[str] = None
     importer_opts: Dict[str, Any] = {}
     port: int = 0
     via_sunshine: bool = False
@@ -166,7 +172,8 @@ class PlanHandler(BaseHTTPRequestHandler):
                                           notice=_NOTICE.pop(self.token, ""),
                                           language=_language_panel(self.token),
                                           via_sunshine=self.via_sunshine,
-                                          sgdb=self._sgdb_panel()))
+                                          sgdb=self._sgdb_panel(),
+                                          config=self._config_panel()))
             return
 
         if parts.path == "/report":
@@ -254,7 +261,8 @@ class PlanHandler(BaseHTTPRequestHandler):
             self._send(200, grid_page(current, self.token, scanned=scanned,
                                       auth_ok=auth_ok, pending=queued,
                                       auth_detail=detail, restore=restore,
-                                      rights=self.rights))
+                                      rights=self.rights,
+                                      config=self._config_panel()))
             return
 
         if parts.path == "/scanning.js":
@@ -741,6 +749,16 @@ class PlanHandler(BaseHTTPRequestHandler):
             self._stop_soon()
             return
 
+        if parts.path == "/config-dir":
+            fields = self._form()
+            wanted = (fields.get("path") or [""])[0]
+            why = self._switch_config(wanted)
+            if why:
+                _CONFIG_NOTICE[self.token] = why
+            back = (fields.get("back") or [""])[0]
+            self._redirect("/settings" if back == "settings" else "/")
+            return
+
         if parts.path.startswith("/settings/"):
             fields = self._form()
             what = parts.path.split("/", 2)[2]
@@ -1081,6 +1099,60 @@ class PlanHandler(BaseHTTPRequestHandler):
         while len(seen) > _SGDB_SEEN_MAX:
             seen.pop(next(iter(seen)))
 
+    def _config_panel(self) -> Dict[str, Any]:
+        """What the pages need to say which config tree this is, and offer others."""
+        panel = dict(self.config)
+        panel["chosen"] = self.conf_dir
+        panel["notice"] = _CONFIG_NOTICE.pop(self.token, "")
+        panel["queued"] = len(state.queue())
+        candidates = []
+        for candidate in panel.get("candidates") or []:
+            item = dict(candidate)
+            item["apps"] = _count_apps(item.get("path", ""))
+            candidates.append(item)
+        panel["candidates"] = candidates
+        return panel
+
+    def _switch_config(self, wanted: str) -> str:
+        """Use another config tree from now on. Returns why not, or "".
+
+        Only a tree config_choice() itself found can be chosen: the path comes
+        from a form, and a server that writes apps.json wherever it is told is
+        one that can be told to write anywhere.
+        """
+        how = self.config.get("how")
+        if how == "override":
+            return ("SUNSHINE_CONF_DIR names the config directory, so it cannot "
+                    "be changed from here.")
+        if how == "argument":
+            return ("--conf-dir names the config directory, so it cannot be "
+                    "changed from here.")
+        fresh = config_choice(self.config_home)
+        if wanted not in [c["path"] for c in fresh.get("candidates") or []]:
+            return "That is not one of the Sunshine config directories found here."
+        if scanjob.job.running():
+            return "A scan is running. Switch once it has finished."
+        queued = len(state.queue())
+        if queued and wanted != self.conf_dir:
+            # Queued changes were worked out against this tree's apps.json.
+            # Carried to another they would address the wrong entries by
+            # position -- the same silent wrong-file failure, one step later.
+            return (f"{queued} change{'' if queued == 1 else 's'} "
+                    f"{'is' if queued == 1 else 'are'} waiting to be applied "
+                    f"to this one. Apply or discard "
+                    f"{'it' if queued == 1 else 'them'} first.")
+        choose_config(wanted)
+        handler = type(self)
+        if wanted != handler.conf_dir:
+            log.warning("config directory switched: %s -> %s",
+                        handler.conf_dir, wanted)
+        handler.conf_dir = wanted
+        handler.rights = privilege.check(wanted)
+        handler.config = config_choice(self.config_home)
+        forget_state()
+        state.clear_drafts()
+        return ""
+
     def _sgdb_panel(self) -> Dict[str, Any]:
         """What the community-artwork section knows: whether a key is stored,
         and the outcome of the last attempt to store one.
@@ -1105,6 +1177,8 @@ class PlanHandler(BaseHTTPRequestHandler):
 _LAST_CHECK: Dict[str, Any] = {}
 # Something to say on the settings page after a button that did not work.
 _NOTICE: Dict[str, str] = {}
+# Why a switch of config directory was refused, for whichever page it came from.
+_CONFIG_NOTICE: Dict[str, str] = {}
 # What the language section should say next time it is drawn: the result of a
 # check, or an offer to download a set. One per token, cleared when shown.
 _ART: Dict[str, Dict[str, Any]] = {}
@@ -1234,6 +1308,21 @@ def _fetch_artwork(token: str, code: str) -> None:
         "label": "Scan now"}
 
 
+def _count_apps(conf_dir: str) -> Optional[int]:
+    """How many entries a tree's apps.json holds, or None if it cannot be read.
+
+    The single most telling fact when choosing between two trees: the live one
+    is usually the one with your games in it.
+    """
+    try:
+        with open(os.path.join(conf_dir, "apps.json"), "r", encoding="utf-8") as handle:
+            payload = json.load(handle)
+    except (OSError, ValueError):
+        return None
+    apps = payload.get("apps") if isinstance(payload, dict) else payload
+    return len(apps) if isinstance(apps, list) else None
+
+
 def _describe_platform() -> str:
     """Enough for a bug report, and nothing that identifies the machine."""
     import platform
@@ -1245,7 +1334,8 @@ def _describe_platform() -> str:
 
 def serve(token: str, conf_dir: str,
            importer_opts: Optional[Dict[str, Any]] = None,
-           port: int = 0) -> ThreadingHTTPServer:
+           port: int = 0, choice: Optional[Dict[str, Any]] = None,
+           config_home: Optional[str] = None) -> ThreadingHTTPServer:
     """Bind and return a server. The address is always loopback, by design."""
     # Asked once, here, rather than at the first write. See privilege.py.
     rights = privilege.check(conf_dir)
@@ -1256,6 +1346,8 @@ def serve(token: str, conf_dir: str,
     handler = type("BoundPlanHandler", (PlanHandler,), {
         "token": token,
         "conf_dir": conf_dir,
+        "config": dict(choice or {"how": "only", "candidates": [], "stale": False}),
+        "config_home": config_home,
         "rights": rights,
         "importer_opts": dict(importer_opts or {}),
         # Set by our launcher, which only ever runs inside a streamed session.

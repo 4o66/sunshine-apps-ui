@@ -8,7 +8,7 @@ import sys
 import webbrowser
 
 from . import __version__, security
-from .engine import EngineError, config_dir
+from .engine import EngineError, config_choice
 from .server import serve
 
 
@@ -134,7 +134,11 @@ def main(argv=None) -> int:
         format="%(asctime)s %(levelname)s %(message)s", datefmt="%H:%M:%S",
     )
 
-    conf_dir = args.conf_dir or config_dir()
+    # Kept whole rather than reduced to a path: the interface says which tree
+    # it picked and offers the others when the pick was a judgment. Issue #19.
+    choice = ({"chosen": args.conf_dir, "how": "argument", "candidates": [],
+               "stale": False} if args.conf_dir else config_choice())
+    conf_dir = choice["chosen"]
     # Installing is the one thing that can sensibly happen before Sunshine has
     # ever run: there is nothing to manage yet, and refusing would mean telling
     # people to install in a particular order for no reason.
@@ -225,7 +229,7 @@ def main(argv=None) -> int:
             pass
     token = token or security.new_token()
     try:
-        httpd = serve(token, conf_dir, options, args.port)
+        httpd = serve(token, conf_dir, options, args.port, choice=choice)
     except OSError as e:
         print(f"error: could not bind {security.BIND_HOST}:{args.port}: {e}", file=sys.stderr)
         return 2

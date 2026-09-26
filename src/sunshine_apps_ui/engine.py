@@ -32,8 +32,27 @@ def _wrap(call, *args, **kwargs):
         raise EngineError(str(e)) from e
 
 
+def config_choice(home: Optional[str] = None) -> Dict[str, Any]:
+    """Which config directory to use, respecting a choice made in the interface.
+
+    The choice lives in our preferences rather than in core because it is the
+    interface's answer to a question core cannot settle. Issue #19.
+    """
+    from . import state
+
+    preferred = state.prefs().get("config_dir")
+    return api.config_choice(home, preferred if isinstance(preferred, dict) else None)
+
+
 def config_dir(home: Optional[str] = None) -> str:
-    return api.config_dir(home)
+    return config_choice(home)["chosen"]
+
+
+def choose_config(path: str) -> None:
+    """Remember a config directory somebody picked, and when they picked it."""
+    from . import state
+
+    state.set_pref("config_dir", {"path": path, "at": time.time()})
 
 
 _STATE_CACHE: Dict[str, Any] = {"at": 0.0, "conf_dir": "", "doc": None}

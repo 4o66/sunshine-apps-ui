@@ -835,12 +835,166 @@ text-underline-offset:2px}
 """
 
 
+# ------------------------------------------------------ which config tree ---
+
+CONFIG_CSS = """
+ul.trees{margin:.2rem 0 .9rem}
+ul.trees li{align-items:center}
+ul.trees li .body{flex:1 1 18rem;display:grid;gap:.1rem}
+ul.trees li .sel{word-break:break-all}
+ul.trees li form{margin:0}
+ul.trees li .chip{padding:.25rem .7rem}
+ul.trees .btn:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+ul.trees .btn:disabled{opacity:.5;cursor:default}
+"""
+
+
+def _tree_kind(path: str) -> str:
+    """What sort of install a config tree belongs to, from where the tree is.
+
+    The tree's location is reliable where a unit name is not: a Flatpak can
+    only write under ~/.var/app/<id>, whereas the native RPM's systemd unit is
+    named app-dev.lizardbyte.app.Sunshine.service and looks exactly like a
+    Flatpak's. Issue #19.
+    """
+    parts = path.replace("\\", "/").split("/")
+    if ".var" in parts:
+        at = parts.index(".var")
+        if len(parts) > at + 2 and parts[at + 1] == "app":
+            return f"Flatpak ({parts[at + 2]})"
+    if "Sunshine.app" in parts:
+        return "The macOS app"
+    if path.replace("\\", "/").rstrip("/").endswith("/.config/sunshine"):
+        return "Installed from a package"
+    return "Installed beside Sunshine"
+
+
+def _last_used_text(stamp: float) -> str:
+    if not stamp:
+        return "never used"
+    import time
+    return "last used " + time.strftime("%Y-%m-%d %H:%M", time.localtime(stamp))
+
+
+def _config_trees(config: Dict[str, Any], token: str, back: str) -> str:
+    """Every tree found, the one in use marked, a button on each of the rest."""
+    chosen = str(config.get("chosen") or "")
+    queued = int(config.get("queued") or 0)
+    offer_keep = config.get("how") in ("newest", "tie")
+    rows = []
+    for candidate in config.get("candidates") or []:
+        path = str(candidate.get("path") or "")
+        apps = candidate.get("apps")
+        count = ("apps.json unreadable" if apps is None else
+                 f"{apps} app{'' if apps == 1 else 's'}")
+        facts = f"{_last_used_text(float(candidate.get('last_used') or 0))} &middot; {count}"
+
+        def form(label: str, disabled: bool = False) -> str:
+            return (f'<form method="post" action="/config-dir?token={_e(token)}">'
+                    f'<input type="hidden" name="path" value="{_e(path)}">'
+                    f'<input type="hidden" name="back" value="{_e(back)}">'
+                    f'<button class="btn sec" type="submit"'
+                    f'{" disabled" if disabled else ""}>{label}</button></form>')
+
+        if path == chosen:
+            action = '<span class="chip"><span class="dot ok"></span>In use</span>'
+            if offer_keep:
+                action += form("Keep this one")
+        else:
+            action = form("Use this one", disabled=bool(queued))
+        rows.append(f'<li><span class="body"><span class="name">{_e(_tree_kind(path))}</span>'
+                    f'<span class="sel">{_e(path)}</span>'
+                    f'<span class="fields">{facts}</span></span>{action}</li>')
+    listing = f'<ul class="trees">{"".join(rows)}</ul>' if rows else ""
+    if queued and len(rows) > 1:
+        listing += (f'<p class="why">{queued} change{"" if queued == 1 else "s"} '
+                    f'{"is" if queued == 1 else "are"} waiting to be applied to '
+                    f'the one in use, so switching waits until '
+                    f'{"it is" if queued == 1 else "they are"} applied or discarded.</p>')
+    notice = str(config.get("notice") or "")
+    if notice:
+        listing += f'<div class="result unreachable">{_e(notice)}</div>'
+    return listing
+
+
+def config_banner(config: Optional[Dict[str, Any]], token: str) -> str:
+    """Said on the grid when the config tree in use was a judgment, not a fact.
+
+    The grid is where it matters: a scan written to the wrong tree reports
+    success and changes nothing, and until #19 the only record of the choice
+    was a log line on a console nobody at a television sees.
+    """
+    config = config or {}
+    how = config.get("how")
+    candidates = config.get("candidates") or []
+    if how not in ("newest", "tie") or len(candidates) < 2:
+        # Nothing to ask, but a refused switch still has to say why.
+        notice = str(config.get("notice") or "")
+        return f'<section class="warn"><p>{_e(notice)}</p></section>' if notice else ""
+    chosen = _e(str(config.get("chosen") or ""))
+    if config.get("stale"):
+        was = _e(str(config.get("was") or ""))
+        title = "The config you chose earlier has been set aside"
+        why = (f"You chose <code>{was}</code>, but another Sunshine config has been "
+               f"used since, so this is showing <code>{chosen}</code>, the one "
+               f"used most recently. Choose again if that is wrong.")
+        cls = "warn"
+    elif how == "tie":
+        never = all(not c.get("last_used") for c in candidates[:2])
+        reason = ("none of them has been used yet" if never else
+                  "two were last used at the same moment")
+        title = "Which Sunshine is this machine running?"
+        why = (f"There is more than one Sunshine config here and nothing tells them "
+               f"apart: {reason}. This is showing <code>{chosen}</code>, which is a "
+               f"guess. If the tiles below are not the ones you see in Moonlight, "
+               f"use the other one.")
+        cls = "warn"
+    else:
+        title = "More than one Sunshine config here"
+        others = ("The other is" if len(candidates) == 2 else "The others are")
+        why = (f"This is showing the one Sunshine used most recently. {others} "
+               f"usually left behind by an install that has since been removed, and "
+               f"changes written there do nothing. Keep this one and you will not "
+               f"be asked again.")
+        cls = ""
+    return (f'<section class="{cls}"><h2>{title}</h2><p class="why">{why}</p>'
+            f'{_config_trees(config, token, back="")}</section>')
+
+
+def config_setting(config: Optional[Dict[str, Any]], token: str) -> str:
+    """The Settings section: which tree is in use, always, and the others."""
+    config = config or {}
+    how = config.get("how")
+    chosen = _e(str(config.get("chosen") or ""))
+    candidates = config.get("candidates") or []
+    if how == "override":
+        body = (f'<p class="why">Set by <code>SUNSHINE_CONF_DIR</code>: '
+                f'<code>{chosen}</code>. Unset it to choose here.</p>')
+    elif how == "argument":
+        body = (f'<p class="why">Set by <code>--conf-dir</code>: '
+                f'<code>{chosen}</code>.</p>')
+    elif not candidates:
+        body = (f'<p class="why">No Sunshine config was found, so this uses the '
+                f'usual place: <code>{chosen}</code>.</p>')
+    elif len(candidates) == 1:
+        body = ('<p class="why">This machine has one, so there is nothing to '
+                'choose.</p>' + _config_trees(config, token, back="settings"))
+    else:
+        body = ('<p class="why">More than one install of Sunshine has left a config '
+                'here. The one Sunshine used most recently is normally the live one; '
+                'the app counts are the quickest way to tell.</p>'
+                + _config_trees(config, token, back="settings"))
+    return f'<div class="setting"><h3>Which Sunshine</h3>{body}</div>'
+
+
+
 def settings_page(token: str, *, prefs: Dict[str, Any],
                   answer: Optional[Any] = None,
                   notice: str = "",
                   language: Optional[Dict[str, Any]] = None,
                   via_sunshine: bool = False,
-                  sgdb: Optional[Dict[str, Any]] = None) -> str:
+                  sgdb: Optional[Dict[str, Any]] = None,
+                  config: Optional[Dict[str, Any]] = None) -> str:
     """Everything that is a preference rather than a change to the app list.
 
     Kept off the grid deliberately -- the maintainer's instruction, 2026-09-19, "set apart
@@ -990,7 +1144,7 @@ def settings_page(token: str, *, prefs: Dict[str, Any],
     return f"""<!doctype html>
 {_html()}<head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>{_title("Settings")}</title><style>{_CSS}{SETTINGS_CSS}{_QR_CSS}</style></head>
+<title>{_title("Settings")}</title><style>{_CSS}{SETTINGS_CSS}{_QR_CSS}{CONFIG_CSS}</style></head>
 <body>
 <div class="navbar"><span class="brand">Sunshine</span><span class="sep">/</span>
 <span class="where">app manager</span>{_version_chip()}</div>
@@ -1069,6 +1223,8 @@ def settings_page(token: str, *, prefs: Dict[str, Any],
     </form>
     {sgdb_result}
   </div>
+
+  {config_setting(config, token)}
 
   <div class="setting">
     <h3>Which builds</h3>
@@ -1207,7 +1363,8 @@ def grid_page(state: Dict[str, Any], token: str, *, new_ids: Optional[set] = Non
               pending: Optional[List[Dict[str, Any]]] = None,
               auth_detail: str = "",
               restore: Optional[Dict[str, Any]] = None,
-              rights: Any = None) -> str:
+              rights: Any = None,
+              config: Optional[Dict[str, Any]] = None) -> str:
     new_ids = new_ids or set()
     pending = pending or []
     apps = state.get("apps") or []
@@ -1447,14 +1604,14 @@ def grid_page(state: Dict[str, Any], token: str, *, new_ids: Optional[set] = Non
     return f"""<!doctype html>
 {_html()}<head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>{_title()}</title><style>{_CSS}{_GRID_CSS}</style></head>
+<title>{_title()}</title><style>{_CSS}{_GRID_CSS}{CONFIG_CSS}</style></head>
 <body>
 <div class="navbar"><span class="brand">Sunshine</span><span class="sep">/</span>
 <span class="where">app manager</span>{_version_chip()}<a class="gear" href="/settings?token={_e(token)}">Settings</a></div>
 <div class="wrap">
 <h1>{len(apps)} application{'' if len(apps) == 1 else 's'}</h1>
 <p class="sub"><code>{_e(state.get("apps_json", ""))}</code></p>
-{rights_note}{auth_note}{restore_note}
+{config_banner(config, token)}{rights_note}{auth_note}{restore_note}
 <div class="actions">{apply_button}{discard_button}
 <a class="btn{'' if not queued else ' sec'}" href="/?scan=1&token={_e(token)}">Rescan</a>
 <a class="btn sec" href="/backups?token={_e(token)}">Restore a copy</a>
