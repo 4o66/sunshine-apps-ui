@@ -236,8 +236,8 @@ is deliberate rather than a wording preference. It named `sunshine-import`
 first, which is the previous project's command and does not exist here; then
 this program's own, which on Windows is a `.cmd` in the install directory that
 is not on `PATH`. Both were wrong for the same underlying reason: this runs as
-a Sunshine tile, on a television, driven by a gamepad, and there is nothing
-there to type a command into.
+a Sunshine tile, on a television, meant to be driven by a gamepad (#32: it
+cannot be yet), and there is nothing there to type a command into.
 
 So **Settings holds a field for the key**, and the picker holds a link to
 Settings. `POST /settings/sgdb-key` hands what was typed to the same
@@ -280,7 +280,8 @@ What replaced it:
   entries found by name rather than by appid, which is the hardest kind of bug
   to notice.
 - **The sheet needs no script.** The page is served `script-src 'self'` with no
-  inline script, and is driven by a gamepad on a television. So the server
+  inline script, and is meant to be driven by a gamepad on a television (#32).
+  So the server
   renders `<dialog open>` when the address says the sheet is up, and every
   control in it is a link. #28 is why that is not negotiable. An open dialog in
   the markup paints no `::backdrop`, so a veil is drawn behind it.

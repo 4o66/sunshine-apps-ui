@@ -5,7 +5,14 @@ Put your games on the Sunshine grid, from the sofa.
 It finds what Steam and Heroic have installed, gives each one artwork, and
 writes them into Sunshine's `apps.json` — and it does that from a window you
 open **through Moonlight, on the television you are already looking at**. No
-keyboard, no SSH, no editing JSON on a laptop in another room.
+SSH, no editing JSON on a laptop in another room.
+
+> **Controllers are the goal, not yet the reality.** The aim is for the whole
+> manager to be driven with a game controller. Today it cannot be: the d-pad
+> and sticks do nothing
+> ([issue #32](https://github.com/4o66/sunshine-apps-ui/issues/32)).
+> **Use a mouse and keyboard for now** — Moonlight passes both through, and
+> they work at the machine itself. A touch screen works too.
 
 ![The grid](docs/images/grid.png)
 
@@ -92,7 +99,10 @@ For a faster window it needs your distribution's GTK 4 and WebKitGTK
 introspection packages. **The installer offers to do this for you**, shows the
 exact command, and is clear that it is the one part needing `sudo` — your
 password is typed at the terminal and read by sudo, never by this program.
-Saying no is fine: a browser is used instead, which works and is slower.
+Saying no is fine: a browser is used instead, which works and is slower. It
+looks for Chrome, Chromium, Brave, Vivaldi or Edge, then Firefox — installed
+normally or as a Flatpak, which is how Bazzite ships Firefox — and opens it on
+a profile of its own, never your everyday one.
 
 ### macOS
 
@@ -135,9 +145,29 @@ next time it restarts.
 
 Settings holds appearance (system, light or dark), the language the tiles are
 written in, a check for newer tile artwork, the button that puts Sunshine's
-default tiles back, the update channel, and a manual update check. None of it
-touches your app list, and nothing there downloads anything without being
-asked.
+default tiles back, which Sunshine install it manages when there is more than
+one, the update channel, and a manual update check. None of it touches your app
+list, and nothing there downloads anything without being asked.
+
+### More than one Sunshine
+
+A machine can hold more than one Sunshine configuration: a Flatpak beside a
+native package or Homebrew install on Linux, or two installs on Windows. Removing
+one usually leaves its configuration behind, and a change written there does
+nothing at all — silently. So the manager works out which one is live, and
+says so when that took any judgment.
+
+- **On Linux it asks Sunshine first.** A running Sunshine settles it; if none
+  is running, the one its service would start does. Only after that does it
+  fall back to which configuration was used most recently.
+- **When it had to judge**, the grid names the one it picked, lists every one
+  with its install type, when it was last used and how many apps it holds —
+  usually the quickest way to tell — and lets you choose. Your choice is
+  remembered, and set aside, with a note saying why, if Sunshine is later seen
+  running from another.
+- **If the Sunshine that runs has not created its configuration yet** — a
+  fresh install beside one that has been removed — the page says so in red
+  rather than managing the one left behind.
 
 **Report a bug** shows a QR code so you can finish the job on whatever device
 suits you: scan it and the issue page opens on your phone, where you have a
@@ -201,8 +231,8 @@ key rather than sharing one. To get yours:
    key**, which checks it against SteamGridDB before storing it.
 
 Settings shows that page as a QR code when you are connected through
-Moonlight, because a television has no address bar and no keyboard: scan it,
-sign in on your phone, and type the key in here.
+Moonlight, because a television has no address bar: scan it, sign in on your
+phone, and type the key in here.
 
 The key is stored in your Sunshine config directory, readable only by you, and
 never passed on a command line. On a machine with no screen, `sunshine-apps-ui

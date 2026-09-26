@@ -62,8 +62,10 @@ immutable base is a foot-gun. This has no runtime dependencies at all: stdlib
 
 **It has to render inside the session Sunshine is streaming.** There are two
 ways to reach this and they are the same place: through Moonlight, from the
-couch, on a television at ten feet with a gamepad mapped to arrows and Enter;
-or sitting at the machine itself. Either way the page is drawn on the host, by
+couch, on a television at ten feet; or sitting at the machine itself. The aim
+is for the couch to need only a controller. It does not yet: a controller
+reaches nothing (#32), and a mouse and keyboard, passed through by Moonlight,
+are what work today. Either way the page is drawn on the host, by
 the host. A browser in `--app` mode gets there with no toolkit; a terminal UI
 would still need a window in that session and is miserable with a thumbstick.
 
