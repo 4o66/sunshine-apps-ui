@@ -614,18 +614,22 @@ def _provide_window_linux(confirm=None) -> List[str]:
         return []
     from . import gtkhost
 
-    if not gtkhost.toolkit_present():
-        return _offer_the_toolkit(confirm)
-    if gtkhost.toolkit_present() and not gtkhost.sandbox_can_run():
-        # The toolkit is here and would work but for the machine's policy.
+    # The sandbox first. Where it cannot start, the toolkit changes nothing,
+    # and offering it would be asking for a password to install two packages
+    # that end in a browser anyway -- which is what 26.04 without the typelibs
+    # was offered. Issue #38.
+    if not gtkhost.sandbox_can_run():
         # Saying which policy matters: without it this reads as "your distro
         # is unsupported", and it is not -- it is one switch.
         return ["Window        a browser (WebKitGTK's sandbox cannot start "
                 "here)",
                 "              unprivileged user namespaces are restricted on "
-                "this system, which",
-                "              WebKitGTK requires. Ubuntu 24.04 does this by "
-                "default."]
+                "this system, and no",
+                "              AppArmor profile lets WebKitGTK's sandbox "
+                "through, so installing",
+                "              the toolkit would not help."]
+    if not gtkhost.toolkit_present():
+        return _offer_the_toolkit(confirm)
     return ["Window        our own (GTK 4 + WebKitGTK)"]
 
 

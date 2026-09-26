@@ -43,6 +43,11 @@ class LinuxToolkitOfferTest(unittest.TestCase):
         family = mock.patch.object(gtkhost, "_family", return_value="debian")
         family.start()
         self.addCleanup(family.stop)
+        # A machine where the window could run: where it cannot, nothing is
+        # offered at all (#38), and that has tests of its own.
+        sandbox = mock.patch.object(gtkhost, "sandbox_can_run", return_value=True)
+        sandbox.start()
+        self.addCleanup(sandbox.stop)
 
     def offer(self, answer, present_after=True):
         seen = {}

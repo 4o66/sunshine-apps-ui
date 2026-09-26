@@ -186,6 +186,7 @@ class TheInstallerSaysWhichWindowYouGetTest(unittest.TestCase):
         from sunshine_apps_ui import installer
         asked = []
         with mock.patch.object(gtkhost, "toolkit_present", return_value=False), \
+                mock.patch.object(gtkhost, "sandbox_can_run", return_value=True), \
                 mock.patch.object(gtkhost, "_family", return_value="debian"):
             lines = installer._provide_window_linux(
                 lambda detail, question: asked.append(question) or False)
@@ -339,7 +340,31 @@ class TheSandboxWebKitInsistsOnTest(unittest.TestCase):
         text = " ".join(lines)
         self.assertIn("a browser", text)
         self.assertIn("user namespaces", text)
-        self.assertIn("Ubuntu 24.04", text)
+
+    @unittest.skipIf(os.name == "nt", "the Linux window; Windows has its own")
+    def test_it_names_no_release(self):
+        """It said "Ubuntu 24.04" on the 26.10 beta. #38."""
+        from sunshine_apps_ui import installer
+        with mock.patch.object(gtkhost, "toolkit_present", return_value=True), \
+                mock.patch.object(gtkhost, "sandbox_can_run", return_value=False):
+            text = " ".join(installer._provide_window_linux())
+        self.assertNotRegex(text, r"\d\d\.\d\d")
+
+    @unittest.skipIf(os.name == "nt", "the Linux window; Windows has its own")
+    def test_the_toolkit_is_not_offered_where_the_sandbox_cannot_run(self):
+        """A password typed for two packages that end in a browser anyway. #38."""
+        from sunshine_apps_ui import installer
+        asked = []
+        with mock.patch.object(gtkhost, "toolkit_present", return_value=False), \
+                mock.patch.object(gtkhost, "sandbox_can_run", return_value=False), \
+                mock.patch.object(installer.subprocess, "run") as ran:
+            lines = installer._provide_window_linux(
+                lambda detail, question: asked.append(question) or True)
+        self.assertEqual(asked, [])
+        ran.assert_not_called()
+        text = " ".join(lines)
+        self.assertIn("a browser", text)
+        self.assertIn("would not help", text)
 
 
 class WhatIsOursTest(unittest.TestCase):
