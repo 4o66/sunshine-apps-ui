@@ -611,6 +611,29 @@ class WindowFirstTest(unittest.TestCase):
         self.assertIn("starting.html", as_url)
 
 
+def path_of(url):
+    """The path a file: URL names, however this Python spelled it.
+
+    Python 3.14's pathname2url gives "///tmp/x" where 3.12 gave "/tmp/x", so
+    the URL is "file:///tmp/x" or "file:/tmp/x". Both are right. #39.
+    """
+    from urllib.parse import urlsplit
+    from urllib.request import url2pathname
+    parts = urlsplit(url)
+    assert parts.scheme == "file", url
+    return url2pathname(parts.path)
+
+
+class PathOfTest(unittest.TestCase):
+    def test_both_spellings_name_the_same_file(self):
+        self.assertEqual(path_of("file:/tmp/a%20b.html"), "/tmp/a b.html")
+        self.assertEqual(path_of("file:///tmp/a%20b.html"), "/tmp/a b.html")
+
+    def test_and_so_does_whatever_as_url_gives_here(self):
+        path = os.path.abspath(os.path.join("somewhere", "a b.html"))
+        self.assertEqual(path_of(launcher._as_url(path)), path)
+
+
 @unittest.skipIf(os.name == "nt", "Flatpak is Linux")
 class FlatpakSandboxTest(unittest.TestCase):
     """A Flatpak browser sees neither our state directory nor our profile.
@@ -656,9 +679,12 @@ class FlatpakSandboxTest(unittest.TestCase):
     def argument(self, prefix):
         return next(a for a in self.spawned[0] if a.startswith(prefix))
 
+    def page_of(self, prefix):
+        return path_of(self.argument(prefix)[len(prefix):])
+
     def test_flatpak_chrome_is_given_a_page_inside_its_sandbox(self):
         self.open_with({"com.google.Chrome"})
-        page = self.argument("--app=")[len("--app=file:"):]
+        page = self.page_of("--app=")
         self.assertTrue(page.startswith(
             os.path.join(self.runtime, "app", "com.google.Chrome")), page)
         self.assertEqual(open(page, encoding="utf-8").read(),
@@ -667,7 +693,7 @@ class FlatpakSandboxTest(unittest.TestCase):
     def test_that_copy_is_this_users_alone(self):
         """It carries the token, as the original does."""
         self.open_with({"com.google.Chrome"})
-        page = self.argument("--app=")[len("--app=file:"):]
+        page = self.page_of("--app=")
         self.assertEqual(os.stat(page).st_mode & 0o777, 0o600)
         self.assertEqual(os.stat(os.path.dirname(page)).st_mode & 0o777, 0o700)
 
@@ -701,8 +727,8 @@ class FlatpakSandboxTest(unittest.TestCase):
         profile = command[command.index("--profile") + 1]
         self.assertTrue(profile.startswith(
             os.path.join(self.home, ".var", "app", "org.mozilla.firefox")), profile)
-        self.assertTrue(command[-1].startswith(
-            "file:" + os.path.join(self.runtime, "app", "org.mozilla.firefox")))
+        self.assertTrue(path_of(command[-1]).startswith(
+            os.path.join(self.runtime, "app", "org.mozilla.firefox")), command[-1])
 
     def test_a_chromium_flatpak_still_comes_before_firefox(self):
         _, how = self.open_with({"org.mozilla.firefox", "com.google.Chrome"})
