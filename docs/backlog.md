@@ -66,8 +66,20 @@ Arch-based, and the Arch package, the AppImage and Flathub would all work --
 but there is no sign anyone does. Sunshine's repository does not mention
 SteamOS, the Steam Deck or the word "deck" anywhere: not in its documentation,
 its source, its README or its release automation, which publishes to Flathub,
-Homebrew, pacman and winget. Arch is also its smallest Linux target at 1.6% of
-downloads.
+Homebrew, pacman and winget. Arch is also a small Linux target: 2.3% of all
+GitHub release downloads, 3.2% of v2026.914's (counted 2026-09-26). An earlier
+count here said 1.6% and called it the smallest; it is not. Debian, the Flatpak
+bundle on GitHub and Alpine are all smaller now.
+
+What those counts can and cannot say, since they are the only numbers there
+are. Of v2026.914's 174,191 downloads in its first twelve days: Windows 77.5%,
+macOS 6.5%, Ubuntu 5.5%, Arch 3.2%, AppImage 2.3%, Fedora 1.7%, Debian 1.5%,
+Alpine 1.0%, the Flatpak bundle 0.7%. Flathub is not in them, and at about 650
+installs a day it is larger than any single Linux package on GitHub. Nor are
+COPR, Homebrew or distribution repositories -- which is where Bazzite's
+Sunshine comes from, so Bazzite does not appear at all, and Fedora is
+undercounted. winget fetches from the GitHub release, so Windows is counted
+fairly. A download is not a user; read the order, not the percentages.
 
 Absence of evidence is not proof nobody does it, but there is no positive
 evidence and upstream plainly treats it as a non-target, so it is not worth the
@@ -89,7 +101,8 @@ are enumerated in [#4](https://github.com/4o66/sunshine-apps-ui/issues/4).
 [#6](https://github.com/4o66/sunshine-apps-ui/issues/6) and its sub-issues.
 What follows is why it is shaped that way.
 
-Windows is the largest Sunshine population -- about 70% of downloads -- and the
+Windows is the largest Sunshine population -- 70-78% of downloads, depending on
+the release -- and the
 real port.
 
 ### The thing that shapes everything else
