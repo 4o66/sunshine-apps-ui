@@ -30,7 +30,7 @@ from typing import Optional
 RELEASE = "1.2.0"
 
 #: "dev" until there is a release to call it. Set to "" to cut one.
-CHANNEL = "dev"
+CHANNEL = ""
 
 #: Branches whose commit count is unambiguous, so the number stands alone.
 INTEGRATION = ("dev", "main")
