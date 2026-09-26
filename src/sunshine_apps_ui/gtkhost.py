@@ -83,12 +83,49 @@ def toolkit_present() -> bool:
 # Ubuntu 24.04 restricts unprivileged user namespaces by default. Measured on
 # 2026-09-19: Ubuntu 24.04 denies it, Debian 13 and Arch allow it, and the
 # window works on both of those.
+APPARMOR_SWITCH = "/proc/sys/kernel/apparmor_restrict_unprivileged_userns"
 USERNS_SWITCHES = (
     # Ubuntu's AppArmor restriction: 1 means unconfined programs may not.
-    ("/proc/sys/kernel/apparmor_restrict_unprivileged_userns", "1"),
+    (APPARMOR_SWITCH, "1"),
     # Debian's older knob, the other way round: 0 means they may not.
     ("/proc/sys/kernel/unprivileged_userns_clone", "0"),
 )
+
+# But the AppArmor switch covers *unconfined* programs, and from 26.04 Ubuntu
+# ships a profile, bwrap-userns-restrict, that confines /usr/bin/bwrap and
+# grants it the namespace. WebKit's sandbox is bubblewrap, so there the window
+# works with the switch at 1. Measured 2026-09-26: the window aborts on 24.04
+# (no such profile), works on 26.04 and 26.10, and on 26.04 fails again the
+# moment that profile is unloaded. Issue #37.
+#
+# Which profiles are loaded is readable by anyone here, a directory per
+# profile holding its name and mode -- unlike the flat list beside it, which
+# needs root. So this stays a file read.
+APPARMOR_PROFILES = "/sys/kernel/security/apparmor/policy/profiles"
+BWRAP_PROFILE = "bwrap"
+
+
+def _apparmor_lets_bwrap_through() -> bool:
+    """Is a profile for bubblewrap loaded, and doing anything but refusing?"""
+    try:
+        entries = os.listdir(APPARMOR_PROFILES)
+    except OSError:
+        return False
+    for entry in entries:
+        # Entries are "<name>.<n>"; the name itself may contain dots.
+        if entry.rsplit(".", 1)[0] != BWRAP_PROFILE:
+            continue
+        directory = os.path.join(APPARMOR_PROFILES, entry)
+        try:
+            with open(os.path.join(directory, "name"), encoding="utf-8") as handle:
+                name = handle.read().strip()
+            with open(os.path.join(directory, "mode"), encoding="utf-8") as handle:
+                mode = handle.read().strip()
+        except OSError:
+            continue
+        if name == BWRAP_PROFILE and mode in ("enforce", "complain"):
+            return True
+    return False
 
 
 def sandbox_can_run() -> bool:
@@ -99,17 +136,19 @@ def sandbox_can_run() -> bool:
     answer on such a machine, and this is how we get there without a crash
     first.
 
-    A file read, so it costs nothing on every launch. An AppArmor profile
-    could still permit a particular program where the switch says otherwise;
-    being wrong in that direction costs a faster window, not a working one.
+    File reads, so it costs nothing on every launch. Getting this wrong in
+    the cautious direction is not cheap: where the browser is a snap that
+    cannot start, passing over a working window left nothing at all (#37).
     """
     for path, blocking in USERNS_SWITCHES:
         try:
             with open(path, encoding="utf-8") as handle:
-                if handle.read().strip() == blocking:
-                    return False
+                restricted = handle.read().strip() == blocking
         except OSError:
             continue          # the knob is absent, which means no restriction
+        if restricted and not (path == APPARMOR_SWITCH
+                               and _apparmor_lets_bwrap_through()):
+            return False
     return True
 
 

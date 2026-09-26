@@ -12,8 +12,10 @@ Measured there, in the real session: app on screen 1.31-1.98 s, closed in
 0.11 s, and gone 0.03 s after the launcher was killed outright.
 """
 
+import io
 import os
 import re
+import shutil
 import signal
 import subprocess
 import sys
@@ -222,6 +224,23 @@ class TheSandboxWebKitInsistsOnTest(unittest.TestCase):
     beforehand, and the answer is to use a browser.
     """
 
+    def setUp(self):
+        # The switch tests are about the switches. Left alone, the profile
+        # check reads this machine's /sys -- and on Ubuntu 26.04 the answer
+        # there would change what the switch tests see.
+        self.profiles = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.profiles, True)
+        patched = mock.patch.object(gtkhost, "APPARMOR_PROFILES", self.profiles)
+        patched.start()
+        self.addCleanup(patched.stop)
+
+    def profile(self, entry, name, mode="enforce"):
+        directory = os.path.join(self.profiles, entry)
+        os.makedirs(directory)
+        for field, value in (("name", name), ("mode", mode)):
+            with io.open(os.path.join(directory, field), "w", encoding="utf-8") as handle:
+                handle.write(value + "\n")
+
     def switches(self, **files):
         real = open
 
@@ -240,6 +259,51 @@ class TheSandboxWebKitInsistsOnTest(unittest.TestCase):
                 "/proc/sys/kernel/apparmor_restrict_unprivileged_userns": "1\n",
                 "/proc/sys/kernel/unprivileged_userns_clone": None}):
             self.assertFalse(gtkhost.sandbox_can_run())
+
+    def test_ubuntus_bwrap_profile_lets_the_sandbox_through(self):
+        """26.04 and later: the switch is 1 and the window works. #37."""
+        self.profile("bwrap.13", "bwrap")
+        self.profile("unpriv_bwrap.14", "unpriv_bwrap")
+        with self.switches(**{
+                "/proc/sys/kernel/apparmor_restrict_unprivileged_userns": "1\n",
+                "/proc/sys/kernel/unprivileged_userns_clone": None}):
+            self.assertTrue(gtkhost.sandbox_can_run())
+
+    def test_without_that_profile_ubuntu_is_still_restricted(self):
+        """24.04: other profiles are loaded, none of them for bwrap."""
+        self.profile("unprivileged_userns.89", "unprivileged_userns")
+        with self.switches(**{
+                "/proc/sys/kernel/apparmor_restrict_unprivileged_userns": "1\n",
+                "/proc/sys/kernel/unprivileged_userns_clone": None}):
+            self.assertFalse(gtkhost.sandbox_can_run())
+
+    def test_a_bwrap_profile_that_refuses_does_not_count(self):
+        self.profile("bwrap.13", "bwrap", mode="kill")
+        with self.switches(**{
+                "/proc/sys/kernel/apparmor_restrict_unprivileged_userns": "1\n",
+                "/proc/sys/kernel/unprivileged_userns_clone": None}):
+            self.assertFalse(gtkhost.sandbox_can_run())
+
+    def test_the_profile_is_matched_by_name_not_by_prefix(self):
+        self.profile("bwrapper.3", "bwrapper")
+        self.profile("unpriv_bwrap.14", "unpriv_bwrap")
+        with self.switches(**{
+                "/proc/sys/kernel/apparmor_restrict_unprivileged_userns": "1\n",
+                "/proc/sys/kernel/unprivileged_userns_clone": None}):
+            self.assertFalse(gtkhost.sandbox_can_run())
+
+    def test_an_apparmor_profile_does_not_answer_debians_knob(self):
+        """That knob is not AppArmor's, so no AppArmor profile gets past it."""
+        self.profile("bwrap.13", "bwrap")
+        with self.switches(**{
+                "/proc/sys/kernel/apparmor_restrict_unprivileged_userns": None,
+                "/proc/sys/kernel/unprivileged_userns_clone": "0\n"}):
+            self.assertFalse(gtkhost.sandbox_can_run())
+
+    def test_an_unreadable_profile_tree_means_no_profile(self):
+        with mock.patch.object(gtkhost, "APPARMOR_PROFILES",
+                               os.path.join(self.profiles, "absent")):
+            self.assertFalse(gtkhost._apparmor_lets_bwrap_through())
 
     def test_debians_older_knob_is_recognised_the_other_way_round(self):
         with self.switches(**{
