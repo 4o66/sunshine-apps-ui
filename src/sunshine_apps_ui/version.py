@@ -27,10 +27,10 @@ import subprocess
 from typing import Optional
 
 #: What the next release will be called.
-RELEASE = "1.2.0"
+RELEASE = "1.3.0"
 
 #: "dev" until there is a release to call it. Set to "" to cut one.
-CHANNEL = ""
+CHANNEL = "dev"
 
 #: Branches whose commit count is unambiguous, so the number stands alone.
 INTEGRATION = ("dev", "main")
