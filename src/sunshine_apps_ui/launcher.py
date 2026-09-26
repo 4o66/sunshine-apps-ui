@@ -160,6 +160,14 @@ FLATPAK_BROWSERS = ("com.google.Chrome", "com.brave.Browser",
 
 # Chromium-family browsers take --app and --user-data-dir, which is what makes
 # the window ours to find and to close.
+#
+# And --password-store=basic, without which Chrome on Linux asks the desktop
+# keyring for the key to its cookie store -- and in an auto-login session, the
+# kind a Sunshine host runs, nothing has unlocked KWallet, so it waits for
+# ever. Every page load reads the cookie store, so the window sits on a blank
+# page or the spinner and never sends a request. Measured on a Bazzite VM,
+# 2026-09-25. The profile is ours and holds nothing worth encrypting. #34.
+CHROMIUM_FLAGS = ("--no-first-run", "--password-store=basic")
 CHROMIUM_BROWSERS = ("google-chrome", "google-chrome-stable", "chromium",
                      "chromium-browser", "brave-browser", "vivaldi-stable",
                      "microsoft-edge-stable")
@@ -520,7 +528,7 @@ def open_browser(target: str, profile: str, as_file: bool = False,
             inside = _as_url(_sandbox_page(target, app)) if as_file else url
             process = _spawn(["flatpak", "run", app,
                               f"--user-data-dir={_flatpak_profile(app, profile)}",
-                              "--no-first-run",
+                              *CHROMIUM_FLAGS,
                               f"--app={inside}", "--start-fullscreen"])
             if process:
                 return process, f"flatpak {app}"
@@ -529,7 +537,7 @@ def open_browser(target: str, profile: str, as_file: bool = False,
         path = shutil.which(binary)
         if path:
             process = _spawn([path, f"--user-data-dir={profile}",
-                              "--no-first-run", f"--app={url}",
+                              *CHROMIUM_FLAGS, f"--app={url}",
                               "--start-fullscreen"])
             if process:
                 return process, binary

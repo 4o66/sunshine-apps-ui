@@ -785,3 +785,24 @@ class FirefoxProfileTest(unittest.TestCase):
                                lambda b: "/usr/bin/firefox" if b == "firefox" else None):
             launcher.open_browser("http://x/", tmp)
         self.assertTrue(os.path.exists(os.path.join(tmp, "user.js")))
+
+
+class KeyringTest(unittest.TestCase):
+    """Chrome waits for ever on a keyring nothing has unlocked. #34."""
+
+    def launched(self, flatpak):
+        spawned = []
+        with mock.patch.object(launcher, "_spawn",
+                               lambda command, **k: spawned.append(command) or mock.Mock()), \
+             mock.patch.object(launcher, "_flatpak_installed",
+                               lambda app: flatpak and app == "com.google.Chrome"), \
+             mock.patch.object(launcher.shutil, "which",
+                               lambda b: "/usr/bin/chromium" if b == "chromium" else None):
+            launcher.open_browser("http://x/", tempfile.gettempdir())
+        return spawned[0]
+
+    def test_a_flatpak_chrome_is_kept_away_from_the_keyring(self):
+        self.assertIn("--password-store=basic", self.launched(flatpak=True))
+
+    def test_so_is_a_native_one(self):
+        self.assertIn("--password-store=basic", self.launched(flatpak=False))
