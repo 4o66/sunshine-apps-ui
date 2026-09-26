@@ -609,3 +609,179 @@ class WindowFirstTest(unittest.TestCase):
         as_url = launcher._as_url(os.path.join(self.state, "starting.html"))
         self.assertTrue(as_url.startswith("file:"))
         self.assertIn("starting.html", as_url)
+
+
+@unittest.skipIf(os.name == "nt", "Flatpak is Linux")
+class FlatpakSandboxTest(unittest.TestCase):
+    """A Flatpak browser sees neither our state directory nor our profile.
+
+    Found on a Bazzite VM, 2026-09-25: Chrome sat on ERR_FILE_NOT_FOUND for the
+    starting page (#34), and stock Bazzite's only browser, Firefox as a
+    Flatpak, was never found at all (#33).
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.tmp, True)
+        self.runtime = os.path.join(self.tmp, "run")
+        self.home = os.path.join(self.tmp, "home")
+        os.makedirs(self.runtime)
+        os.makedirs(self.home)
+        env = mock.patch.dict(os.environ, {"XDG_RUNTIME_DIR": self.runtime,
+                                           "HOME": self.home})
+        env.start()
+        self.addCleanup(env.stop)
+        self.page = os.path.join(self.tmp, "state", "starting.html")
+        os.makedirs(os.path.dirname(self.page))
+        with open(self.page, "w", encoding="utf-8") as handle:
+            handle.write("<p>Starting the app manager...</p>")
+
+        self.spawned = []
+
+        def spawn(command):
+            self.spawned.append(command)
+            return mock.Mock(poll=lambda: None, pid=4242)
+
+        patched = mock.patch.object(launcher, "_spawn", spawn)
+        patched.start()
+        self.addCleanup(patched.stop)
+
+    def open_with(self, apps, native=None):
+        with mock.patch.object(launcher, "_flatpak_installed", lambda app: app in apps), \
+             mock.patch.object(launcher.shutil, "which",
+                               lambda b: native if b in ("firefox",) and native else None):
+            return launcher.open_browser(self.page, "/state/browser-profile",
+                                         as_file=True, own_window=False)
+
+    def argument(self, prefix):
+        return next(a for a in self.spawned[0] if a.startswith(prefix))
+
+    def test_flatpak_chrome_is_given_a_page_inside_its_sandbox(self):
+        self.open_with({"com.google.Chrome"})
+        page = self.argument("--app=")[len("--app=file:"):]
+        self.assertTrue(page.startswith(
+            os.path.join(self.runtime, "app", "com.google.Chrome")), page)
+        self.assertEqual(open(page, encoding="utf-8").read(),
+                         open(self.page, encoding="utf-8").read())
+
+    def test_that_copy_is_this_users_alone(self):
+        """It carries the token, as the original does."""
+        self.open_with({"com.google.Chrome"})
+        page = self.argument("--app=")[len("--app=file:"):]
+        self.assertEqual(os.stat(page).st_mode & 0o777, 0o600)
+        self.assertEqual(os.stat(os.path.dirname(page)).st_mode & 0o777, 0o700)
+
+    def test_the_token_is_not_put_on_the_command_line(self):
+        """A data: URL would have needed no file, and would have done this."""
+        with open(self.page, "w", encoding="utf-8") as handle:
+            handle.write("http://127.0.0.1:1/?token=secret")
+        self.open_with({"com.google.Chrome"})
+        self.assertFalse(any("secret" in part for part in self.spawned[0]))
+
+    def test_flatpak_chrome_gets_a_profile_it_can_write(self):
+        self.open_with({"com.google.Chrome"})
+        profile = self.argument("--user-data-dir=")[len("--user-data-dir="):]
+        self.assertTrue(profile.startswith(
+            os.path.join(self.home, ".var", "app", "com.google.Chrome")), profile)
+        self.assertTrue(os.path.isdir(profile))
+
+    def test_and_that_profile_is_still_recognised_as_ours(self):
+        """The teardown and the next launch find the browser by this pattern."""
+        self.open_with({"com.google.Chrome"})
+        import re
+        self.assertTrue(re.search(launcher.PROFILE_PATTERN, " ".join(self.spawned[0])))
+
+    def test_stock_bazzites_firefox_is_found(self):
+        process, how = self.open_with({"org.mozilla.firefox"})
+        self.assertIsNotNone(process)
+        self.assertEqual(how, "flatpak org.mozilla.firefox")
+        command = self.spawned[0]
+        self.assertEqual(command[:3], ["flatpak", "run", "org.mozilla.firefox"])
+        self.assertIn("--kiosk", command)
+        profile = command[command.index("--profile") + 1]
+        self.assertTrue(profile.startswith(
+            os.path.join(self.home, ".var", "app", "org.mozilla.firefox")), profile)
+        self.assertTrue(command[-1].startswith(
+            "file:" + os.path.join(self.runtime, "app", "org.mozilla.firefox")))
+
+    def test_a_chromium_flatpak_still_comes_before_firefox(self):
+        _, how = self.open_with({"org.mozilla.firefox", "com.google.Chrome"})
+        self.assertEqual(how, "flatpak com.google.Chrome")
+
+    def test_a_native_firefox_comes_before_the_flatpak_one(self):
+        _, how = self.open_with({"org.mozilla.firefox"}, native="/usr/bin/firefox")
+        self.assertEqual(how, "firefox")
+
+    def test_a_url_rather_than_a_page_is_passed_straight_through(self):
+        with mock.patch.object(launcher, "_flatpak_installed",
+                               lambda app: app == "com.google.Chrome"), \
+             mock.patch.object(launcher.shutil, "which", return_value=None):
+            launcher.open_browser("http://127.0.0.1:1/", "/p")
+        self.assertIn("--app=http://127.0.0.1:1/", self.spawned[0])
+
+
+class RecordingOurBrowserTest(unittest.TestCase):
+    """Which processes are ours is asked once the browser really exists. #35.
+
+    `flatpak run` carries our profile on its own command line, so it matched
+    before the browser did, and leaving ended only the wrapper.
+    """
+
+    WRAPPER = 100
+
+    def browser(self, alive=True):
+        return mock.Mock(pid=self.WRAPPER, poll=lambda: None if alive else 0)
+
+    def test_a_flatpak_launch_waits_past_the_wrapper(self):
+        answers = iter([[self.WRAPPER], [self.WRAPPER], [self.WRAPPER, 101, 102]])
+        with mock.patch.object(launcher, "browsers", lambda: next(answers)), \
+             mock.patch.object(launcher.time, "sleep"):
+            ours = launcher._ours(self.browser(), "flatpak com.google.Chrome")
+        self.assertEqual(ours, [self.WRAPPER, 101, 102])
+
+    def test_anything_else_is_recorded_at_once(self):
+        calls = []
+
+        def browsers():
+            calls.append(1)
+            return [7]
+
+        with mock.patch.object(launcher, "browsers", browsers):
+            self.assertEqual(launcher._ours(self.browser(), "chromium"), [7])
+        self.assertEqual(len(calls), 1)
+
+    def test_a_browser_that_never_appears_is_not_waited_on_for_ever(self):
+        with mock.patch.object(launcher, "browsers", lambda: [self.WRAPPER]), \
+             mock.patch.object(launcher.time, "sleep"):
+            ours = launcher._ours(self.browser(), "flatpak com.google.Chrome",
+                                  timeout=0.05)
+        self.assertEqual(ours, [self.WRAPPER])
+
+    def test_a_wrapper_that_has_gone_is_not_waited_on(self):
+        with mock.patch.object(launcher, "browsers", lambda: [self.WRAPPER]), \
+             mock.patch.object(launcher.time, "sleep") as slept:
+            launcher._ours(self.browser(alive=False), "flatpak org.mozilla.firefox")
+        slept.assert_not_called()
+
+
+class FirefoxProfileTest(unittest.TestCase):
+    """A fresh Firefox profile greets you, and in --kiosk that is all you see."""
+
+    def test_the_profile_is_told_not_to_greet(self):
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, tmp, True)
+        path = launcher._firefox_profile(os.path.join(tmp, "browser-profile"))
+        text = open(os.path.join(path, "user.js"), encoding="utf-8").read()
+        self.assertIn('user_pref("termsofuse.bypassNotification", true);', text)
+        self.assertIn('user_pref("browser.aboutwelcome.enabled", false);', text)
+        self.assertIn('user_pref("browser.startup.homepage_override.mstone", "ignore");', text)
+
+    def test_native_firefox_gets_it_too(self):
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, tmp, True)
+        with mock.patch.object(launcher, "_spawn", return_value=mock.Mock()), \
+             mock.patch.object(launcher, "_flatpak_installed", return_value=False), \
+             mock.patch.object(launcher.shutil, "which",
+                               lambda b: "/usr/bin/firefox" if b == "firefox" else None):
+            launcher.open_browser("http://x/", tmp)
+        self.assertTrue(os.path.exists(os.path.join(tmp, "user.js")))

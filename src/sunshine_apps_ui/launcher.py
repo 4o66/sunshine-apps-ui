@@ -11,6 +11,7 @@ would mean two descriptions of one careful piece of behaviour, and they would
 drift. Everything platform-specific is named and kept in one place here.
 """
 
+import json
 import os
 import re
 import shutil
@@ -168,9 +169,31 @@ CHROMIUM_BROWSERS = ("google-chrome", "google-chrome-stable", "chromium",
 # wrong on a desktop.
 FIREFOX_BROWSERS = ("firefox", "firefox-esr")
 
+# Firefox as a Flatpak is the only browser stock Bazzite has, and missing it
+# sent the fallback to xdg-open: the user's own Firefox, in a tab, with our
+# token in their history. Issue #33. After the native ones for the same reason
+# Firefox comes last at all.
+FLATPAK_FIREFOX = ("org.mozilla.firefox",)
+
+# What a fresh Firefox profile would otherwise open with. In --kiosk that is the
+# whole screen: the "Welcome to Firefox" terms dialog over our page, with no
+# browser around it to get past it by. Measured on a Bazzite VM, 2026-09-25.
+# The profile is ours alone and only ever shows a page on this machine, so
+# nothing is reported from it either.
+FIREFOX_PREFS = {
+    "termsofuse.bypassNotification": True,
+    "browser.aboutwelcome.enabled": False,
+    "datareporting.policy.dataSubmissionPolicyBypassNotification": True,
+    "datareporting.policy.dataSubmissionEnabled": False,
+    "toolkit.telemetry.reportingpolicy.firstRun": False,
+    "browser.shell.checkDefaultBrowser": False,
+    "browser.startup.homepage_override.mstone": "ignore",
+}
+
 START_TIMEOUT = 15.0        # for the server to print its URL
 APPEAR_TIMEOUT = 30.0       # for the browser's window to exist
 STOP_TIMEOUT = 10.0         # for a previous browser to go quietly
+SETTLE_TIMEOUT = 10.0       # for a Flatpak browser to exist beyond its wrapper
 
 _URL = re.compile(r"http://127\.0\.0\.1:\d+/\?token=[A-Za-z0-9_-]+")
 
@@ -396,6 +419,66 @@ def _as_url(path: str) -> str:
     return "file:" + pathname2url(os.path.abspath(path))
 
 
+def _flatpak_profile(app: str, profile: str) -> str:
+    """Our browser profile, somewhere a Flatpak browser can write it.
+
+    The usual one is in our state directory, which the sandbox cannot see.
+    Chrome carried on regardless; Firefox given a --profile it cannot reach
+    refuses to start. ~/.var/app/<app-id> is the app's own, visible to it at
+    the same path, and the name still ends in sunshine-apps-ui/browser-profile
+    so PROFILE_PATTERN finds it for the teardown and the next launch.
+    """
+    path = os.path.join(os.path.expanduser("~"), ".var", "app", app, "data",
+                        "sunshine-apps-ui", "browser-profile")
+    try:
+        os.makedirs(path, mode=0o700, exist_ok=True)
+        return path
+    except OSError:
+        return profile
+
+
+def _firefox_profile(path: str) -> str:
+    """Our Firefox profile, told not to greet anyone. See FIREFOX_PREFS."""
+    lines = [f"user_pref({json.dumps(name)}, {json.dumps(value)});"
+             for name, value in FIREFOX_PREFS.items()]
+    try:
+        os.makedirs(path, mode=0o700, exist_ok=True)
+        with open(os.path.join(path, "user.js"), "w", encoding="utf-8") as handle:
+            handle.write("\n".join(lines) + "\n")
+    except OSError:
+        pass
+    return path
+
+
+def _sandbox_page(path: str, app: str) -> str:
+    """A copy of a local page that a Flatpak app is allowed to read.
+
+    A Flatpak browser cannot see our state directory -- the Chrome Flatpak is
+    given downloads, documents, the media folders and some config, and nothing
+    under ~/.local -- so the starting page there did not exist as far as it was
+    concerned. It sat on ERR_FILE_NOT_FOUND, full screen, for good: the page
+    that would have moved it on was the one that failed to load. Issue #34.
+
+    $XDG_RUNTIME_DIR/app/<app-id> is the directory Flatpak shares between the
+    host and that one app, at the same path on both sides and readable by this
+    user alone. A data: URL would need no file at all, but it would put the
+    token on the browser's command line, which every process can read.
+
+    Falls back to the original path if the copy cannot be made; the browser
+    then fails exactly as it did before, rather than something new failing.
+    """
+    runtime = os.environ.get("XDG_RUNTIME_DIR") or f"/run/user/{os.getuid()}"
+    directory = os.path.join(runtime, "app", app, "sunshine-apps-ui")
+    try:
+        os.makedirs(directory, mode=0o700, exist_ok=True)
+        copy = os.path.join(directory, os.path.basename(path))
+        shutil.copyfile(path, copy)
+        os.chmod(copy, 0o600)
+        return copy
+    except OSError:
+        return path
+
+
 # Set when the browser is held by a medium-integrity helper rather than by us,
 # which is how an elevated launcher avoids handing its rights to a browser.
 _HELPER_HOLDS_IT = "helper"
@@ -434,9 +517,11 @@ def open_browser(target: str, profile: str, as_file: bool = False,
 
     for app in FLATPAK_BROWSERS:
         if _flatpak_installed(app):
+            inside = _as_url(_sandbox_page(target, app)) if as_file else url
             process = _spawn(["flatpak", "run", app,
-                              f"--user-data-dir={profile}", "--no-first-run",
-                              f"--app={url}", "--start-fullscreen"])
+                              f"--user-data-dir={_flatpak_profile(app, profile)}",
+                              "--no-first-run",
+                              f"--app={inside}", "--start-fullscreen"])
             if process:
                 return process, f"flatpak {app}"
 
@@ -452,9 +537,19 @@ def open_browser(target: str, profile: str, as_file: bool = False,
     for binary in FIREFOX_BROWSERS:
         path = shutil.which(binary)
         if path:
-            process = _spawn([path, "--profile", profile, "--kiosk", url])
+            process = _spawn([path, "--profile", _firefox_profile(profile),
+                              "--kiosk", url])
             if process:
                 return process, binary
+
+    for app in FLATPAK_FIREFOX:
+        if _flatpak_installed(app):
+            inside = _as_url(_sandbox_page(target, app)) if as_file else url
+            process = _spawn(["flatpak", "run", app,
+                              "--profile", _firefox_profile(_flatpak_profile(app, profile)),
+                              "--kiosk", inside])
+            if process:
+                return process, f"flatpak {app}"
 
     return None, ""
 
@@ -662,7 +757,7 @@ def launch(argv: Optional[List[str]] = None) -> int:
         # asked once, here, rather than once a second. On Windows with a job or
         # a helper this is not needed at all.
         ours = [] if (WINDOWS and (_JOB is not None or
-                                   winbrowser_helper_pid(profile))) else browsers()
+                                   winbrowser_helper_pid(profile))) else _ours(browser, how)
 
         # Stay until one of the two goes; the other is taken down below.
         #
@@ -678,6 +773,34 @@ def launch(argv: Optional[List[str]] = None) -> int:
         return 0
     finally:
         _shut_down(server, browser, ours)
+
+
+def _ours(browser: Optional[subprocess.Popen], how: str,
+          timeout: float = SETTLE_TIMEOUT) -> List[int]:
+    """Which processes holding our profile are this session's, to end on leaving.
+
+    Asked once, but not too soon. `flatpak run` carries our --user-data-dir on
+    its own command line, so it matches the profile before the browser does --
+    and asking then recorded the wrapper alone. Leaving ended the wrapper, and
+    the browser, which Flatpak runs in a scope of its own rather than as the
+    wrapper's child, stayed on screen with nothing behind it. Measured on
+    Bazzite: ours=[wrapper], and fourteen Chrome processes still up after the
+    teardown. Issue #35.
+
+    So for a Flatpak launch, wait until something other than the wrapper holds
+    the profile. Still recorded rather than re-read at teardown: a successor's
+    window, started after this one, must never be ended by this one leaving.
+    """
+    found = browsers()
+    if browser is None or not how.startswith("flatpak "):
+        return found
+    deadline = time.monotonic() + timeout
+    while not [pid for pid in found if pid != browser.pid]:
+        if time.monotonic() >= deadline or browser.poll() is not None:
+            break
+        time.sleep(0.25)
+        found = browsers()
+    return found
 
 
 def _no_browser(url: str, server: subprocess.Popen) -> int:
