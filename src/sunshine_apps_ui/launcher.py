@@ -458,6 +458,83 @@ def _firefox_profile(path: str) -> str:
     return path
 
 
+SNAP_BIN = "/snap/bin"
+
+
+def _snap_name(path: str) -> str:
+    """The snap behind a browser found on PATH, or "" when it is not one.
+
+    Stock Ubuntu's only browser is Firefox as a snap, and `firefox` on PATH is
+    not /snap/bin/firefox but /usr/bin/firefox: a shell script that runs it.
+    Ubuntu's `chromium-browser` is packaged the same way, though that one has
+    not been seen on a test machine. So a path outside /snap/bin can still be
+    a snap, and the script naming /snap/bin/<name> is how to tell. Issue #36.
+    """
+    try:
+        if os.path.dirname(os.path.abspath(path)) == SNAP_BIN:
+            return os.path.basename(path)
+        with open(path, "rb") as handle:
+            head = handle.read(4096)
+    except OSError:
+        return ""
+    if not head.startswith(b"#!"):
+        return ""
+    found = re.search(re.escape(SNAP_BIN.encode()) + rb"/([a-z0-9][a-z0-9-]*)", head)
+    if not found:
+        return ""
+    name = found.group(1).decode("ascii")
+    return name if os.path.exists(os.path.join(SNAP_BIN, name)) else ""
+
+
+def _snap_dir(name: str) -> str:
+    """~/snap/<name>/common: the one place in home a snap may write.
+
+    Snap confinement's home interface leaves out hidden directories, so our
+    state directory under ~/.local does not exist as far as the snap is
+    concerned. Firefox given a --profile there cannot lock it, and says
+    "Firefox is already running, but is not responding" -- on every stock
+    Ubuntu desktop, measured on 24.04, 26.04 and 26.10. Issue #36.
+    """
+    return os.path.join(os.path.expanduser("~"), "snap", name, "common",
+                        "sunshine-apps-ui")
+
+
+def _snap_profile(name: str, profile: str) -> str:
+    """Our browser profile where a snap can write it.
+
+    It still ends in sunshine-apps-ui/browser-profile, so PROFILE_PATTERN
+    finds it for the teardown and the next launch.
+    """
+    path = os.path.join(_snap_dir(name), "browser-profile")
+    try:
+        os.makedirs(path, mode=0o700, exist_ok=True)
+        return path
+    except OSError:
+        return profile
+
+
+def _snap_page(path: str, name: str) -> str:
+    """A copy of a local page that a snap is allowed to read. See _snap_dir."""
+    return _private_copy(path, _snap_dir(name))
+
+
+def _private_copy(path: str, directory: str) -> str:
+    """Copy *path* into *directory*, readable by this user alone.
+
+    The page carries the session token, as the original does. Falls back to
+    the original path if the copy cannot be made; the browser then fails
+    exactly as it did before, rather than something new failing.
+    """
+    try:
+        os.makedirs(directory, mode=0o700, exist_ok=True)
+        copy = os.path.join(directory, os.path.basename(path))
+        shutil.copyfile(path, copy)
+        os.chmod(copy, 0o600)
+        return copy
+    except OSError:
+        return path
+
+
 def _sandbox_page(path: str, app: str) -> str:
     """A copy of a local page that a Flatpak app is allowed to read.
 
@@ -476,15 +553,7 @@ def _sandbox_page(path: str, app: str) -> str:
     then fails exactly as it did before, rather than something new failing.
     """
     runtime = os.environ.get("XDG_RUNTIME_DIR") or f"/run/user/{os.getuid()}"
-    directory = os.path.join(runtime, "app", app, "sunshine-apps-ui")
-    try:
-        os.makedirs(directory, mode=0o700, exist_ok=True)
-        copy = os.path.join(directory, os.path.basename(path))
-        shutil.copyfile(path, copy)
-        os.chmod(copy, 0o600)
-        return copy
-    except OSError:
-        return path
+    return _private_copy(path, os.path.join(runtime, "app", app, "sunshine-apps-ui"))
 
 
 # Set when the browser is held by a medium-integrity helper rather than by us,
@@ -536,8 +605,9 @@ def open_browser(target: str, profile: str, as_file: bool = False,
     for binary in CHROMIUM_BROWSERS:
         path = shutil.which(binary)
         if path:
-            process = _spawn([path, f"--user-data-dir={profile}",
-                              *CHROMIUM_FLAGS, f"--app={url}",
+            path, where, page = _confined(path, profile, target, url, as_file)
+            process = _spawn([path, f"--user-data-dir={where}",
+                              *CHROMIUM_FLAGS, f"--app={page}",
                               "--start-fullscreen"])
             if process:
                 return process, binary
@@ -545,8 +615,9 @@ def open_browser(target: str, profile: str, as_file: bool = False,
     for binary in FIREFOX_BROWSERS:
         path = shutil.which(binary)
         if path:
-            process = _spawn([path, "--profile", _firefox_profile(profile),
-                              "--kiosk", url])
+            path, where, page = _confined(path, profile, target, url, as_file)
+            process = _spawn([path, "--profile", _firefox_profile(where),
+                              "--kiosk", page])
             if process:
                 return process, binary
 
@@ -560,6 +631,22 @@ def open_browser(target: str, profile: str, as_file: bool = False,
                 return process, f"flatpak {app}"
 
     return None, ""
+
+
+def _confined(path: str, profile: str, target: str, url: str,
+              as_file: bool) -> Tuple[str, str, str]:
+    """(binary, profile, page) for a browser found on PATH, snap or not.
+
+    A snap gets a profile and a starting page it can reach, and is run as
+    /snap/bin/<name> rather than through Ubuntu's wrapper script. The wrapper
+    execs the snap in the end, but on its way it rewrites the user's default
+    browser and their GNOME and Plasma dock entries -- not ours to touch.
+    """
+    name = _snap_name(path)
+    if not name:
+        return path, profile, url
+    page = _as_url(_snap_page(target, name)) if as_file else url
+    return os.path.join(SNAP_BIN, name), _snap_profile(name, profile), page
 
 
 def _open_browser_windows(url: str, profile: str) -> Tuple[Optional[subprocess.Popen], str]:

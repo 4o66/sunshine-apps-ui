@@ -746,6 +746,149 @@ class FlatpakSandboxTest(unittest.TestCase):
         self.assertIn("--app=http://127.0.0.1:1/", self.spawned[0])
 
 
+@unittest.skipIf(os.name == "nt", "snaps are Linux")
+class SnapBrowserTest(unittest.TestCase):
+    """A snap browser cannot reach anything under ~/.local either. #36.
+
+    Found on stock Ubuntu 24.04, 26.04 and 26.10, 2026-09-26: Firefox is a
+    snap there, reached through /usr/bin/firefox, a shell script. Given a
+    profile in our state directory it could not lock it and said "Firefox is
+    already running, but is not responding".
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.tmp, True)
+        self.home = os.path.join(self.tmp, "home")
+        self.snap_bin = os.path.join(self.tmp, "snap", "bin")
+        self.usr_bin = os.path.join(self.tmp, "usr", "bin")
+        for directory in (self.home, self.snap_bin, self.usr_bin):
+            os.makedirs(directory)
+        env = mock.patch.dict(os.environ, {"HOME": self.home})
+        env.start()
+        self.addCleanup(env.stop)
+        patched = mock.patch.object(launcher, "SNAP_BIN", self.snap_bin)
+        patched.start()
+        self.addCleanup(patched.stop)
+
+        self.page = os.path.join(self.tmp, "state", "starting.html")
+        os.makedirs(os.path.dirname(self.page))
+        with open(self.page, "w", encoding="utf-8") as handle:
+            handle.write("<p>Starting the app manager...</p>")
+
+        self.spawned = []
+
+        def spawn(command):
+            self.spawned.append(command)
+            return mock.Mock(poll=lambda: None, pid=4242)
+
+        patched = mock.patch.object(launcher, "_spawn", spawn)
+        patched.start()
+        self.addCleanup(patched.stop)
+
+    def snap(self, name):
+        """A snap as snapd installs it: /snap/bin/<name>."""
+        path = os.path.join(self.snap_bin, name)
+        with open(path, "w", encoding="utf-8") as handle:
+            handle.write("")
+        return path
+
+    def wrapper(self, name, snap):
+        """Ubuntu's transitional script, as /usr/bin/firefox is."""
+        path = os.path.join(self.usr_bin, name)
+        with open(path, "w", encoding="utf-8") as handle:
+            handle.write("#!/bin/sh\n"
+                         f"if ! [ -x {self.snap_bin}/{snap} ]; then\n"
+                         "    echo 'requires the snap' >&2; exit 1\nfi\n"
+                         f"exec {self.snap_bin}/{snap} \"$@\"\n")
+        return path
+
+    def native(self, name):
+        path = os.path.join(self.usr_bin, name)
+        with open(path, "wb") as handle:
+            handle.write(b"\x7fELF\x02\x01\x01")
+        return path
+
+    def open_with(self, found, target=None, as_file=True):
+        with mock.patch.object(launcher, "_flatpak_installed", lambda app: False), \
+             mock.patch.object(launcher.shutil, "which", lambda b: found.get(b)):
+            return launcher.open_browser(target or self.page, "/state/browser-profile",
+                                         as_file=as_file, own_window=False)
+
+    def common(self, name):
+        return os.path.join(self.home, "snap", name, "common", "sunshine-apps-ui")
+
+    def test_ubuntus_firefox_is_run_as_the_snap_itself(self):
+        """Not through the wrapper, which edits the user's settings on its way."""
+        self.snap("firefox")
+        _, how = self.open_with({"firefox": self.wrapper("firefox", "firefox")})
+        self.assertEqual(how, "firefox")
+        self.assertEqual(self.spawned[0][0], os.path.join(self.snap_bin, "firefox"))
+
+    def test_its_profile_is_somewhere_it_can_write(self):
+        self.snap("firefox")
+        self.open_with({"firefox": self.wrapper("firefox", "firefox")})
+        command = self.spawned[0]
+        profile = command[command.index("--profile") + 1]
+        self.assertEqual(profile, os.path.join(self.common("firefox"), "browser-profile"))
+        self.assertTrue(os.path.isfile(os.path.join(profile, "user.js")))
+
+    def test_and_that_profile_is_still_recognised_as_ours(self):
+        import re
+        self.snap("firefox")
+        self.open_with({"firefox": self.wrapper("firefox", "firefox")})
+        self.assertTrue(re.search(launcher.PROFILE_PATTERN, " ".join(self.spawned[0])))
+
+    def test_its_page_is_somewhere_it_can_read_and_nobody_else_can(self):
+        self.snap("firefox")
+        self.open_with({"firefox": self.wrapper("firefox", "firefox")})
+        page = path_of(self.spawned[0][-1])
+        self.assertEqual(os.path.dirname(page), self.common("firefox"))
+        self.assertEqual(open(page, encoding="utf-8").read(),
+                         open(self.page, encoding="utf-8").read())
+        self.assertEqual(os.stat(page).st_mode & 0o777, 0o600)
+        self.assertEqual(os.stat(os.path.dirname(page)).st_mode & 0o777, 0o700)
+
+    def test_a_chromium_snap_found_directly_is_treated_the_same(self):
+        self.snap("chromium")
+        self.open_with({"chromium": os.path.join(self.snap_bin, "chromium")})
+        command = self.spawned[0]
+        profile = next(a for a in command if a.startswith("--user-data-dir="))
+        self.assertEqual(profile[len("--user-data-dir="):],
+                         os.path.join(self.common("chromium"), "browser-profile"))
+        page = path_of(next(a for a in command if a.startswith("--app="))[len("--app="):])
+        self.assertEqual(os.path.dirname(page), self.common("chromium"))
+
+    def test_ubuntus_chromium_wrapper_names_a_different_snap(self):
+        self.snap("chromium")
+        self.open_with({"chromium-browser": self.wrapper("chromium-browser", "chromium")})
+        self.assertEqual(self.spawned[0][0], os.path.join(self.snap_bin, "chromium"))
+
+    def test_a_native_firefox_is_left_as_it_was(self):
+        path = self.native("firefox")
+        self.open_with({"firefox": path})
+        command = self.spawned[0]
+        self.assertEqual(command[0], path)
+        self.assertEqual(command[command.index("--profile") + 1], "/state/browser-profile")
+        self.assertEqual(path_of(command[-1]), self.page)
+
+    def test_a_script_that_is_not_about_a_snap_is_not_one(self):
+        path = os.path.join(self.usr_bin, "firefox")
+        with open(path, "w", encoding="utf-8") as handle:
+            handle.write("#!/bin/sh\nexec /opt/firefox/firefox \"$@\"\n")
+        self.assertEqual(launcher._snap_name(path), "")
+
+    def test_a_wrapper_whose_snap_is_not_installed_is_not_one(self):
+        """The wrapper stays when the snap is removed, and says so if run."""
+        self.assertEqual(launcher._snap_name(self.wrapper("firefox", "firefox")), "")
+
+    def test_a_url_rather_than_a_page_is_passed_straight_through(self):
+        self.snap("firefox")
+        self.open_with({"firefox": self.wrapper("firefox", "firefox")},
+                       target="http://127.0.0.1:1/", as_file=False)
+        self.assertEqual(self.spawned[0][-1], "http://127.0.0.1:1/")
+
+
 class RecordingOurBrowserTest(unittest.TestCase):
     """Which processes are ours is asked once the browser really exists. #35.
 
@@ -806,8 +949,11 @@ class FirefoxProfileTest(unittest.TestCase):
     def test_native_firefox_gets_it_too(self):
         tmp = tempfile.mkdtemp()
         self.addCleanup(shutil.rmtree, tmp, True)
+        # Native, whatever this machine's /usr/bin/firefox is: on Ubuntu it is
+        # the snap's wrapper, and SnapBrowserTest is about that. #36.
         with mock.patch.object(launcher, "_spawn", return_value=mock.Mock()), \
              mock.patch.object(launcher, "_flatpak_installed", return_value=False), \
+             mock.patch.object(launcher, "_snap_name", return_value=""), \
              mock.patch.object(launcher.shutil, "which",
                                lambda b: "/usr/bin/firefox" if b == "firefox" else None):
             launcher.open_browser("http://x/", tmp)
