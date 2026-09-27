@@ -889,6 +889,116 @@ class SnapBrowserTest(unittest.TestCase):
         self.assertEqual(self.spawned[0][-1], "http://127.0.0.1:1/")
 
 
+class AWindowThatDiesTest(unittest.TestCase):
+    """Our window going before it showed anything is not the user closing it. #40.
+
+    Measured on Ubuntu 24.04 with the sandbox check forced wrong: the window
+    aborted at once, the crash reporter held its process for ten seconds, and
+    the launcher -- which had counted it as up the moment it existed -- then
+    took everything down. A browser that worked sat unused.
+    """
+
+    PORT = 45678
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.tmp, True)
+        env = mock.patch.dict(os.environ, {"XDG_STATE_HOME": self.tmp})
+        env.start()
+        self.addCleanup(env.stop)
+        self.opened = []
+        self.shut = []
+        self.server = mock.Mock(poll=mock.Mock(return_value=None))
+        for name, value in (
+                ("_leave_on_signal", lambda: None),
+                ("stop_previous", lambda: None),
+                ("free_port", lambda: self.PORT),
+                ("write_starting_page", lambda url: os.path.join(self.tmp, "starting.html")),
+                ("remember_server", lambda server: None),
+                ("server_environment", lambda: {}),
+                ("_ours", lambda browser, how: []),
+                ("_shut_down", lambda *a: self.shut.append(a))):
+            patched = mock.patch.object(launcher, name, value)
+            patched.start()
+            self.addCleanup(patched.stop)
+        for target, value in ((launcher.subprocess, "Popen"), (launcher.time, "sleep")):
+            patched = mock.patch.object(target, value,
+                                        (lambda *a, **k: self.server) if value == "Popen"
+                                        else (lambda s: None))
+            patched.start()
+            self.addCleanup(patched.stop)
+
+    def run_with(self, windows, up, shown=False):
+        """*windows*: what open_browser returns, in turn. *up*: browser_is_up, in turn."""
+        answers = iter(windows)
+
+        def open_browser(page, profile, as_file=False, own_window=True):
+            self.opened.append(own_window)
+            return next(answers)
+
+        states = iter(up)
+        if shown:
+            from sunshine_apps_ui import places
+            os.makedirs(os.path.dirname(places.shown_marker()), exist_ok=True)
+        with mock.patch.object(launcher, "open_browser", open_browser), \
+             mock.patch.object(launcher, "browser_is_up", lambda p: next(states, False)), \
+             mock.patch.object(launcher, "window_was_shown", lambda port: shown):
+            return launcher.launch([])
+
+    def window(self, code=None):
+        return mock.Mock(poll=mock.Mock(return_value=code), returncode=code)
+
+    def test_a_window_that_went_unseen_gets_a_browser(self):
+        self.run_with([(self.window(-6), launcher.OUR_WINDOW),
+                       (self.window(), "firefox")],
+                      up=[True, False, True, True, False])
+        self.assertEqual(self.opened, [True, False])
+
+    def test_a_window_that_was_seen_and_closed_is_left_closed(self):
+        self.run_with([(self.window(0), launcher.OUR_WINDOW)],
+                      up=[True, False], shown=True)
+        self.assertEqual(self.opened, [True])
+
+    def test_a_server_that_stopped_on_its_own_is_not_a_failed_window(self):
+        """It stops by itself after applying; the window then closing is right."""
+        self.server.poll.return_value = 0
+        self.run_with([(self.window(0), launcher.OUR_WINDOW)], up=[True, True])
+        self.assertEqual(self.opened, [True])
+
+    def test_a_browser_going_is_never_taken_for_our_window(self):
+        self.run_with([(self.window(0), "firefox")], up=[True, False])
+        self.assertEqual(self.opened, [True])
+
+    def test_it_falls_back_once_only(self):
+        """Windows offers our window first whatever it is asked."""
+        self.run_with([(self.window(1), launcher.OUR_WINDOW),
+                       (self.window(1), launcher.OUR_WINDOW)],
+                      up=[True, False, True, False])
+        self.assertEqual(self.opened, [True, False])
+
+    def test_the_teardown_still_happens(self):
+        self.run_with([(self.window(-6), launcher.OUR_WINDOW),
+                       (self.window(), "firefox")],
+                      up=[True, False, True, False])
+        self.assertEqual(len(self.shut), 1)
+
+    def test_an_earlier_sessions_marker_is_not_this_ones(self):
+        from sunshine_apps_ui import places
+        os.makedirs(os.path.dirname(places.shown_marker()), exist_ok=True)
+        with open(places.shown_marker(), "w", encoding="utf-8") as handle:
+            handle.write("1111")
+        self.assertFalse(launcher.window_was_shown(self.PORT))
+        self.assertTrue(launcher.window_was_shown(1111))
+
+    def test_and_it_is_cleared_before_the_server_starts(self):
+        from sunshine_apps_ui import places
+        os.makedirs(os.path.dirname(places.shown_marker()), exist_ok=True)
+        with open(places.shown_marker(), "w", encoding="utf-8") as handle:
+            handle.write(str(self.PORT))
+        self.run_with([(self.window(0), "firefox")], up=[True, False])
+        self.assertFalse(os.path.exists(places.shown_marker()))
+
+
 class RecordingOurBrowserTest(unittest.TestCase):
     """Which processes are ours is asked once the browser really exists. #35.
 

@@ -36,6 +36,16 @@ def state_dir() -> str:
     return os.path.join(state_home(), "sunshine-apps-ui")
 
 
+def shown_marker() -> str:
+    """Written by the server when a window first asks it for anything.
+
+    The launcher's only evidence that a window really came up. A process
+    existing is not: our window's process exists for as long as a crash
+    reporter holds it, having shown nothing at all. Issue #40.
+    """
+    return os.path.join(state_dir(), "window-shown")
+
+
 def data_home() -> str:
     """Where a user's own application data belongs -- menu entries included.
 

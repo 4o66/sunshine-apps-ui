@@ -92,6 +92,32 @@ class PlanHandler(BaseHTTPRequestHandler):
         if self.command != "HEAD":
             self.wfile.write(raw)
 
+    _shown: bool = False
+
+    @classmethod
+    def _note_shown(cls) -> None:
+        """Say, once, that a window has asked for something with the token.
+
+        The first such request is the starting page's readiness check, sent
+        by script, so a window that makes it has a working web process. That
+        is exactly what our window lacks when WebKit's sandbox is refused: it
+        aborts before any page runs. The launcher reads this to tell a window
+        that died showing nothing from one that was closed. Issue #40.
+
+        Tagged with our port, so a marker left by an earlier session is not
+        taken for this one's.
+        """
+        if cls._shown or not cls.port:
+            return
+        cls._shown = True
+        from . import places
+        from .core import filemode
+        try:
+            os.makedirs(places.state_dir(), exist_ok=True)
+            filemode.write_private(places.shown_marker(), str(cls.port))
+        except OSError as e:
+            log.warning("could not record that a window was shown: %s", e)
+
     def do_GET(self) -> None:  # noqa: N802 - http.server's interface
         parts = urlsplit(self.path)
         query = parse_qs(parts.query)
@@ -104,6 +130,7 @@ class PlanHandler(BaseHTTPRequestHandler):
             log.warning("refused %s: %s", parts.path, reason)
             self._send(404, error_page("Not found."))
             return
+        self._note_shown()
 
         if parts.path == "/art":
             wanted = (query.get("p") or [""])[0]

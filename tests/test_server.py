@@ -327,6 +327,36 @@ class ServerTest(unittest.TestCase):
             self.assertIsNone(r.headers.get("Access-Control-Allow-Origin"))
 
 
+class ShownMarkerTest(ServerTest):
+    """The launcher's evidence that a window really came up. #40."""
+
+    def marker(self):
+        from sunshine_apps_ui import places
+        try:
+            with open(places.shown_marker(), encoding="utf-8") as handle:
+                return handle.read()
+        except OSError:
+            return None
+
+    def test_nothing_is_written_before_anything_asks(self):
+        self.assertIsNone(self.marker())
+
+    def test_a_refused_request_is_not_a_window(self):
+        self.get("/")
+        self.get("/", token="not-the-token")
+        self.assertIsNone(self.marker())
+
+    def test_the_first_request_with_the_token_is(self):
+        self.get("/", token=self.token)
+        self.assertEqual(self.marker(), str(self.port))
+
+    def test_it_is_this_users_alone(self):
+        from sunshine_apps_ui import places
+        self.get("/", token=self.token)
+        if os.name != "nt":
+            self.assertEqual(os.stat(places.shown_marker()).st_mode & 0o777, 0o600)
+
+
 class EngineSeamTest(ServerTest):
     """What used to be the CLI contract is now a function call.
 

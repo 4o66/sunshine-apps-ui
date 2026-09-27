@@ -802,6 +802,10 @@ def launch(argv: Optional[List[str]] = None) -> int:
     url = f"http://{security.BIND_HOST}:{port}/?token={token}"
     token_file = os.path.join(places.state_dir(), "session-token")
     filemode.write_private(token_file, token)
+    try:
+        os.remove(places.shown_marker())
+    except OSError:
+        pass
 
     browser = None
     ours: List[int] = []
@@ -828,16 +832,49 @@ def launch(argv: Optional[List[str]] = None) -> int:
                 break
             time.sleep(0.5)
 
-        # Our own window can still fail after we have started it: the toolkit
-        # is there but will not run, a display goes away, a library is half
-        # installed. It exits rather than hanging, and the launcher would
-        # otherwise see "nothing on screen" and take everything down, leaving
-        # a tile that appears to do nothing at all. A browser is exactly the
-        # fallback we kept the browser path for.
-        if (how == OUR_WINDOW and browser is not None
-                and browser.poll() is not None and not browser_is_up(profile)):
-            print(f"Our own window exited ({browser.returncode}); "
-                  f"falling back to a browser.", file=sys.stderr)
+        # Which processes are ours, for the teardown that cannot use the job --
+        # asked once, here, rather than once a second. On Windows with a job or
+        # a helper this is not needed at all.
+        ours = [] if (WINDOWS and (_JOB is not None or
+                                   winbrowser_helper_pid(profile))) else _ours(browser, how)
+
+        fell_back = False
+        while True:
+            # Stay until one of the two goes; the other is taken down below.
+            #
+            # Waiting on the browser process alone was wrong twice over. A
+            # launcher such as `flatpak run` can hand off and return while the
+            # window stays up, which would shut the server down under a live
+            # page. And the server can stop on its own -- it does exactly that
+            # after applying -- which would leave the window showing a page
+            # that no longer loads. A quarter of a second, because the question
+            # is now free and the answer is what decides how long closing the
+            # window takes.
+            while browser_is_up(profile) and server.poll() is None:
+                time.sleep(0.25)
+
+            # Our own window can fail after we have started it: the toolkit is
+            # there but will not run, WebKit is refused its sandbox, a display
+            # goes away. Otherwise that reads as "closed", everything is taken
+            # down, and the tile appears to do nothing at all. A browser is the
+            # fallback we kept the browser path for.
+            #
+            # Asked when the window goes, not once after it appears. Its
+            # process counts as up the moment it exists, and when the sandbox
+            # was refused on Ubuntu 24.04 the crash reporter held it for ten
+            # seconds having shown nothing -- long after a check at start had
+            # passed. What separates a window that died from one that was
+            # closed is whether the server ever heard from it. Issue #40.
+            #
+            # Once only. On Windows open_browser offers our window first
+            # whatever it is asked, so a second try could be the same window.
+            if (how != OUR_WINDOW or fell_back or server.poll() is not None
+                    or window_was_shown(port)):
+                return 0
+            fell_back = True
+            code = browser.poll() if browser is not None else None
+            print(f"Our own window went without showing anything "
+                  f"(exit {code}); falling back to a browser.", file=sys.stderr)
             browser, how = open_browser(page, profile, as_file=True,
                                         own_window=False)
             if not browser and how != _HELPER_HOLDS_IT:
@@ -848,26 +885,19 @@ def launch(argv: Optional[List[str]] = None) -> int:
                 if browser is not None and browser.poll() is not None:
                     break
                 time.sleep(0.5)
-        # Which processes are ours, for the teardown that cannot use the job --
-        # asked once, here, rather than once a second. On Windows with a job or
-        # a helper this is not needed at all.
-        ours = [] if (WINDOWS and (_JOB is not None or
-                                   winbrowser_helper_pid(profile))) else _ours(browser, how)
-
-        # Stay until one of the two goes; the other is taken down below.
-        #
-        # Waiting on the browser process alone was wrong twice over. A launcher
-        # such as `flatpak run` can hand off and return while the window stays
-        # up, which would shut the server down under a live page. And the
-        # server can stop on its own -- it does exactly that after applying --
-        # which would leave the window showing a page that no longer loads.
-        # A quarter of a second, because the question is now free and the
-        # answer is what decides how long closing the window takes.
-        while browser_is_up(profile) and server.poll() is None:
-            time.sleep(0.25)
-        return 0
+            ours = _ours(browser, how)
     finally:
         _shut_down(server, browser, ours)
+
+
+def window_was_shown(port: int) -> bool:
+    """Has the server this session started heard from a window? See launch()."""
+    from . import places
+    try:
+        with open(places.shown_marker(), encoding="utf-8") as handle:
+            return handle.read().strip() == str(port)
+    except OSError:
+        return False
 
 
 def _ours(browser: Optional[subprocess.Popen], how: str,
