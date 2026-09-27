@@ -132,6 +132,16 @@ def apply_ops(payload: Dict[str, Any],
                 key = selector(ident)
                 existing = next((i for i, a in enumerate(apps)
                                  if identity(a) == ident), None)
+                replaces = op.get("replaces")
+                if existing is None and replaces:
+                    # The scan matched a tile with no marker by its name --
+                    # Sunshine's own Desktop, say -- and this takes it over.
+                    # Only if it is still that tile: same name, still no
+                    # marker. Anything else has changed since the scan and is
+                    # somebody's, so this adds rather than overwrites. #42.
+                    existing = next((i for i, a in enumerate(apps)
+                                     if isinstance(a, dict) and identity(a) is None
+                                     and a.get("name") == replaces), None)
                 if existing is None:
                     apps.append(dict(entry))
                 else:

@@ -135,11 +135,16 @@ def stage_plan(plan: Dict[str, Any]) -> int:
         key = f"{changed.get('source')}:{changed.get('id')}"
         if key in claimed or not changed.get("entry"):
             continue
-        pending.append({"qid": uuid.uuid4().hex[:12],
-                        "op": "adopt", "entry": changed["entry"],
-                        "name": changed.get("name"),
-                        "source": changed.get("source"), "id": changed.get("id"),
-                        "fields": changed.get("fields"), "from_scan": True})
+        op = {"qid": uuid.uuid4().hex[:12],
+              "op": "adopt", "entry": changed["entry"],
+              "name": changed.get("name"),
+              "source": changed.get("source"), "id": changed.get("id"),
+              "fields": changed.get("fields"), "from_scan": True}
+        if changed.get("replaces"):
+            # Matched by name, having no marker: without this, applying it
+            # adds ours beside the tile it was meant to take over. #42.
+            op["replaces"] = changed["replaces"]
+        pending.append(op)
         claimed.add(key)
         added += 1
 

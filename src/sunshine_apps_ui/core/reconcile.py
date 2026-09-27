@@ -202,11 +202,18 @@ def reconcile(existing: List[Dict[str, Any]], desired: List[Dict[str, Any]],
             out.append(cur)
             continue
         ident = identity(cur)
+        # Set when this entry is ours only by its name: Sunshine's own tiles,
+        # or ones adopted by name. A front end that stages the update has to
+        # say which entry it replaces, since the entry itself has no marker to
+        # be found by. Issue #42.
+        by_name = None
         if ident is None:
             if adopt_by_name:
                 ident = name_to_id.get(cur.get("name"))
             if ident is None:
                 ident = claimable.get(cur.get("name"))
+            if ident is not None:
+                by_name = cur.get("name")
 
         if ident is None:
             plan["kept_foreign"].append({"name": cur.get("name")})
@@ -237,10 +244,13 @@ def reconcile(existing: List[Dict[str, Any]], desired: List[Dict[str, Any]],
             plan["diverged"].append({"name": merged.get("name"), "source": ident[0],
                                      "id": ident[1], "fields": diverged})
         if changed:
-            plan["updated"].append({"name": merged.get("name"), "source": ident[0],
-                                    "id": ident[1], "fields": changed,
-                                    "values": {k: merged.get(k) for k in changed},
-                                    "entry": dict(merged)})
+            update = {"name": merged.get("name"), "source": ident[0],
+                      "id": ident[1], "fields": changed,
+                      "values": {k: merged.get(k) for k in changed},
+                      "entry": dict(merged)}
+            if by_name is not None:
+                update["replaces"] = by_name
+            plan["updated"].append(update)
         elif not diverged:
             plan["unchanged"].append({"name": merged.get("name"), "source": ident[0],
                                       "id": ident[1]})

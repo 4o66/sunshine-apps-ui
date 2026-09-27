@@ -298,6 +298,17 @@ def _queued_list(pending: List[Dict[str, Any]]) -> str:
         return ""
     items = []
     for op in pending:
+        if op.get("op") == "adopt":
+            # What a scan found, in words: it was printing "adopt", the
+            # queue's own name for it. A takeover says what it replaces, or
+            # nothing on this page mentions Sunshine's tile going. #42.
+            name = op.get("name") or "(unnamed)"
+            if op.get("replaces"):
+                text = f"Replace {op['replaces']} with {name}"
+            else:
+                text = f"{'Update' if op.get('fields') else 'Add'} {name}"
+            items.append(f'<li><span class="name">{_e(text)}</span></li>')
+            continue
         verb = _QUEUED_WORDING.get(str(op.get("op")), str(op.get("op")))
         name = op.get("name") or (op.get("fields") or {}).get("name") or "(unnamed)"
         items.append(f'<li><span class="name">{_e(verb)} {_e(name)}</span></li>')
