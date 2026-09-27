@@ -196,7 +196,12 @@ class ServerTest(unittest.TestCase):
         self.httpd.daemon_threads = False
         self.httpd.block_on_close = True
         self.port = self.httpd.server_address[1]
-        threading.Thread(target=self.httpd.serve_forever, daemon=True).start()
+        # shutdown() waits for the loop to next look at its flag, which by
+        # default is every half second. Every test here ends with one, and
+        # at the default that alone made this module take minutes -- long
+        # enough to be taken for a hang (#41).
+        threading.Thread(target=self.httpd.serve_forever,
+                         kwargs={"poll_interval": 0.05}, daemon=True).start()
 
     def tearDown(self):
         self.httpd.shutdown()

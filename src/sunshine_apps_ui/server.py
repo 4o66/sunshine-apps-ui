@@ -1125,7 +1125,6 @@ class PlanHandler(BaseHTTPRequestHandler):
                 return
             if ok:
                 type(self).applied = True
-                self._redirect("/applied")
                 if self.via_sunshine:
                     # Arm the stop here rather than when /applied is fetched.
                     # Applying reloads Sunshine, which ends the stream this is
@@ -1133,8 +1132,11 @@ class PlanHandler(BaseHTTPRequestHandler):
                     # before it can ask for that page, and waiting for it meant
                     # the window was still sitting there on the desktop
                     # afterwards. Long enough for the redirect to land if the
-                    # stream did survive.
+                    # stream did survive. Armed before the redirect goes out,
+                    # as /quit is: whoever has the redirect must find the
+                    # server already going.
                     self._stop_soon(delay=STOP_AFTER_APPLY)
+                self._redirect("/applied")
             else:
                 self._redirect("/", apply_error=message[:300])
             return
