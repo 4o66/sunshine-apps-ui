@@ -41,6 +41,22 @@ log = logging.getLogger("sunshine-apps-ui")
 STOP_AFTER_APPLY = 3.0
 
 
+PAD_SCRIPT = '<script src="/pad.js" defer></script>'
+
+
+def with_pad(page: str) -> str:
+    """A page with the controller script in it (#32), once, before </body>.
+
+    Here rather than in each template, so no page can be left without it:
+    every page is sent through _send, and this is where the policy that
+    lets it run is set as well.
+    """
+    if PAD_SCRIPT in page:
+        return page
+    at = page.rfind("</body>")
+    return page if at < 0 else page[:at] + PAD_SCRIPT + page[at:]
+
+
 class PlanHandler(BaseHTTPRequestHandler):
     server_version = f"sunshine-apps-ui/{__version__}"
     sys_version = ""                      # do not advertise the Python version
@@ -71,6 +87,8 @@ class PlanHandler(BaseHTTPRequestHandler):
         log.info("%s %s", self.address_string(), fmt % args)
 
     def _send(self, status: int, body: str, content_type: str = "text/html; charset=utf-8") -> None:
+        if content_type.startswith("text/html"):
+            body = with_pad(body)
         raw = body.encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", content_type)
@@ -343,6 +361,10 @@ class PlanHandler(BaseHTTPRequestHandler):
 
         if parts.path == "/sheet.js":
             self._send_asset("sheet.js", "text/javascript; charset=utf-8")
+            return
+
+        if parts.path == "/pad.js":
+            self._send_asset("pad.js", "text/javascript; charset=utf-8")
             return
 
         if parts.path == "/app.js":

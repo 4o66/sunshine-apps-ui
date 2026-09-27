@@ -736,6 +736,37 @@ class AppPageTest(ServerTest):
         self.assertEqual(status, 303)
 
 
+class ControllerTest(ServerTest):
+    """A controller moves focus through pad.js, which every page must carry (#32)."""
+
+    def test_the_script_is_served(self):
+        status, body = self.get(f"/pad.js?token={self.token}")
+        self.assertEqual(status, 200)
+        self.assertIn("getGamepads", body)
+
+    def test_every_page_asks_for_it_once(self):
+        for path in ("/", "/app?index=1", "/app?new=1", "/app?index=99",
+                     "/settings", "/nothing-here"):
+            _, body = self.get(f"{path}{'&' if '?' in path else '?'}token={self.token}")
+            self.assertEqual(body.count(server_module.PAD_SCRIPT), 1, path)
+            self.assertLess(body.index(server_module.PAD_SCRIPT), body.rindex("</body>"), path)
+
+    def test_adding_it_twice_is_adding_it_once(self):
+        once = server_module.with_pad("<html><body>x</body></html>")
+        self.assertEqual(server_module.with_pad(once), once)
+
+    def test_a_fragment_without_a_body_is_left_alone(self):
+        self.assertEqual(server_module.with_pad("<p>x</p>"), "<p>x</p>")
+
+    def test_every_back_link_is_marked_for_b(self):
+        """B follows the page's own Back link, so each one has to say it is one."""
+        import inspect
+        from sunshine_apps_ui import render
+        source = inspect.getsource(render)
+        self.assertGreater(source.count(">Back</a>"), 0)
+        self.assertEqual(source.count(">Back</a>"), source.count("data-back>Back</a>"))
+
+
 class ExplainTest(ServerTest):
     def setUp(self):
         super().setUp()
@@ -2789,9 +2820,11 @@ class SteamGridDbSheetTest(ServerTest):
 
     def test_the_results_page_carries_no_script_at_all(self):
         """Sizing moved to the waiting page, which is the only place that needs
-        to measure anything. What comes back with the pictures is plain HTML."""
+        to measure anything. What comes back with the pictures is plain HTML,
+        but for the controller script every page carries (#32)."""
         self._key(); self._page()
-        self.assertNotIn("<script", self._open(page=0))
+        body = self._open(page=0).replace(server_module.PAD_SCRIPT, "")
+        self.assertNotIn("<script", body)
 
     def test_the_picker_carries_no_open_dialog_until_asked(self):
         """The other half of the one above, and the half that can regress:

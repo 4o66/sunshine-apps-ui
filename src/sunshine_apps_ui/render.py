@@ -376,7 +376,7 @@ def confirm_page(doc: Dict[str, Any], token: str, via_sunshine: bool = False,
         # doing for no change, so do not offer it.
         warn_block = ""
         action_block = (f'<div class="actions">'
-                        f'<a class="btn" href="/">Back</a></div>')
+                        f'<a class="btn" href="/" data-back>Back</a></div>')
 
     return f"""<!doctype html>
 {_html()}<head><meta charset="utf-8">
@@ -652,7 +652,7 @@ The most recent {len(copies)} are kept.</p>
 <p class="why">Choosing one shows what it would change on the grid. Nothing is
 written until you apply it, and a copy of the current file is taken first --
 so a restore can itself be undone.</p>
-<div class="actions"><a class="btn sec" href="/">Back</a></div>
+<div class="actions"><a class="btn sec" href="/" data-back>Back</a></div>
 </div></body></html>"""
 
 
@@ -755,7 +755,7 @@ def connect_page(token: str, message: str = "", username: str = "") -> str:
 <span class="where">app manager</span>{_version_chip()}</div>
 <div class="wrap">
 {credentials_form(token, message, username)}
-<div class="actions"><a class="btn sec" href="/">Back</a></div>
+<div class="actions"><a class="btn sec" href="/" data-back>Back</a></div>
 </div></body></html>"""
 
 
@@ -775,7 +775,7 @@ def render_elevating(token: str) -> str:
 write <code>apps.json</code>. This window closes on its own.</p>
 <p class="why">Refusing is a fine answer: everything except saving works
 without it.</p></section>
-<div class="actions"><a class="btn sec" href="/">Back</a></div>
+<div class="actions"><a class="btn sec" href="/" data-back>Back</a></div>
 </div></body></html>"""
 
 
@@ -1918,7 +1918,7 @@ def hidden_page(entry: Dict[str, Any], token: str, queued: bool = False) -> str:
                   f'<input type="hidden" name="name" value="{_e(name)}">'
                   f'<div class="actions">'
                   f'<button class="btn" type="submit">Un-hide it</button>'
-                  f'<a class="btn sec" href="/">Back</a></div></form>')
+                  f'<a class="btn sec" href="/" data-back>Back</a></div></form>')
 
     return f"""<!doctype html>
 {_html()}<head><meta charset="utf-8">
@@ -2313,7 +2313,7 @@ def artwork_page(candidates: List[Dict[str, Any]], token: str, *, key: str,
 {problem}{note_list}{find}
 {"".join(sections)}
 <div class="actions">
-<a class="btn sec" href="{_e(_form_url(key, token))}">Back</a>
+<a class="btn sec" href="{_e(_form_url(key, token))}" data-back>Back</a>
 <a class="btn sec" href="/browse?key={_eq(key)}&field=image-path">
 Browse for a file</a></div>
 </div>{modal}{fitter}</body></html>"""
@@ -2403,7 +2403,7 @@ def app_page(entry: Dict[str, Any], token: str, *, is_new: bool = False,
         # the only destructive option is to drop it from the queue.
         actions = (f'<button class="btn" data-apply type="submit" name="op" '
                    f'value="revise">Save changes</button>'
-                   f'<a class="btn sec" href="/">Back</a>')
+                   f'<a class="btn sec" href="/" data-back>Back</a>')
         extra = (f'<div class="actions danger">'
                  f'<form method="post" action="/unqueue">'
                  f'<input type="hidden" name="qid" value="{_e(qid)}">'
@@ -2420,14 +2420,14 @@ def app_page(entry: Dict[str, Any], token: str, *, is_new: bool = False,
         # that would cost you the way back in.
         actions = (f'<button class="btn" data-apply type="submit" name="op" value="edit">'
                    f'Rename</button>'
-                   f'<a class="btn sec" href="/">Back</a>')
+                   f'<a class="btn sec" href="/" data-back>Back</a>')
         extra = ""
     else:
         actions = (f'<button class="btn" data-apply type="submit" name="op" value="edit">'
                    f'Apply</button>'
                    f'<button class="btn sec" type="submit" name="op" value="clone">'
                    f'Save as a copy</button>'
-                   f'<a class="btn sec" href="/">Back</a>')
+                   f'<a class="btn sec" href="/" data-back>Back</a>')
         extra = (f'<div class="actions danger">'
                  f'<a class="btn" href="/explain?op=hide&index={_e(index)}'
                  f'&name={_eq(name)}">Hide</a>'
