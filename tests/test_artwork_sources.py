@@ -538,7 +538,7 @@ class TheLastPageIsShortOnPurposeTest(unittest.TestCase):
     fourteen of 48 and a last one of 17 -- because a short page looked like a
     mistake. It is the opposite: the grid fills the screen exactly, so a page
     that is not full is the only thing saying you have reached the end.
-    Reverted on Sean's call, 2026-09-22.
+    Reverted on the maintainer's call, 2026-09-22.
     """
 
     def test_every_page_but_the_last_is_full(self):

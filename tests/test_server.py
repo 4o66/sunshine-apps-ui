@@ -3108,7 +3108,7 @@ class TheLastPageLooksLikeTheLastPageTest(ServerTest):
     """A short page keeps the tile size and leaves the grid part empty.
 
     That empty space is the signal. The pages were briefly evened out so every
-    page was the same length, which removed it; Sean's call, 2026-09-22: "the
+    page was the same length, which removed it; the maintainer's call, 2026-09-22: "the
     grid not filling a page feels like it's signaling this is the last page."
     """
 

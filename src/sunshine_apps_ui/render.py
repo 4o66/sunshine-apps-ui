@@ -2006,7 +2006,7 @@ background:var(--bg-subtle)}
    what that is -- `minmax(150px,1fr)` at 2:3, the same rule the main grid and
    the picker use -- so the sheet adds nothing about size and inherits it.
    It used to size them to fill the screen, which made them about two thirds
-   the size of every other tile in the program. Sean, 2026-09-22: "make ALL of
+   the size of every other tile in the program. The maintainer, 2026-09-22: "make ALL of
    them match the size of the tiles on the main page."
    What fills the screen instead is the *number* of them: the browser measures
    how many fit and the server sends that many. So a full page still fills the
