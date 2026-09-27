@@ -116,7 +116,9 @@ background:var(--primary);color:#fff;border:2px solid var(--primary);white-space
 .btn.sec{background:transparent;color:var(--text);border-color:var(--border-strong)}
 .btn.danger{background:transparent;color:#ff6b78;border-color:#b02a37}
 :root[data-theme="light"] .btn.danger{color:#b02a37}
-.btn.flat{opacity:.45;cursor:default}
+/* Off: faded, and half way to greyscale, so a colored button reads as off
+   and not just as dim. */
+.btn.flat{opacity:.45;filter:grayscale(.5);cursor:default}
 /* States. The label keeps its color in every state; what changes is the
    fill. Focus from a controller or keyboard adds the ring as well. The
    .is-* classes draw a state on the states board only. */
@@ -124,6 +126,8 @@ background:var(--primary);color:#fff;border:2px solid var(--primary);white-space
 .btn.sec:hover,.btn.sec:focus-visible,.pad .btn.sec:focus,.btn.sec.is-focus,.btn.sec.is-hover{background:var(--bg-muted);border-color:var(--text-muted)}
 .btn.danger:hover,.btn.danger:focus-visible,.pad .btn.danger:focus,.btn.danger.is-focus,.btn.danger.is-hover{background:rgba(220,53,69,.24);border-color:#dc3545}
 .btn:active,.btn.is-active{filter:brightness(.88);transform:translateY(1px)}
+/* Pressing Delete must look different from pointing at it. */
+.btn.danger:active,.btn.danger.is-active{background:rgba(220,53,69,.5);border-color:#dc3545}
 .btn.flat:hover,.btn.flat.is-hover{background:transparent;border-color:var(--border-strong)}
 /* Icon-only buttons at the end of a bar: Settings, and Report a bug on the
    grid. Their names are for screen readers. */

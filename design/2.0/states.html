@@ -22,9 +22,6 @@
 .sgrid h2{margin:0 0 .8rem}
 .tiles{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:1.1rem;max-width:62rem}
 .glyphs{display:flex;gap:1rem;flex-wrap:wrap;align-items:center}
-/* Board only: a proposal for off, not yet in app.css. */
-.halfgrey{filter:grayscale(.5)}
-.offcmp{display:grid;grid-template-columns:4.6rem repeat(4,auto);gap:.8rem .6rem;align-items:center;justify-items:start}
 .minis{display:flex;gap:1rem;align-items:flex-start}
 .minis .pick{width:6.4rem}
 </style>
@@ -45,11 +42,7 @@
 </div>
 <p class="muted small" style="margin-top:.7rem">Shown only while a controller is in use. A solid disc in the controller button's color, always with a white letter.</p>
 </section>
-<section><h2>Off: now, and half way to greyscale</h2>
-<div class="offcmp">
-<span class="muted small">Now</span><span class="btn flat"><span class="glyph y">Y</span>Apply</span><span class="btn sec flat">Restore</span><span class="btn danger flat">Delete</span><span class="btn sec icon flat" aria-label="Settings"><span class="glyph wide">☰</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></span>
-<span class="muted small">Half way to greyscale</span><span class="btn flat halfgrey"><span class="glyph y">Y</span>Apply</span><span class="btn sec flat halfgrey">Restore</span><span class="btn danger flat halfgrey">Delete</span><span class="btn sec icon flat halfgrey" aria-label="Settings"><span class="glyph wide">☰</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></span>
-</div></section></div>
+</div>
 </main>
 <footer class="bar">
 <span class="say">A board of states, not a page of the app</span>
