@@ -20,6 +20,7 @@ color-scheme:light;
    focused, so it reads on any fill under it. */
 --focus:#0a58ca;--focus-halo:#fff;
 --flag-text:#1a1a1a;
+--top-h:2.4rem;
 }
 @media(prefers-color-scheme:dark){:root:not([data-theme="light"]){
 color-scheme:dark;
@@ -73,15 +74,14 @@ box-shadow:0 0 0 .18rem var(--focus-halo),0 0 0 .45rem var(--focus)}
 .top{--focus:#212529;--focus-halo:#ffc400}
 
 /* ---- Frame: bar at the top, page, action bar at the bottom -------------- */
-.top{display:flex;align-items:center;gap:1rem;height:3.4rem;padding:0 2.5rem;
+/* Only as tall as its words: the name of the thing, not a toolbar. Settings
+   lives in the action bar. */
+.top{display:flex;align-items:center;gap:1rem;height:var(--top-h);padding:0 2.5rem;
 background:var(--navbar-bg);box-shadow:var(--shadow-md);position:relative;z-index:2}
 .top .brand{color:var(--navbar-text);font-weight:750;font-size:1.25rem;letter-spacing:-.01em}
 .top .where{color:var(--navbar-text-muted);font-weight:600;font-size:1.05rem}
 .top .sep{color:var(--navbar-text-muted)}
 .top .ver{margin-left:auto;color:var(--navbar-text-muted);font-family:var(--mono);font-size:.8rem}
-.top .gear{display:inline-flex;align-items:center;gap:.5rem;height:2.4rem;padding:0 1.1rem;
-border-radius:999px;background:linear-gradient(135deg,#3a4149 0%,#23282d 100%);color:#f1f3f5;
-font-weight:650;font-size:.95rem;text-decoration:none;border:0}
 .main{padding:1.4rem 2.5rem 7.5rem}
 .head{display:flex;align-items:flex-end;gap:1.2rem;margin:0 0 1.2rem}
 .head .sub{color:var(--text-muted);font-size:.9rem;padding-bottom:.2rem}
@@ -91,7 +91,16 @@ font-weight:650;font-size:.95rem;text-decoration:none;border:0}
 height:5rem;padding:0 2.5rem;background:var(--surface);border-top:1px solid var(--border);
 box-shadow:0 -4px 12px -6px rgba(0,0,0,.35)}
 .bar .say{color:var(--text-muted);font-size:.95rem}
+/* Tighter than a button on the page: the grid's bar holds seven, and has to
+   fit them at 1280 x 800. */
+.bar{gap:.75rem}
+.bar .btn{padding:.45rem 1rem}
 .bar .grow{flex:1}
+/* Settings: always the last thing in the bar, a gear. Icon only, so it
+   costs the bar little width; its name is for screen readers and the Menu
+   glyph says which button reaches it. */
+.btn.gear{padding:.45rem .8rem;margin-left:.2rem}
+.btn.gear svg{width:1.6rem;height:1.6rem;display:block}
 
 /* ---- Buttons ------------------------------------------------------------ */
 .btn{display:inline-flex;align-items:center;justify-content:center;gap:.55rem;
@@ -254,7 +263,7 @@ box-shadow:0 0 0 .18rem var(--focus-halo),0 0 0 .45rem var(--focus)}
 .choices.tight .choice{padding:.6rem .9rem;align-items:center}
 
 /* ---- Middle-of-the-screen messages (applied, closing, scanning, errors) ---- */
-.center{min-height:calc(100vh - 3.4rem - 5rem);display:flex;flex-direction:column;align-items:center;
+.center{min-height:calc(100vh - var(--top-h) - 5rem);display:flex;flex-direction:column;align-items:center;
 justify-content:center;gap:1.1rem;text-align:center;padding:2rem 2.5rem}
 .center h1{font-size:2rem}
 .center p{color:var(--text-muted);max-width:40rem}
