@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>App Manager: restoring a copy</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<header class="top">
+<span class="brand">Sunshine</span><span class="sep">/</span><span class="where">App Manager</span>
+<span class="ver">2.0.0</span>
+<a class="gear" href="settings.html"><span class="glyph wide">☰</span>Settings</a>
+</header>
+<main class="main">
+<div class="head"><h1>12 applications</h1><span class="sub">Sunshine at <code>~/.config/sunshine</code></span></div>
+<div class="notice warn"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3 2 21h20z"/><path d="M12 10v5M12 18v.5"/></svg><div class="text"><b>Restoring the copy from 26 Sep 2026 at 21:14:03</b><span>NIMRODS goes, and Satisfactory gets its old picture back. Nothing is written until you apply.</span></div><form method="post" action="/unqueue"><button class="btn sec" type="submit" autofocus>Cancel this restore</button></form></div>
+<div class="grid">
+<a class="tile" href="edit.html"><img class="pic" src="img/desktop-bazzite.png" alt=""><span class="cap">#1 Desktop</span></a>
+<a class="tile" href="edit.html"><img class="pic" src="img/desktop-lowres-bazzite.png" alt=""><span class="cap">#2 Low Res Desktop</span></a>
+<a class="tile" href="edit.html"><img class="pic" src="img/1091500.png" alt=""><span class="cap">Cyberpunk 2077</span></a>
+<a class="tile" href="edit.html"><img class="pic" src="img/1203620.png" alt=""><span class="cap">Enshrouded</span></a>
+<a class="tile pending willgo" href="edit.html"><span class="flag">WILL GO</span><img class="pic" src="img/2086430.png" alt=""><span class="cap">NIMRODS</span></a>
+<a class="tile" href="edit.html"><img class="pic" src="img/601360.png" alt=""><span class="cap">Portal: Revolution</span></a>
+<a class="tile pending" href="edit.html"><span class="flag">RESTORED</span><img class="pic" src="img/satisfactory.png" alt=""><span class="cap">Satisfactory</span></a>
+<a class="tile" href="edit.html"><img class="pic" src="img/app-manager.png" alt=""><span class="cap">Zz App Manager</span></a>
+<a class="tile" href="edit.html"><img class="pic" src="img/heroic.png" alt=""><span class="cap">Zz Heroic</span></a>
+<a class="tile" href="edit.html"><img class="pic" src="img/reboot-host.png" alt=""><span class="cap">Zz Reboot Host</span></a>
+<a class="tile" href="edit.html"><img class="pic" src="img/steam.png" alt=""><span class="cap">Zz Steam</span></a>
+<a class="tile" href="edit.html"><img class="pic" src="img/steam-bigpicture.png" alt=""><span class="cap">Zz Steam Big Picture</span></a>
+<a class="tile add" href="edit.html"><span class="plus">+</span>Add an application</a>
+</div>
+</main>
+<footer class="bar">
+<form method="post" action="/quit"><button class="btn sec" type="submit">Close the manager</button></form>
+<span class="grow"></span>
+<a class="btn sec" href="backups.html">Restore a copy</a>
+<a class="btn sec" href="report.html">Report a bug</a>
+<a class="btn sec" href="scanning.html"><span class="glyph x">X</span>Rescan</a>
+<form method="post" action="/discard"><button class="btn sec" type="submit">Discard</button></form>
+<a class="btn" href="confirm.html"><span class="glyph y">Y</span>Apply the restore</a>
+</footer>
+</body>
+</html>

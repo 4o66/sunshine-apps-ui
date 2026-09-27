@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>App Manager: typing a name</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<header class="top">
+<span class="brand">Sunshine</span><span class="sep">/</span><span class="where">App Manager</span>
+<span class="ver">2.0.0</span>
+<a class="gear" href="settings.html"><span class="glyph wide">☰</span>Settings</a>
+</header>
+<main class="main">
+<div class="head"><h1>Cyberpunk 2077</h1><span class="sub">Found in your Steam library. What you change here is kept, and scanning stops updating it.</span></div>
+<form class="form" method="post" action="/app">
+<div class="cover">
+<img src="img/1091500.png" alt="">
+<a class="btn sec" href="artwork.html">Change picture</a>
+</div>
+<div class="fields">
+<div class="field"><label for="name">Name</label><input id="name" type="text" value="Cyberpunk 2077"><span></span>
+<span class="hint">Shown in Moonlight.</span></div>
+<div class="field"><label for="cmd">Command</label><input id="cmd" type="text" value="steam steam://rungameid/1091500"><a class="btn sec" href="browse.html">Browse</a>
+<span class="hint">Run when the app is launched. Leave empty for a desktop session.</span></div>
+<div class="field"><label for="dir">Working directory</label><input id="dir" type="text" value=""><a class="btn sec" href="browse.html">Browse</a>
+<span class="hint">Where the command runs.</span></div>
+<div class="field"><label>Exit timeout</label>
+<div class="choices four tight">
+<label class="choice"><input type="radio" name="exit-timeout" value="5" checked><b>5 seconds</b></label>
+<label class="choice"><input type="radio" name="exit-timeout" value="10"><b>10 seconds</b></label>
+<label class="choice"><input type="radio" name="exit-timeout" value="30"><b>30 seconds</b></label>
+<label class="choice"><input type="radio" name="exit-timeout" value="60"><b>1 minute</b></label>
+</div><span></span>
+<span class="hint">Seconds to wait for a clean exit before forcing it.</span></div>
+
+<div class="switches">
+<label class="switch"><input type="checkbox"><span class="knob"></span><span class="t"><b>Run elevated</b></span></label>
+<label class="switch"><input type="checkbox" checked><span class="knob"></span><span class="t"><b>Auto-detach</b></span></label>
+<label class="switch"><input type="checkbox" checked><span class="knob"></span><span class="t"><b>Wait for all processes</b></span></label>
+<label class="switch"><input type="checkbox"><span class="knob"></span><span class="t"><b>Skip global prep commands</b></span></label>
+</div>
+<div class="field"><label for="log">Output log</label><input id="log" type="text" value=""><span></span>
+<span class="hint">File to capture the command's output. Usually empty.</span></div>
+</div>
+</form>
+</main>
+<footer class="bar">
+<a class="btn sec" href="grid.html" data-back><span class="glyph b">B</span>Back</a>
+<a class="btn danger" href="explain.html">Hide</a>
+<a class="btn danger" href="explain.html">Delete</a>
+<span class="grow"></span>
+<button class="btn sec" type="button">Save as a copy</button>
+<button class="btn flat" type="button" disabled><span class="glyph y">Y</span>Apply</button>
+</footer>
+<div class="veil"></div>
+<div class="osk" role="dialog" aria-label="Keyboard">
+<div class="entry"><label>Name</label><div class="value">Cyberpunk 2077 Ultimate<span class="caret"></span></div></div>
+<div class="keys">
+<button class="key" type="button">1</button><button class="key" type="button">2</button><button class="key" type="button">3</button><button class="key" type="button">4</button><button class="key" type="button">5</button><button class="key" type="button">6</button><button class="key" type="button">7</button><button class="key" type="button">8</button><button class="key" type="button">9</button><button class="key" type="button">0</button><button class="key" type="button">-</button><button class="key" type="button">:</button>
+<button class="key" type="button">q</button><button class="key" type="button">w</button><button class="key" type="button">e</button><button class="key" type="button">r</button><button class="key" type="button">t</button><button class="key" type="button">y</button><button class="key" type="button">u</button><button class="key" type="button">i</button><button class="key" type="button">o</button><button class="key" type="button">p</button><button class="key dim w2" type="button">⌫ Delete</button>
+<button class="key" type="button">a</button><button class="key" type="button">s</button><button class="key" type="button">d</button><button class="key" type="button">f</button><button class="key" type="button">g</button><button class="key" type="button">h</button><button class="key" type="button">j</button><button class="key" type="button">k</button><button class="key" type="button" autofocus>l</button><button class="key" type="button">'</button><button class="key go w2" type="button">Done</button>
+<button class="key dim w2" type="button">⇧ Shift</button><button class="key" type="button">z</button><button class="key" type="button">x</button><button class="key" type="button">c</button><button class="key" type="button">v</button><button class="key" type="button">b</button><button class="key" type="button">n</button><button class="key" type="button">m</button><button class="key" type="button">,</button><button class="key" type="button">.</button><button class="key" type="button">/</button>
+<button class="key dim w2" type="button">&amp;123 Symbols</button><button class="key w6" type="button">Space</button><button class="key dim" type="button">←</button><button class="key dim" type="button">→</button><button class="key dim w2" type="button">Cancel</button>
+</div>
+<div class="help"><span><span class="glyph a">A</span>Type</span><span><span class="glyph x">X</span>Delete</span><span><span class="glyph y">Y</span>Space</span><span><span class="glyph wide">LB RB</span>Move the cursor</span><span><span class="glyph wide">☰</span>Done</span><span><span class="glyph b">B</span>Cancel</span></div>
+</div>
+</body>
+</html>

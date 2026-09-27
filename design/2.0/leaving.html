@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>App Manager: close without applying</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<header class="top">
+<span class="brand">Sunshine</span><span class="sep">/</span><span class="where">App Manager</span>
+<span class="ver">2.0.0</span>
+<a class="gear" href="settings.html"><span class="glyph wide">☰</span>Settings</a>
+</header>
+<main class="center"><svg style="width:4rem;height:4rem;color:var(--warning)" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3 2 21h20z"/><path d="M12 10v5M12 18v.5"/></svg><h1>Close without applying?</h1>
+<p>2 changes are staged and have not been written to Sunshine.</p>
+<p>Nothing is lost by closing: what you have staged is still here the next time you open the manager. Applying is what writes it to Sunshine.</p></main>
+<footer class="bar">
+<a class="btn sec" href="grid.html" data-back autofocus><span class="glyph b">B</span>Back to the apps</a>
+<span class="grow"></span>
+<form method="post" action="/quit"><button class="btn sec" type="submit">Close anyway</button></form>
+</footer>
+</body>
+</html>

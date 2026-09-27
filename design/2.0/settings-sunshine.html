@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>App Manager: settings: which sunshine</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<header class="top">
+<span class="brand">Sunshine</span><span class="sep">/</span><span class="where">App Manager</span>
+<span class="ver">2.0.0</span>
+<a class="gear" href="settings.html"><span class="glyph wide">☰</span>Settings</a>
+</header>
+<main class="main">
+<div class="head"><h1>Settings</h1></div>
+<div class="panes">
+<nav class="nav" aria-label="Settings">
+<a href="settings.html">Appearance</a>
+<a href="settings-language.html">Language</a>
+<a href="settings-art.html">Community artwork</a>
+<a href="settings-sunshine.html" class="here">Which Sunshine</a>
+<a href="settings-defaults.html">Default tiles</a>
+<a href="settings-updates.html">Updates</a>
+<a href="settings-builds.html">Which builds</a>
+</nav>
+<div class="pane">
+<h2>Which Sunshine</h2>
+<p>This machine has two Sunshine config folders. The manager edits the one Sunshine is running from, unless you choose.</p>
+<div class="list">
+<div class="item"><span class="grow"><span class="name">Installed from a package</span><span class="meta"><code>~/.config/sunshine</code> · last used today at 16:13 · 12 apps</span></span><span class="what" style="background:var(--success);color:#fff">IN USE</span></div>
+<div class="item"><span class="grow"><span class="name">Flatpak (dev.lizardbyte.app.Sunshine)</span><span class="meta"><code>~/.var/app/dev.lizardbyte.app.Sunshine/config/sunshine</code> · 26 Sep · 1 app</span></span>
+<form method="post" action="/config-dir"><button class="btn sec" type="submit" autofocus>Use this one</button></form></div>
+</div>
+</div>
+</div>
+</main>
+<footer class="bar">
+<a class="btn sec" href="grid.html" data-back><span class="glyph b">B</span>Back to the apps</a>
+<span class="grow"></span>
+</footer>
+</body>
+</html>

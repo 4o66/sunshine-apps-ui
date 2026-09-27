@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>App Manager: settings: language</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<header class="top">
+<span class="brand">Sunshine</span><span class="sep">/</span><span class="where">App Manager</span>
+<span class="ver">2.0.0</span>
+<a class="gear" href="settings.html"><span class="glyph wide">☰</span>Settings</a>
+</header>
+<main class="main">
+<div class="head"><h1>Settings</h1></div>
+<div class="panes">
+<nav class="nav" aria-label="Settings">
+<a href="settings.html">Appearance</a>
+<a href="settings-language.html" class="here">Language</a>
+<a href="settings-art.html">Community artwork</a>
+<a href="settings-sunshine.html">Which Sunshine</a>
+<a href="settings-defaults.html">Default tiles</a>
+<a href="settings-updates.html">Updates</a>
+<a href="settings-builds.html">Which builds</a>
+</nav>
+<div class="pane">
+<h2>Language</h2>
+<p>Which language the words on the tiles are in. The manager itself is in English for now.</p>
+<form class="choices" method="post" action="/settings/language">
+<button class="choice here" name="language" value="" autofocus><b>Follow the system</b><span>English here</span></button>
+<button class="choice" name="language" value="en"><b>English</b><span>Always</span></button>
+</form>
+<p>Tiles in English are on this machine. Others arrive with updates.</p>
+<form method="post" action="/settings/art-check"><button class="btn sec" type="submit">Check for new tile artwork</button></form>
+</div>
+</div>
+</main>
+<footer class="bar">
+<a class="btn sec" href="grid.html" data-back><span class="glyph b">B</span>Back to the apps</a>
+<span class="grow"></span>
+</footer>
+</body>
+</html>

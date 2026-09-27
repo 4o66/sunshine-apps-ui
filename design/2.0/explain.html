@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>App Manager: hide Enshrouded</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<header class="top">
+<span class="brand">Sunshine</span><span class="sep">/</span><span class="where">App Manager</span>
+<span class="ver">2.0.0</span>
+<a class="gear" href="settings.html"><span class="glyph wide">☰</span>Settings</a>
+</header>
+<main class="main">
+<div class="head"><h1>Hide Enshrouded?</h1></div>
+<div style="display:flex;gap:2rem;align-items:flex-start">
+<img src="img/1203620.png" alt="" style="width:10rem;aspect-ratio:2/3;object-fit:cover;border-radius:var(--radius-lg)">
+<div style="display:flex;flex-direction:column;gap:1.2rem;max-width:44rem">
+<p>It is removed from the list and recorded as hidden, so scanning again will not bring it back. Use this for a game you own but never want to see here.</p>
+<p class="muted">You can bring it back from its tile, which stays on the list, faded.</p>
+<label class="switch" style="max-width:30rem"><input type="checkbox" checked><span class="knob"></span><span class="t"><b>Show this explanation every time</b></span></label>
+</div>
+</div>
+</main>
+<footer class="bar">
+<a class="btn sec" href="edit.html" data-back><span class="glyph b">B</span>Cancel</a>
+<span class="grow"></span>
+<button class="btn danger" type="submit" autofocus><span class="glyph y">Y</span>Hide it</button>
+</footer>
+</body>
+</html>

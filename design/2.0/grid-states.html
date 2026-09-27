@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>App Manager: notices and states</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<header class="top">
+<span class="brand">Sunshine</span><span class="sep">/</span><span class="where">App Manager</span>
+<span class="ver">2.0.0</span>
+<a class="gear" href="settings.html"><span class="glyph wide">☰</span>Settings</a>
+</header>
+<main class="main">
+<div class="head"><h1>12 applications</h1><span class="sub">Sunshine at <code>~/.config/sunshine</code></span></div>
+<div class="notice warn"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3 2 21h20z"/><path d="M12 10v5M12 18v.5"/></svg><div class="text"><b>The config you chose earlier has been set aside</b><span>Sunshine is running from <code>~/.config/sunshine</code>, so that is the one showing.</span></div><a class="btn sec" href="#">Use this one</a><a class="btn sec" href="#" autofocus>Keep this one</a></div>
+<div class="notice err"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3 2 21h20z"/><path d="M12 10v5M12 18v.5"/></svg><div class="text"><b>Sunshine is not answering</b><span>The sign-in was refused: 401 Unauthorized.</span></div><a class="btn sec" href="connect.html">Check the sign-in</a></div>
+<div class="grid">
+<a class="tile" href="edit.html"><img class="pic" src="img/desktop-bazzite.png" alt=""><span class="cap">#1 Desktop</span></a>
+<a class="tile" href="edit.html"><img class="pic" src="img/desktop-lowres-bazzite.png" alt=""><span class="cap">#2 Low Res Desktop</span></a>
+<a class="tile" href="edit.html"><img class="pic" src="img/1091500.png" alt=""><span class="cap">Cyberpunk 2077</span></a>
+<a class="tile pending willgo" href="edit.html"><span class="flag">WILL HIDE</span><img class="pic" src="img/1203620.png" alt=""><span class="cap">Enshrouded</span></a>
+<a class="tile" href="edit.html"><span class="flag">NEW</span><img class="pic" src="img/2086430.png" alt=""><span class="cap">NIMRODS</span></a>
+<a class="tile hidden" href="hidden.html"><img class="pic" src="img/601360.png" alt=""><span class="cap">Portal: Revolution · hidden</span></a>
+<a class="tile pending" href="edit.html"><span class="flag">EDITED</span><img class="pic" src="img/satisfactory.png" alt=""><span class="cap">Satisfactory</span></a>
+<a class="tile" href="edit.html"><img class="pic" src="img/app-manager.png" alt=""><span class="cap">Zz App Manager</span></a>
+<a class="tile" href="edit.html"><img class="pic" src="img/heroic.png" alt=""><span class="cap">Zz Heroic</span></a>
+<a class="tile" href="edit.html"><img class="pic" src="img/reboot-host.png" alt=""><span class="cap">Zz Reboot Host</span></a>
+<a class="tile" href="edit.html"><img class="pic" src="img/steam.png" alt=""><span class="cap">Zz Steam</span></a>
+<a class="tile" href="edit.html"><img class="pic" src="img/steam-bigpicture.png" alt=""><span class="cap">Zz Steam Big Picture</span></a>
+<a class="tile ghost" href="edit-new.html"><span class="flag">NEW QUEUED</span><span class="fallback">Hades II</span><span class="cap">Hades II</span></a>
+<a class="tile add" href="edit-new.html"><span class="plus">+</span>Add an application</a>
+</div>
+</main>
+<footer class="bar">
+<form method="post" action="/quit"><button class="btn sec" type="submit">Close the manager</button></form>
+<span class="grow"></span>
+<a class="btn sec" href="backups.html">Restore a copy</a>
+<a class="btn sec" href="report.html">Report a bug</a>
+<a class="btn sec" href="scanning.html"><span class="glyph x">X</span>Rescan</a>
+<form method="post" action="/discard"><button class="btn sec" type="submit">Discard</button></form>
+<a class="btn" href="confirm.html"><span class="glyph y">Y</span>Apply 4 changes</a>
+</footer>
+</body>
+</html>

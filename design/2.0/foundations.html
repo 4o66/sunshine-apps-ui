@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>App Manager: foundations</title>
+<link rel="stylesheet" href="app.css">
+<style>
+/* Board only: several controls shown focused at once, with exactly the rule
+   app.css gives :focus-visible. A real page has one focus. */
+.show-focus{box-shadow:0 0 0 .18rem var(--focus-halo),0 0 0 .45rem var(--focus)}
+.spec{display:grid;grid-template-columns:1fr 1fr;gap:1.6rem 3rem}
+.scale{display:flex;flex-direction:column;gap:.7rem}
+.scale .row2{display:flex;align-items:baseline;gap:1.2rem}
+.scale .k{width:6.5rem;color:var(--text-muted);font-size:.8rem;font-family:var(--mono)}
+.surfaces{display:flex;flex-direction:column;gap:1.4rem}
+.strip{display:flex;align-items:center;gap:1.2rem;flex-wrap:wrap}
+.strip .t{width:6.5rem;color:var(--text-muted);font-size:.8rem}
+.mini{width:5.2rem}
+.amber{display:flex;align-items:center;gap:1rem;padding:.6rem 1rem;border-radius:var(--radius-md);background:var(--navbar-bg)}
+</style>
+</head>
+<body>
+<header class="top">
+<span class="brand">Sunshine</span><span class="sep">/</span><span class="where">App Manager</span>
+<span class="ver">2.0.0</span>
+<a class="gear show-focus" href="#"><span class="glyph wide">☰</span>Settings</a>
+</header>
+<main class="main">
+<div class="spec">
+<section class="scale">
+<h2>Type: everything in rem</h2>
+<div class="row2"><span class="k">1.6rem</span><h1>Page title</h1></div>
+<div class="row2"><span class="k">1.2rem</span><h2>Section heading</h2></div>
+<div class="row2"><span class="k">1rem</span><span>Body text and buttons: Cyberpunk 2077</span></div>
+<div class="row2"><span class="k">.9rem</span><span style="font-size:.9rem" class="muted">Subtitles and notes under a heading</span></div>
+<div class="row2"><span class="k">.85rem</span><span class="small muted">Hints under a field, tile names</span></div>
+<div class="row2"><span class="k">.8rem</span><span style="font-size:.8rem" class="muted">The smallest anything is: flags, version</span></div>
+</section>
+<section class="surfaces">
+<h2>Focus: one ring, on every surface</h2>
+<div class="strip"><span class="t">On the page</span><a class="btn sec show-focus" href="#">Restore a copy</a><a class="btn" href="#">Apply 2 changes</a></div>
+<div class="strip"><span class="t">Primary</span><a class="btn show-focus" href="#"><span class="glyph y">Y</span>Apply 2 changes</a></div>
+<div class="strip"><span class="t">On the amber bar</span><div class="amber top" style="height:auto;box-shadow:none;padding:.6rem 1rem"><a class="gear show-focus" href="#">Settings</a></div></div>
+<div class="strip"><span class="t">A picture</span>
+<a class="pick mini show-focus" href="#"><img src="img/cand/0a826b35e23c540e.png" alt=""></a>
+<a class="pick mini" href="#"><img src="img/cand/12a59bfbfedb6b4e.png" alt=""></a>
+<a class="pick mini" href="#"><img src="img/cand/1ceef5ed881a4079.png" alt=""></a></div>
+<div class="strip"><span class="t">A field</span><input class="show-focus" type="text" value="Cyberpunk 2077" style="max-width:20rem"></div>
+</section>
+</div>
+</main>
+<footer class="bar">
+<span class="say">1rem here is 2.2% of the screen's height when streamed</span>
+<span class="grow"></span>
+<a class="btn sec" href="#"><span class="glyph b">B</span>Back</a>
+<a class="btn" href="#"><span class="glyph a">A</span>Select</a>
+</footer>
+</body>
+</html>
