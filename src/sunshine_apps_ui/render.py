@@ -89,7 +89,11 @@ STATUS_NOTE = {
 _CSS = """
 /* Design tokens lifted from Sunshine's own sunshine.css so this reads as part
    of the same tool: Bootstrap 5 palette, amber navbar, matching radii. */
+/* color-scheme is what the engine draws its own controls by. Without it
+   WebKitGTK paints a <select> from the GTK theme: on Ubuntu with the app set
+   to Dark, a light box under this page's light text, unreadable. #44. */
 :root{
+color-scheme:light;
 --primary:#0d6efd;--primary-hover:#0b5ed7;--accent:#fd7e14;
 --success:#198754;--danger:#dc3545;--warning:#ffc107;--info:#0dcaf0;
 --bg-base:#fff;--bg-subtle:#f8f9fa;--bg-muted:#e9ecef;--surface:#fff;
@@ -103,6 +107,7 @@ _CSS = """
 --mono:'SF Mono','Monaco','Inconsolata','Fira Code','Courier New',monospace;
 }
 @media(prefers-color-scheme:dark){:root:not([data-theme="light"]){
+color-scheme:dark;
 --primary-hover:#3d8bfd;--accent-hover:#fd9843;
 --bg-base:#212529;--bg-subtle:#2c3034;--bg-muted:#383d41;--surface:#2c3034;
 --border:#495057;--border-strong:#6c757d;
@@ -111,6 +116,7 @@ _CSS = """
 --shadow-md:0 4px 6px -1px rgba(0,0,0,.4),0 2px 4px -1px rgba(0,0,0,.3);
 }}
 :root[data-theme="dark"]{
+color-scheme:dark;
 --primary-hover:#3d8bfd;--accent-hover:#fd9843;
 --bg-base:#212529;--bg-subtle:#2c3034;--bg-muted:#383d41;--surface:#2c3034;
 --border:#495057;--border-strong:#6c757d;
