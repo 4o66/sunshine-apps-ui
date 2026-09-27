@@ -48,7 +48,7 @@ CHOSEN_DIRNAME = "chosen"
 # This is the **most** a page can hold. What a page actually holds is however
 # many tiles fit on the screen at the size the rest of the interface uses --
 # the browser measures that and hands it back, because the tile size is fixed
-# and the screen is not. Sean's instruction, 2026-09-22: "make ALL of them
+# and the screen is not. The maintainer's instruction, 2026-09-22: "make ALL of them
 # match the size of the tiles on the main page".
 #
 # **Every page is full except the last, and that is the point.** The
@@ -57,7 +57,7 @@ CHOSEN_DIRNAME = "chosen"
 # page looks like a mistake. It does not. The grid fills the screen exactly
 # (`sheet.js`), so a page that is not full is the only thing telling you that
 # you have reached the end, and evening the pages out threw that away in
-# exchange for tidier arithmetic nobody sees. Sean's call, 2026-09-22, on
+# exchange for tidier arithmetic nobody sees. the maintainer's call, 2026-09-22, on
 # seeing it: "the grid not filling a page feels like it's signaling this is
 # the last page."
 SGDB_PAGE = 48
