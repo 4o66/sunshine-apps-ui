@@ -1046,6 +1046,19 @@ class RecordingOurBrowserTest(unittest.TestCase):
 class FirefoxProfileTest(unittest.TestCase):
     """A fresh Firefox profile greets you, and in --kiosk that is all you see."""
 
+    def test_it_does_not_offer_to_save_sunshines_password(self):
+        """Over the grid, for a port that is new every launch. #46."""
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, tmp, True)
+        path = launcher._firefox_profile(os.path.join(tmp, "browser-profile"))
+        text = open(os.path.join(path, "user.js"), encoding="utf-8").read()
+        self.assertIn('user_pref("signon.rememberSignons", false);', text)
+
+    def test_nor_does_the_windows_profile(self):
+        from sunshine_apps_ui import winbrowser
+        self.assertIn('user_pref("signon.rememberSignons", false);',
+                      winbrowser.FIREFOX_PREFS)
+
     def test_the_profile_is_told_not_to_greet(self):
         tmp = tempfile.mkdtemp()
         self.addCleanup(shutil.rmtree, tmp, True)

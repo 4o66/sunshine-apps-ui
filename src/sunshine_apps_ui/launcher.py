@@ -196,6 +196,11 @@ FIREFOX_PREFS = {
     "toolkit.telemetry.reportingpolicy.firstRun": False,
     "browser.shell.checkDefaultBrowser": False,
     "browser.startup.homepage_override.mstone": "ignore",
+    # Connecting to Sunshine is a password form, and Firefox offered to save
+    # it -- for 127.0.0.1 on a port that is new every launch, so it could
+    # never be used again -- in a doorhanger over the grid. Measured on
+    # Ubuntu 24.04, 2026-09-26. #46.
+    "signon.rememberSignons": False,
 }
 
 START_TIMEOUT = 15.0        # for the server to print its URL

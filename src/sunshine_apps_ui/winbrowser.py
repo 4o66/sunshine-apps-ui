@@ -68,6 +68,8 @@ user_pref("toolkit.telemetry.reportingpolicy.firstRun", false);
 user_pref("browser.startup.homepage_override.mstone", "ignore");
 user_pref("browser.shell.checkDefaultBrowser", false);
 user_pref("trailhead.firstrun.didSeeAboutWelcome", true);
+// Nor offer to save Sunshine's password, for a port that changes every launch.
+user_pref("signon.rememberSignons", false);
 """
 
 
