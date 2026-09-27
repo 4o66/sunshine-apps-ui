@@ -828,6 +828,8 @@ class PlanHandler(BaseHTTPRequestHandler):
                     state.set_pref("language", choice)
                     i18n._cache.clear()
                     _offer_artwork(self.token, choice)
+                    _TILES_QUEUED[self.token] = _stage_tile_artwork(
+                        self.conf_dir, self.importer_opts)
             elif what == "art-check":
                 _check_artwork(self.token)
             elif what == "art-fetch":
@@ -1265,7 +1267,39 @@ def _language_panel(token: str) -> Dict[str, Any]:
     system = i18n.system_language()
     suffix = f" ({system})" if system else ""
     return {"languages": i18n.languages(), "system_suffix": suffix,
-            "showing": _tile_language(), "art": _ART.pop(token, None)}
+            "showing": _tile_language(), "art": _ART.pop(token, None),
+            "queued": _TILES_QUEUED.pop(token, None)}
+
+
+# How many of our tiles a language change queued, for the page it returns to.
+_TILES_QUEUED: Dict[str, int] = {}
+
+
+def _stage_tile_artwork(conf_dir: str, importer_opts: Dict[str, Any]) -> int:
+    """Queue our tiles' artwork in the language just chosen. Returns how many.
+
+    Choosing a language used to say "Showing English tiles" and change nothing
+    Sunshine shows: the new artwork arrived only with the next Rescan, and the
+    page never said so. Now it is queued at once, so Apply is all that is left.
+    Issue #48.
+
+    Only our own tiles, and only what changed about them -- not whatever else a
+    full scan would find. Steam and Heroic are left out of the plan, which is
+    also what keeps this quick enough to do before the page comes back.
+    """
+    opts = dict(importer_opts or {})
+    opts["IMPORT_STEAM"] = "0"
+    opts["IMPORT_HEROIC"] = "0"
+    state.drop_artwork_updates()
+    try:
+        doc, _ = run_plan(conf_dir, opts)
+    except EngineError as e:
+        log.warning("could not queue the new tile artwork: %s", e)
+        return 0
+    updates = [u for u in ((doc or {}).get("plan") or {}).get("updated") or []
+               if u.get("source") == "launcher"
+               and "image-path" in (u.get("fields") or [])]
+    return state.stage_plan({"updated": updates})
 
 
 def _offer_artwork(token: str, code: str) -> None:

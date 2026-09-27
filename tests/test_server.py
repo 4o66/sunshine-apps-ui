@@ -2162,6 +2162,96 @@ class LanguageSettingTest(ServerTest):
         return self.post({"language": choice}, token=self.token,
                          path="/settings/language")
 
+    # -- Issue #48: the change is queued, so Apply is all that is left. -----
+
+    def _art_update(self, ident="desktop", source="launcher", art="/t/en/desktop.png"):
+        entry = {"name": f"#1 {ident}", "image-path": art,
+                 "bsm": {"source": source, "id": ident}}
+        return {"name": entry["name"], "source": source, "id": ident,
+                "fields": ["image-path"], "values": {"image-path": art},
+                "entry": entry}
+
+    def _plan_with(self, *updated):
+        self.engine.plan = {"plan": {"updated": list(updated), "added": []}}
+
+    def test_choosing_a_language_queues_our_tiles_artwork(self):
+        from sunshine_apps_ui import state
+        self._remote({})
+        self._plan_with(self._art_update("desktop"), self._art_update("steam"))
+        self._set("en")
+        queued = state.queue()
+        self.assertEqual([op["id"] for op in queued], ["desktop", "steam"])
+        self.assertTrue(all(op["op"] == "adopt" for op in queued))
+
+    def test_and_nothing_else_a_scan_would_find(self):
+        """A game's changed artwork is a Rescan's business, not a dropdown's."""
+        from sunshine_apps_ui import state
+        self._remote({})
+        self._plan_with(self._art_update("desktop"),
+                        self._art_update("440", source="steam"))
+        self._set("en")
+        self.assertEqual([op["id"] for op in state.queue()], ["desktop"])
+
+    def test_the_plan_leaves_steam_and_heroic_out(self):
+        """They are not what changed, and scanning them is what takes time."""
+        seen = {}
+
+        def run_plan(conf_dir, opts=None):
+            seen.update(opts or {})
+            return self.engine.plan, ""
+        patched = mock.patch.object(server_module, "run_plan", run_plan)
+        patched.start()
+        self.addCleanup(patched.stop)
+        self._remote({})
+        self._plan_with()
+        self._set("en")
+        self.assertEqual((seen.get("IMPORT_STEAM"), seen.get("IMPORT_HEROIC")),
+                         ("0", "0"))
+
+    def test_switching_again_before_applying_replaces_what_was_queued(self):
+        from sunshine_apps_ui import state
+        self._remote({})
+        self._plan_with(self._art_update("desktop", art="/t/en/desktop.png"))
+        self._set("en")
+        self._plan_with(self._art_update("desktop", art="/t/_wordless/desktop.png"))
+        self._set("")
+        queued = state.queue()
+        self.assertEqual(len(queued), 1)
+        self.assertEqual(queued[0]["entry"]["image-path"], "/t/_wordless/desktop.png")
+
+    def test_switching_back_to_what_is_there_leaves_nothing_queued(self):
+        from sunshine_apps_ui import state
+        self._remote({})
+        self._plan_with(self._art_update("desktop"))
+        self._set("en")
+        self._plan_with()
+        self._set("")
+        self.assertEqual(state.queue(), [])
+
+    def test_other_queued_changes_are_left_alone(self):
+        from sunshine_apps_ui import state
+        self._remote({})
+        state.enqueue({"op": "hide", "name": "Portal 2", "selector": "steam:620"})
+        self._plan_with(self._art_update("desktop"))
+        self._set("en")
+        self.assertEqual([op["op"] for op in state.queue()], ["hide", "adopt"])
+
+    def test_the_page_says_how_many_and_offers_apply(self):
+        self._remote({})
+        self._plan_with(self._art_update("desktop"), self._art_update("steam"))
+        self._set("en")
+        _, body = self.get(f"/settings?token={self.token}")
+        self.assertIn("2 of your tiles will change to match", body)
+        self.assertIn(f'href="/apply?token={self.token}"', body)
+        self.assertIn("Apply 2 changes", body)
+
+    def test_the_page_says_so_when_there_is_nothing_to_change(self):
+        self._remote({})
+        self._plan_with()
+        self._set("en")
+        _, body = self.get(f"/settings?token={self.token}")
+        self.assertIn("Your tiles already match", body)
+
     def test_the_languages_we_ship_are_offered(self):
         _, body = self.get(f"/settings?token={self.token}")
         self.assertIn('<option value="en"', body)

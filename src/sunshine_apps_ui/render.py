@@ -1168,6 +1168,21 @@ def settings_page(token: str, *, prefs: Dict[str, Any],
                       f'{_e(art.get("label", "Download"))}</button></form></div>')
         art_notice = (f'<div class="result {_e(art.get("state", "none"))}">'
                       f'{_e(art["message"])}{action}</div>')
+    # What the change does to Sunshine's tiles, which is queued rather than
+    # done: the page used to say "Showing English tiles" while Sunshine went on
+    # showing the others until a Rescan nobody was told about. #48.
+    queued = info.get("queued")
+    if queued:
+        tiles = "tile" if queued == 1 else "tiles"
+        art_notice += (
+            f'<div class="result available">{queued} of your {tiles} will change '
+            f'to match. Nothing is written until you apply it.'
+            f'<div class="actions" style="margin:.7rem 0 0">'
+            f'<a class="btn" href="/apply?token={_e(token)}">'
+            f'Apply {queued} change{"" if queued == 1 else "s"}</a></div></div>')
+    elif queued == 0:
+        art_notice += ('<div class="result">Your tiles already match; '
+                       'there is nothing to apply.</div>')
 
     # Issue #22. The key used to be storable only by running a command, which
     # is no use at a television -- and the picker's offer named a command that

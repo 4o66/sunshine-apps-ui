@@ -153,6 +153,28 @@ def stage_plan(plan: Dict[str, Any]) -> int:
     return added
 
 
+def is_artwork_update(op: Dict[str, Any]) -> bool:
+    """A queued change a scan proposed to one of our own tiles' artwork."""
+    return (op.get("op") == "adopt" and bool(op.get("from_scan"))
+            and op.get("source") == "launcher"
+            and "image-path" in (op.get("fields") or []))
+
+
+def drop_artwork_updates() -> int:
+    """Forget queued artwork changes to our tiles; how many went.
+
+    For a language change: artwork queued for the previous choice is for a
+    language nobody has chosen any more, and a scan leaves anything already
+    queued alone -- so it has to go first, or switching twice before applying
+    would apply the first. Issue #48.
+    """
+    pending = queue()
+    kept = [op for op in pending if not is_artwork_update(op)]
+    if len(kept) != len(pending):
+        _write(QUEUE_FILE, kept)
+    return len(pending) - len(kept)
+
+
 def drop_matching(**criteria: Any) -> bool:
     """Remove the first queued operation matching every given field."""
     pending = queue()
