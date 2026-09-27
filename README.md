@@ -45,6 +45,49 @@ list of applications Sunshine offers.
   a published hash before it is kept. Nothing is fetched from a third party's
   repository behind your back.
 
+## Where it runs
+
+Each entry says what was actually run on that platform, and when. "From
+Moonlight" means the manager was opened from Moonlight on another computer,
+filled the screen, and was closed both from inside it and from Moonlight.
+
+- **Bazzite** (KDE Plasma) — **supported**; where this began. Used through
+  Moonlight on the maintainer's own machine since 2026-09-13. Every way the
+  window opens (our own window, the Chrome and Firefox Flatpaks, and falling
+  back to a browser when our window fails) checked on a Bazzite test machine,
+  2026-09-25. *Not yet re-checked with the changes in 1.3.*
+- **Ubuntu 26.04 LTS** (GNOME, Wayland) — **supported**. Stock desktop,
+  2026-09-26/27: install; our own window; Connect, Rescan, Apply, rename, hide,
+  restore a copy, Settings and the tile language; Steam installed as a snap;
+  from Moonlight. Sunshine from LizardByte's `.deb`, and from Flathub beside it.
+- **Ubuntu 24.04 LTS** (GNOME) — **supported, in a browser**. Ubuntu's
+  restrictions stop our own window from starting there, so it opens in Firefox
+  (a snap), or Chromium if you have it. 2026-09-26/27: the same checks as 26.04,
+  on Wayland and in the X11 session ("Ubuntu on Xorg"), and with Flathub's
+  Sunshine on its own.
+- **Ubuntu 26.10** (beta) — **works**. 2026-09-26: our own window; Connect,
+  Rescan, Apply; from Moonlight.
+- **Fedora 44 Workstation** (GNOME, Wayland, SELinux enforcing) —
+  **supported**. 2026-09-27: Sunshine from LizardByte's COPR; install; our own
+  window; Connect, Rescan, Apply; from Moonlight.
+- **Windows 11** — **supported**. On a test machine, as a normal account with
+  administrator rights, 2026-09-19 to 2026-09-26: the installer (it brings its
+  own Python); our own WebView2 window, started elevated the way Sunshine starts
+  it, against a real Sunshine; the full test suite. *Not yet opened from a real
+  Moonlight stream.*
+- **Debian 13, Arch Linux** — **engine tested, desktop not**. The full test
+  suite on test machines with no display, 2026-09-15. The window has not been
+  tried in a desktop session on either.
+- **macOS** — **not yet** ([issue #5](https://github.com/4o66/sunshine-apps-ui/issues/5)).
+  The engine runs and the test suite passes, but the launcher does not open a
+  window the Mac way.
+- **Sunshine forks** (Apollo, Vibepollo, Vibeshine, Polaris) — **not yet**
+  ([issue #51](https://github.com/4o66/sunshine-apps-ui/issues/51)). Their
+  `apps.json` is the same, but most of them are not found where they install,
+  and some of their web interfaces refuse Sunshine's kind of sign-in.
+
+On every platform, a controller does not work yet (see the note at the top).
+
 ## Installing
 
 ### Windows
