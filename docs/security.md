@@ -3,7 +3,7 @@
 This was written when the server was always unprivileged. On Windows it is not:
 `apps.json` lives in Sunshine's own directory under Program Files, so writing it
 needs administrator rights, and Sunshine grants them to a tile marked
-`"elevated"`. That changes what several of the defences below are *for*, so the
+`"elevated"`. That changes what several of the defenses below are *for*, so the
 Windows case is stated first and the rest is read in its light.
 
 ## On Windows the server runs elevated, and that raises the stakes of everything else
@@ -11,7 +11,7 @@ Windows case is stated first and the rest is read in its light.
 Not by choice, and not avoidably: it is the only way to write the file this
 program exists to manage. What follows from it:
 
-**Every defence below stops being defence in depth and becomes load-bearing.**
+**Every defense below stops being defense in depth and becomes load-bearing.**
 Unprivileged, a flaw in this server gets an attacker what the user already has.
 Elevated, the same flaw gets them administrator. The bind address, the token and
 the origin checks are no longer three layers over a small prize; they are the
@@ -93,7 +93,7 @@ Binding to 127.0.0.1 stops remote hosts. It does not stop:
 ## The token is only as private as the places it is written
 
 It authenticates every request, so anywhere it appears is somewhere it can be
-taken from. Three places it could have leaked, and what each does now:
+taken from. Four places it could have leaked, and what each does now:
 
 - **The server's log.** The server prints its URL so the launcher can find it,
   and the URL carries the token. That log used to be `/tmp/sunshine-apps-ui.log`,
@@ -110,6 +110,17 @@ taken from. Three places it could have leaked, and what each does now:
 - **The browser's own profile.** The window gets a profile directory of its own
   under our state directory, not the user's everyday one -- which also happens to
   be what makes the browser a process we can wait on and close.
+- **The screen.** Every link the pages drew carried the token, and a window
+  shows a link's address when the pointer is over it -- so the token was on
+  screen, in the Moonlight stream, and in any screenshot or recording of it
+  (issue #55). Now only the first address carries it. That page answers with an
+  `HttpOnly`, `SameSite=Strict` cookie named for the port and refreshes itself to
+  the same address without the token; no link, form or redirect carries it
+  after that. It refreshes rather than redirecting because the first address is
+  opened from a local file, and a redirect would carry that cross-site start on
+  to the next request, which the browser then sends without a Strict cookie.
+  The server accepts the cookie only on a same-origin request, even for a
+  navigation, so it never becomes a way in that the token in an address was not.
 
 ## Prefer launch-on-demand over an always-on service
 
@@ -170,5 +181,6 @@ different files.
   with Sunshine's credentials and Sunshine's rights. That keeps one thing true
   that is worth keeping: an elevated *listener* of ours is not also an elevated
   *file browser* of ours.
-- **Bind anywhere but loopback**, or take the token from anywhere but a header
-  or the query string of a page we handed out.
+- **Bind anywhere but loopback**, or take the token from anywhere but a header,
+  the query string of a page we handed out, or our session cookie on a
+  same-origin request. And never draw it into a page again.

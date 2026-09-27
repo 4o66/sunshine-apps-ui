@@ -8,9 +8,8 @@
 // rendered, showed the first line of the scan, and then never moved -- which
 // looks identical to a scan that has hung.
 //
-// It takes its URLs from data attributes rather than being generated with the
-// token baked in, so there is one copy of it and the token is escaped once, by
-// the same rule as every other link on the page.
+// It takes its URLs from data attributes, so there is one copy of it. They
+// carry no token: fetch sends the session cookie to its own origin by default.
 (function () {
   "use strict";
   var box = document.querySelector("[data-scan-status]");

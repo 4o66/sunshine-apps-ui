@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Tests for the request checks. Loopback binding is not the only defence."""
+"""Tests for the request checks. Loopback binding is not the only defense."""
 import os
 import sys
 import unittest
@@ -159,6 +159,65 @@ class TestCheck(unittest.TestCase):
                                 "src", "sunshine_apps_ui", "__main__.py")).read()
         self.assertNotIn("--host", src)
         self.assertNotIn("--bind", src)
+
+
+
+class TestSessionCookie(unittest.TestCase):
+    """After the first address, the token travels in a cookie, never a link. #55."""
+
+    NAV = {"Sec-Fetch-Mode": "navigate", "Sec-Fetch-Dest": "document"}
+
+    def _headers(self, **over):
+        h = Headers({"Host": "127.0.0.1:8765"})
+        h.update(over)
+        return h
+
+    def test_the_cookie_is_named_for_the_port(self):
+        """A browser shares cookies across ports; two sessions must not collide."""
+        self.assertNotEqual(security.cookie_name(8765), security.cookie_name(8766))
+
+    def test_the_cookie_cannot_be_read_by_script_or_sent_by_another_site(self):
+        value = security.session_cookie("secret", 8765)
+        self.assertIn("HttpOnly", value)
+        self.assertIn("SameSite=Strict", value)
+        self.assertIn("Path=/", value)
+
+    def test_our_cookie_is_found_among_others(self):
+        header = f"other=1; {security.cookie_name(8765)}=secret; x=y"
+        self.assertEqual(security.cookie_token(header, 8765), "secret")
+
+    def test_another_ports_cookie_is_not_ours(self):
+        header = f"{security.cookie_name(8766)}=secret"
+        self.assertIsNone(security.cookie_token(header, 8765))
+
+    def test_a_malformed_cookie_header_is_no_cookie(self):
+        self.assertIsNone(security.cookie_token('a="unterminated', 8765))
+        self.assertIsNone(security.cookie_token(None, 8765))
+
+    def test_the_cookie_signs_in_our_own_pages(self):
+        for site in ("same-origin", "none"):
+            h = self._headers(**{"Sec-Fetch-Site": site}, **self.NAV)
+            ok, _ = security.check(h, None, "secret", 8765, cookie="secret")
+            self.assertTrue(ok, site)
+
+    def test_the_cookie_signs_in_a_same_origin_post(self):
+        h = self._headers(**{"Sec-Fetch-Site": "same-origin", "Origin": "null"})
+        ok, _ = security.check(h, None, "secret", 8765, "POST", cookie="secret")
+        self.assertTrue(ok)
+
+    def test_the_cookie_is_refused_on_another_sites_navigation(self):
+        """The token in an address may be followed from anywhere; the cookie may not."""
+        h = self._headers(**{"Sec-Fetch-Site": "cross-site"}, **self.NAV)
+        ok, reason = security.check(h, None, "secret", 8765, cookie="secret")
+        self.assertFalse(ok)
+        self.assertIn("another site", reason)
+        ok, _ = security.check(h, "secret", "secret", 8765)
+        self.assertTrue(ok, "the address with the token must still open from outside")
+
+    def test_a_wrong_cookie_is_no_sign_in(self):
+        h = self._headers(**{"Sec-Fetch-Site": "same-origin"})
+        ok, _ = security.check(h, None, "secret", 8765, cookie="stale")
+        self.assertFalse(ok)
 
 
 if __name__ == "__main__":

@@ -227,8 +227,9 @@ class ServerTest(unittest.TestCase):
         if token:
             url += f"?token={token}"
         req = urllib.request.Request(url, headers=headers or {})
+        opener = urllib.request.build_opener(CarryTheCookie(self.port))
         try:
-            with urllib.request.urlopen(req, timeout=10) as r:
+            with opener.open(req, timeout=10) as r:
                 # Some responses are binary (artwork), so never assume text.
                 return r.status, r.read().decode("utf-8", "replace")
         except urllib.error.HTTPError as e:
@@ -325,6 +326,69 @@ class ServerTest(unittest.TestCase):
             self.assertEqual(r.headers["X-Content-Type-Options"], "nosniff")
             self.assertEqual(r.headers["Cache-Control"], "no-store")
             self.assertIsNone(r.headers.get("Access-Control-Allow-Origin"))
+
+
+class SessionCookieTest(ServerTest):
+    """The token opens the first page and is then kept out of sight. #55.
+
+    A link shows its address on hover, and every address carried the token, so
+    it was on screen, in the stream and in any screenshot of it.
+    """
+
+    NAV = {"Sec-Fetch-Mode": "navigate", "Sec-Fetch-Dest": "document"}
+
+    def open_first(self, path):
+        url = f"http://127.0.0.1:{self.port}{path}"
+        request = urllib.request.Request(
+            url, headers=dict(self.NAV, **{"Sec-Fetch-Site": "cross-site"}))
+        with urllib.request.build_opener(NoRedirect).open(request, timeout=10) as r:
+            return r.status, r.headers, r.read().decode()
+
+    def with_cookie(self, path, site="same-origin"):
+        from sunshine_apps_ui import security
+        return self.get(path, headers=dict(self.NAV, **{
+            "Sec-Fetch-Site": site,
+            "Cookie": f"{security.cookie_name(self.port)}={self.token}"}))
+
+    def test_the_first_address_sets_the_cookie_and_moves_on_without_the_token(self):
+        status, headers, body = self.open_first(f"/?token={self.token}")
+        self.assertEqual(status, 200)
+        cookie = headers["Set-Cookie"]
+        self.assertIn(self.token, cookie)
+        self.assertIn("HttpOnly", cookie)
+        self.assertIn("SameSite=Strict", cookie)
+        self.assertIn('http-equiv="refresh" content="0;url=/"', body)
+        self.assertNotIn(self.token, body)
+
+    def test_the_rest_of_the_address_is_kept(self):
+        _, _, body = self.open_first(f"/app?index=1&token={self.token}")
+        self.assertIn("url=/app?index=1", body)
+        self.assertNotIn("token", body)
+
+    def test_the_address_with_the_token_is_not_sent_on_as_a_referrer(self):
+        _, headers, _ = self.open_first(f"/?token={self.token}")
+        self.assertEqual(headers["Referrer-Policy"], "no-referrer")
+
+    def test_the_cookie_then_opens_the_grid(self):
+        status, body = self.with_cookie("/")
+        self.assertEqual(status, 200)
+        self.assertIn("Rescan", body)
+
+    def test_no_page_carries_the_token(self):
+        for path in ("/", "/settings", "/app?index=1", "/backups", "/report",
+                     "/connect", "/app?new=1"):
+            _, body = self.with_cookie(path)
+            self.assertNotIn(self.token, body, path)
+
+    def test_the_cookie_does_not_open_a_page_from_another_site(self):
+        status, _ = self.with_cookie("/", site="cross-site")
+        self.assertEqual(status, 404)
+
+    def test_a_script_asking_with_the_token_is_answered_directly(self):
+        """Not a navigation, so no detour: the starting page's readiness check."""
+        status, body = self.get(f"/?token={self.token}")
+        self.assertEqual(status, 200)
+        self.assertIn("Rescan", body)
 
 
 class ShownMarkerTest(ServerTest):
@@ -426,7 +490,7 @@ class CredentialsEndpointTest(ServerTest):
         """Post/redirect/get, so refreshing cannot resubmit the password."""
         status, headers = self.post({"username": "a", "password": "b"}, token=self.token)
         self.assertEqual(status, 303)
-        self.assertIn("/?", headers["Location"])
+        self.assertEqual(headers["Location"], "/")
 
     def test_the_password_never_appears_in_the_redirect(self):
         _, headers = self.post({"username": "admin", "password": "sup3rsecret"},
@@ -461,6 +525,33 @@ class CredentialsEndpointTest(ServerTest):
 class NoRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, *args, **kwargs):
         return None
+
+
+class CarryTheCookie(urllib.request.HTTPRedirectHandler):
+    """Follow a redirect the way the window does once it has signed in.
+
+    Our pages and redirects no longer carry the token (#55); a browser that
+    opened the first address has it in a cookie by then. urllib keeps no
+    cookies, so a request that carried the token sends it on as that cookie.
+    One that did not, sends nothing -- a test of refusal still sees one.
+    """
+
+    def __init__(self, port):
+        super().__init__()
+        self.port = port
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        new = super().redirect_request(req, fp, code, msg, headers, newurl)
+        if new is None:
+            return None
+        from sunshine_apps_ui import security
+        token = (urllib.parse.parse_qs(urllib.parse.urlsplit(req.full_url).query)
+                 .get("token") or [None])[0] or security.cookie_token(
+                     req.get_header("Cookie"), self.port)
+        if token:
+            new.add_unredirected_header(
+                "Cookie", f"{security.cookie_name(self.port)}={token}")
+        return new
 
 
 class ApplyTest(ServerTest):
@@ -567,7 +658,7 @@ class AppliedPageTest(ServerTest):
         self.queue_a_change()
         status, headers = self.post({}, token=self.token, path="/apply")
         self.assertEqual(status, 303)
-        self.assertTrue(headers["Location"].startswith("/applied?"), headers["Location"])
+        self.assertEqual(headers["Location"], "/applied")
 
     def test_the_applied_page_asks_the_engine_for_nothing(self):
         """Scanning here would race the teardown the apply just caused."""
@@ -582,7 +673,7 @@ class AppliedPageTest(ServerTest):
         no change is worse than doing nothing."""
         status, headers = self.post({}, token=self.token, path="/apply")
         self.assertEqual(status, 303)
-        self.assertTrue(headers["Location"].startswith("/?"), headers["Location"])
+        self.assertEqual(headers["Location"], "/")
 
     def test_applied_needs_the_token(self):
         self.assertEqual(self.get("/applied")[0], 404)
@@ -624,10 +715,10 @@ class AppPageTest(ServerTest):
         self.assertEqual(status, 200)
         self.assertIn("data-apply", body)
 
-    def test_the_page_asks_for_that_script_with_a_token(self):
-        """Every request needs one, including the page's own assets."""
+    def test_the_page_asks_for_that_script_without_the_token(self):
+        """The session cookie goes with it; the address must not show the token. #55."""
         _, body = self.get(f"/app?index=1&token={self.token}")
-        self.assertIn(f'src="/app.js?token={self.token}"', body)
+        self.assertIn('src="/app.js"', body)
         self.assertIn("data-dirty-guard", body)
 
     def test_a_browser_form_post_is_accepted(self):
@@ -902,7 +993,7 @@ class ScanRoutesTest(ServerTest):
 
     def test_the_policy_allows_the_page_to_ask_how_the_scan_is_going(self):
         """default-src 'none' with no connect-src blocks the fetch silently."""
-        response = urllib.request.urlopen(
+        response = urllib.request.build_opener(CarryTheCookie(self.port)).open(
             f"http://127.0.0.1:{self.port}/scanning?token={self.token}")
         policy = response.headers.get("Content-Security-Policy")
         self.assertIn("connect-src 'self'", policy)
@@ -1058,14 +1149,14 @@ class HiddenEntryTest(ServerTest):
         self.assertIn("Cancel un-hiding", body)
         self.assertIn("Back to the apps", body)
 
-    def test_cancelling_removes_it_from_the_queue(self):
+    def test_canceling_removes_it_from_the_queue(self):
         from sunshine_apps_ui import state as st
         st.enqueue({"op": "restore", "selector": "steam:440", "name": "TF2"})
         self.post({"op": "restore", "selector": "steam:440"},
                   token=self.token, path="/unqueue")
         self.assertEqual(st.queue(), [])
 
-    def test_cancelling_something_not_queued_is_harmless(self):
+    def test_canceling_something_not_queued_is_harmless(self):
         from sunshine_apps_ui import state as st
         status, _ = self.post({"op": "restore", "selector": "steam:999"},
                               token=self.token, path="/unqueue")
@@ -1772,7 +1863,7 @@ class RestoreCopyTest(ServerTest):
 
     def test_the_grid_offers_a_way_to_restore(self):
         _, body = self.get(f"/?token={self.token}")
-        self.assertIn("/backups?token=", body)
+        self.assertIn('href="/backups"', body)
 
     def test_the_picker_lists_the_copies_by_when_they_were_taken(self):
         _, body = self.get(f"/backups?token={self.token}")
@@ -1790,7 +1881,7 @@ class RestoreCopyTest(ServerTest):
         status, headers = self.get_no_redirect(
             f"/backups?restore=apps-20260915-101500.json&token={self.token}")
         self.assertEqual(status, 303)
-        self.assertTrue(headers["Location"].startswith("/?"))
+        self.assertEqual(headers["Location"], "/")
         self.assertEqual(st.queue()[0]["op"], "rollback")
         self.assertEqual(st.queue()[0]["backup"], "apps-20260915-101500.json")
 
@@ -1826,7 +1917,7 @@ class RestoreCopyTest(ServerTest):
         self.assertIn("Nothing has changed yet", body)
         self.assertIn("Apply 1 change", body)
 
-    def test_it_can_be_cancelled_from_the_grid(self):
+    def test_it_can_be_canceled_from_the_grid(self):
         from sunshine_apps_ui import state as st
         self.get_no_redirect(
             f"/backups?restore=apps-20260915-101500.json&token={self.token}")
@@ -2242,7 +2333,7 @@ class LanguageSettingTest(ServerTest):
         self._set("en")
         _, body = self.get(f"/settings?token={self.token}")
         self.assertIn("2 of your tiles will change to match", body)
-        self.assertIn(f'href="/apply?token={self.token}"', body)
+        self.assertIn('href="/apply"', body)
         self.assertIn("Apply 2 changes", body)
 
     def test_the_page_says_so_when_there_is_nothing_to_change(self):
@@ -2747,7 +2838,7 @@ class SteamGridDbSheetTest(ServerTest):
         self._key(); self._page()
         body = self._open(page=0)
         self.assertIn("Close", body)
-        self.assertIn(f"/artwork?key=index%3A0&token={self.token}", body)
+        self.assertIn('href="/artwork?key=index%3A0&q=Desktop">Close', body)
 
     def test_a_failure_leaves_the_picker_standing(self):
         """The sheet is one source among several. It failing is not the page

@@ -191,17 +191,17 @@ class ScanningPageTest(unittest.TestCase):
         """
         html = self.page()
         self.assertNotIn("<script>", html)
-        self.assertIn('<script src="/scanning.js?token=tok-123"', html)
+        self.assertIn('<script src="/scanning.js"', html)
 
     def test_it_tells_the_watcher_where_to_look_and_where_to_go(self):
         html = self.page()
-        self.assertIn('data-scan-status="/scan/status?token=tok-123"', html)
+        self.assertIn('data-scan-status="/scan/status"', html)
         self.assertIn("data-scan-done=", html)
         self.assertIn("scanned=1", html)
 
     def test_it_polls_a_url_that_does_not_start_another_scan(self):
         html = self.page()
-        self.assertIn("/scan/status?token=tok-123", html)
+        self.assertIn('"/scan/status"', html)
         self.assertNotIn("scan=1", html)
 
     def test_the_watcher_reads_both_urls_from_the_page(self):
@@ -228,11 +228,11 @@ class ScanningPageTest(unittest.TestCase):
         self.assertIn("The scan stopped", html)
         self.assertNotIn("Scanning your libraries", html)
 
-    def test_the_token_is_escaped_once_into_every_link(self):
-        html = render.scanning_page("a b&c", {"latest": "", "elapsed": 0,
-                                              "running": True, "error": ""})
-        self.assertNotIn("a b&c", html)
-        self.assertIn("a%20b%26c", html)
+    def test_the_token_is_in_no_link(self):
+        """The cookie carries it; a link shows its address on hover. #55."""
+        html = render.scanning_page("tok-123", {"latest": "", "elapsed": 0,
+                                                "running": True, "error": ""})
+        self.assertNotIn("tok-123", html)
 
 
 if __name__ == "__main__":

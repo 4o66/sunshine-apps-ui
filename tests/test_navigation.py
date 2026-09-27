@@ -68,25 +68,19 @@ class TestEveryPageHasAWayOnward(unittest.TestCase):
             with self.subTest(page=name):
                 self.assertNotIn("Could not read a plan", html)
 
-    def test_every_link_and_form_carries_a_token(self):
-        """A link without one lands on a refusal, as /app.js did."""
+    def test_no_link_carries_the_token(self):
+        """A link shows its address on hover, and that put the token on screen
+        and in the stream. The session cookie carries it instead. #55."""
         for name, html in pages().items():
             with self.subTest(page=name):
-                for target in re.findall(r'(?:href|src)="(/[^"]*)"', html):
-                    if target.startswith("//"):
-                        continue
-                    self.assertIn("token=", target, f"{name}: {target} has no token")
+                for target in re.findall(r'(?:href|src|action|data-scan-[a-z]+)="([^"]*)"', html):
+                    self.assertNotIn("token=", target, f"{name}: {target} carries the token")
 
-    def test_every_form_carries_a_token(self):
-        """A GET form drops its action's query string, so those pass it as a
-        hidden field instead. Either way it has to be in the request."""
+    def test_no_form_carries_the_token(self):
+        """Nor as a hidden field, which is how the GET forms used to pass it."""
         for name, html in pages().items():
             with self.subTest(page=name):
-                for form in re.findall(r'<form\b.*?</form>', html, re.S):
-                    action = re.search(r'action="([^"]*)"', form)
-                    carried = ("token=" in (action.group(1) if action else "")
-                               or 'name="token"' in form)
-                    self.assertTrue(carried, f"{name}: a form has no token")
+                self.assertNotIn('name="token"', html, f"{name}: a form carries the token")
 
 
 if __name__ == "__main__":

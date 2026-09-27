@@ -212,7 +212,7 @@ class SwitchTest(test_server.ServerTest):
         self.assertIn("Which Sunshine is this machine running?", body)
         self.assertIn("none of them has been used yet", body)
         self.assertIn("12 apps", body)
-        self.assertIn('action="/config-dir?token=', body)
+        self.assertIn('action="/config-dir"', body)
 
     def test_the_newest_is_said_and_can_be_kept(self):
         self.homes.tree(FLATPAK, used_at=1000)
@@ -271,7 +271,7 @@ class SwitchTest(test_server.ServerTest):
         self.assertIn("<h3>Which Sunshine</h3>", body)
         self.assertIn("Flatpak (dev.lizardbyte.app.Sunshine)", body)
         status, headers = self.switch(flatpak, back="settings")
-        self.assertTrue(headers["Location"].startswith("/settings?"))
+        self.assertTrue(headers["Location"].startswith("/settings"))
 
     def test_the_argument_cannot_be_switched_away_from(self):
         flatpak = self.homes.tree(FLATPAK, used_at=1000)

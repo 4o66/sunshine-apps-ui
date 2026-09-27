@@ -29,13 +29,13 @@ def theme() -> str:
 
     Read here rather than passed through fifteen page functions: it is one
     small file, read once per page, and a page that renders in the wrong
-    colours because a caller forgot an argument is a worse trade.
+    colors because a caller forgot an argument is a worse trade.
     """
     try:
         from . import state
 
         chosen = str(state.prefs().get("theme", "system")).lower()
-    except Exception:              # noqa: BLE001 - colours, never a failure
+    except Exception:              # noqa: BLE001 - colors, never a failure
         return "system"
     return chosen if chosen in ("light", "dark", "system") else "system"
 
@@ -266,7 +266,7 @@ def credentials_form(token: str, message: str = "", username: str = "") -> str:
             '<p class="why">Applying changes asks Sunshine to reload, which needs '
             'the login you use for its web interface at port 47990.</p>')
     return f"""<section><h2>Connect to Sunshine</h2>{note}
-<form class="creds" method="post" action="/credentials?token={_e(token)}">
+<form class="creds" method="post" action="/credentials">
 <label for="u">Username</label>
 <input id="u" name="username" autocomplete="username" value="{_e(username)}" required autofocus>
 <label for="p">Password</label>
@@ -366,17 +366,17 @@ def confirm_page(doc: Dict[str, Any], token: str, via_sunshine: bool = False,
 
     if changing:
         warn_block = f'<section class="warn">{warning}</section>'
-        action_block = (f'<form method="post" action="/apply?token={_e(token)}">'
+        action_block = (f'<form method="post" action="/apply">'
                         f'<div class="actions">'
                         f'<button class="btn" type="submit">Write and reload</button>'
-                        f'<a class="btn sec" href="/?token={_e(token)}">Cancel</a>'
+                        f'<a class="btn sec" href="/">Cancel</a>'
                         f'</div></form>')
     else:
         # Applying would reload Sunshine, and reloading disconnects. Not worth
         # doing for no change, so do not offer it.
         warn_block = ""
         action_block = (f'<div class="actions">'
-                        f'<a class="btn" href="/?token={_e(token)}">Back</a></div>')
+                        f'<a class="btn" href="/">Back</a></div>')
 
     return f"""<!doctype html>
 {_html()}<head><meta charset="utf-8">
@@ -429,7 +429,6 @@ def leaving_with_changes_page(token: str, queued: int) -> str:
     leaving -- but "I pressed close and my changes vanished" is what somebody
     would reasonably assume, so say what actually happens instead.
     """
-    q = f"?token={_e(token)}" if token else ""
     return f"""<!doctype html>
 {_html()}<head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -446,8 +445,8 @@ Sunshine.</p>
 still here the next time you open the manager. Applying is what writes it to
 Sunshine.</p></section>
 <div class="actions">
-<a class="btn" href="/{q}">Back to the apps</a>
-<form method="post" action="/quit{q}" class="inline">
+<a class="btn" href="/">Back to the apps</a>
+<form method="post" action="/quit" class="inline">
 <input type="hidden" name="anyway" value="1">
 <button class="btn sec" type="submit">Close anyway</button></form>
 </div>
@@ -478,7 +477,7 @@ def applied_page(token: str, via_sunshine: bool = False) -> str:
 <div class="wrap">
 <h1>Applied</h1>
 <section class="ok"><p class="why">apps.json was written. {_e(detail)}</p></section>
-<div class="actions"><a class="btn sec" href="/?token={_e(token)}">Back to the apps</a></div>
+<div class="actions"><a class="btn sec" href="/">Back to the apps</a></div>
 </div></body></html>"""
 
 
@@ -487,7 +486,6 @@ def page(doc: Dict[str, Any], log: str = "", token: str = "",
          applied: bool = False, apply_error: str = "") -> str:
     totals = doc.get("totals", {}) or {}
     plan = doc.get("plan", {}) or {}
-    q = f"?token={_e(token)}" if token else ""
 
     sections = []
     for key, title, why in BUCKETS:
@@ -540,8 +538,8 @@ def page(doc: Dict[str, Any], log: str = "", token: str = "",
 {_sources_bar(doc.get("sources") or [], auth_chip)}
 {banner}
 {form_block}
-<div class="actions"><a class="btn" href="/apply{q}">Apply changes</a>
-<a class="btn sec" href="/{q}">Re-scan</a></div>
+<div class="actions"><a class="btn" href="/apply">Apply changes</a>
+<a class="btn sec" href="/">Re-scan</a></div>
 {"".join(sections)}
 {log_block}
 <p class="note">Read-only preview. Nothing has been written to apps.json.
@@ -554,7 +552,6 @@ shown by sunshine-apps-ui {_e(__version__)}.</p>
 
 def error_page(message: str, detail: str = "", token: str = "",
                title: str = "Something went wrong") -> str:
-    q = f"?token={_e(token)}" if token else ""
     extra = f"<pre>{_e(detail)}</pre>" if detail else ""
     return f"""<!doctype html>
 {_html()}<head><meta charset="utf-8">
@@ -566,7 +563,7 @@ def error_page(message: str, detail: str = "", token: str = "",
 <div class="wrap">
 <section class="err"><h2>{_e(title)}</h2>
 <p class="why">{_e(message)}</p>{extra}</section>
-<div class="actions"><a class="btn sec" href="/{q}">Try again</a></div>
+<div class="actions"><a class="btn sec" href="/">Try again</a></div>
 </div></body></html>"""
 
 
@@ -630,7 +627,7 @@ def backups_page(copies: List[Dict[str, Any]], token: str,
             f'<div class="copy"><span class="when">{_e(when)}</span>'
             f'<span class="what">{count} application{"" if count == 1 else "s"}</span>'
             f'<a class="btn sec" href="/backups?restore={_eq(str(copy.get("name")))}'
-            f'&token={_e(token)}">See what this would change</a></div>')
+            f'">See what this would change</a></div>')
 
     body = ("".join(rows) if rows else
             '<p class="why">No copies yet. One is taken automatically before '
@@ -655,7 +652,7 @@ The most recent {len(copies)} are kept.</p>
 <p class="why">Choosing one shows what it would change on the grid. Nothing is
 written until you apply it, and a copy of the current file is taken first --
 so a restore can itself be undone.</p>
-<div class="actions"><a class="btn sec" href="/?token={_e(token)}">Back</a></div>
+<div class="actions"><a class="btn sec" href="/">Back</a></div>
 </div></body></html>"""
 
 
@@ -727,7 +724,7 @@ def _tile(entry: Dict[str, Any], token: str, *, is_new: bool = False,
           from_scan: bool = False) -> str:
     name = _e(entry.get("name") or "(unnamed)")
     image = entry.get("image-path") or ""
-    inner = (f'<img src="/art?p={_eq(image)}&token={_e(token)}" alt="">'
+    inner = (f'<img src="/art?p={_eq(image)}" alt="">'
              if image else f'<div class="fallback">{name}</div>')
 
     label, greyed = _PENDING.get(pending, ("", False))
@@ -739,10 +736,10 @@ def _tile(entry: Dict[str, Any], token: str, *, is_new: bool = False,
     flag = (f'<span class="flag">{_e(label)}</span>' if label
             else ('<span class="flag">NEW</span>' if is_new else ""))
     mark = '<span class="mark">hidden</span>' if is_hidden else ""
-    target = (f'/app?index={_e(entry.get("index"))}&token={_e(token)}'
+    target = (f'/app?index={_e(entry.get("index"))}'
               if entry.get("index") is not None
               else f'/app?hidden={_eq(str(entry.get("source")) + ":" + str(entry.get("id")))}'
-                   f'&token={_e(token)}')
+                   f'')
     return (f'<a class="{classes}" href="{target}">{inner}{flag}{mark}'
             f'<span class="cap">{name}</span></a>')
 
@@ -758,7 +755,7 @@ def connect_page(token: str, message: str = "", username: str = "") -> str:
 <span class="where">app manager</span>{_version_chip()}</div>
 <div class="wrap">
 {credentials_form(token, message, username)}
-<div class="actions"><a class="btn sec" href="/?token={_e(token)}">Back</a></div>
+<div class="actions"><a class="btn sec" href="/">Back</a></div>
 </div></body></html>"""
 
 
@@ -778,7 +775,7 @@ def render_elevating(token: str) -> str:
 write <code>apps.json</code>. This window closes on its own.</p>
 <p class="why">Refusing is a fine answer: everything except saving works
 without it.</p></section>
-<div class="actions"><a class="btn sec" href="/?token={_e(token)}">Back</a></div>
+<div class="actions"><a class="btn sec" href="/">Back</a></div>
 </div></body></html>"""
 
 
@@ -857,7 +854,7 @@ border:1px solid var(--border);border-radius:var(--radius-md);
 padding:.5rem .7rem;font:inherit;font-size:.9rem;min-width:16rem;max-width:100%}
 .setting input[type=password]:focus-visible{outline:3px solid var(--accent);
 outline-offset:2px}
-/* A link inside explanatory text was the same small muted grey as the text
+/* A link inside explanatory text was the same small muted gray as the text
    around it, underlined in the browser default -- legible on a desk, not from
    a sofa. */
 .setting .why a{color:var(--primary);font-weight:600;text-decoration:underline;
@@ -930,7 +927,7 @@ def _config_trees(config: Dict[str, Any], token: str, back: str) -> str:
         facts = f"{_last_used_text(float(candidate.get('last_used') or 0))} &middot; {count}"
 
         def form(label: str, disabled: bool = False) -> str:
-            return (f'<form method="post" action="/config-dir?token={_e(token)}">'
+            return (f'<form method="post" action="/config-dir">'
                     f'<input type="hidden" name="path" value="{_e(path)}">'
                     f'<input type="hidden" name="back" value="{_e(back)}">'
                     f'<button class="btn sec" type="submit"'
@@ -1070,7 +1067,6 @@ def settings_page(token: str, *, prefs: Dict[str, Any],
     none of this touches it, and mixing the two invites somebody to press
     Apply expecting their theme to be saved.
     """
-    q = f"?token={_e(token)}" if token else ""
     docs = _e(DOCS_URL)
     chosen = str(prefs.get("theme", "system")).lower()
     dev = bool(prefs.get("dev_builds", False))
@@ -1113,7 +1109,7 @@ def settings_page(token: str, *, prefs: Dict[str, Any],
     def toggle(name: str, on: bool, label: str, why: str,
                nested: bool = False, enabled: bool = True) -> str:
         classes = "toggle" + (" nested" if nested else "") + ("" if enabled else " off")
-        return (f'<form method="post" action="/settings/channel{q}" '
+        return (f'<form method="post" action="/settings/channel" '
                 f'class="{classes}">'
                 f'<input type="hidden" name="setting" value="{_e(name)}">'
                 f'<button type="submit" name="value" value="{"0" if on else "1"}"'
@@ -1178,7 +1174,7 @@ def settings_page(token: str, *, prefs: Dict[str, Any],
             f'<div class="result available">{queued} of your {tiles} will change '
             f'to match. Nothing is written until you apply it.'
             f'<div class="actions" style="margin:.7rem 0 0">'
-            f'<a class="btn" href="/apply?token={_e(token)}">'
+            f'<a class="btn" href="/apply">'
             f'Apply {queued} change{"" if queued == 1 else "s"}</a></div></div>')
     elif queued == 0:
         art_notice += ('<div class="result">Your tiles already match; '
@@ -1240,7 +1236,7 @@ def settings_page(token: str, *, prefs: Dict[str, Any],
     <h3>Appearance</h3>
     <p class="why">Following the system is the default. On a television, where
     there is no system to follow, pick the one that suits the room.</p>
-    <form method="post" action="/settings/theme{q}">
+    <form method="post" action="/settings/theme">
       <div class="choices">{themes}</div>
     </form>
   </div>
@@ -1249,7 +1245,7 @@ def settings_page(token: str, *, prefs: Dict[str, Any],
     <h3>Updates</h3>
     <p class="why">Checked only when you ask. Nothing is downloaded or
     installed without you saying so.</p>
-    <form method="post" action="/settings/check{q}">
+    <form method="post" action="/settings/check">
       <button class="btn" type="submit">Check for updates</button>
     </form>
     {found}
@@ -1262,12 +1258,12 @@ def settings_page(token: str, *, prefs: Dict[str, Any],
     language is a file and a pull request &mdash;
     <a href="{docs}/i18n.md" target="_blank" rel="noopener noreferrer">how to
     add one</a>.</p>
-    <form method="post" action="/settings/language{q}" class="pick">
+    <form method="post" action="/settings/language" class="pick">
       <select name="language">{options}</select>
       <button class="btn sec" type="submit">Use this one</button>
     </form>
     <p class="why">{showing}</p>
-    <form method="post" action="/settings/art-check{q}">
+    <form method="post" action="/settings/art-check">
       <button class="btn sec" type="submit">Check for new tile artwork</button>
     </form>
     <p class="why">Looks only at the sets on this machine &mdash; the wordless
@@ -1282,7 +1278,7 @@ def settings_page(token: str, *, prefs: Dict[str, Any],
     Steam Big Picture, and this puts back any of them you have deleted &mdash;
     in our artwork and doing exactly what Sunshine's did. Nothing you still
     have is touched, and nothing is written until you press Apply.</p>
-    <form method="post" action="/settings/defaults{q}">
+    <form method="post" action="/settings/defaults">
       <button class="btn" type="submit">Put the default tiles back</button>
     </form>
     {notice_html}
@@ -1298,7 +1294,7 @@ def settings_page(token: str, *, prefs: Dict[str, Any],
     them until you press it.</p>
     {sgdb_where}
     <p class="why">{sgdb_state}</p>
-    <form method="post" action="/settings/sgdb-key{q}" class="pick">
+    <form method="post" action="/settings/sgdb-key" class="pick">
       <input type="password" name="sgdb-key" autocomplete="off"
              spellcheck="false" placeholder="API key"
              aria-label="SteamGridDB API key">
@@ -1316,7 +1312,7 @@ def settings_page(token: str, *, prefs: Dict[str, Any],
   </div>
 </section>
 
-<div class="actions"><a class="btn sec" href="/{q}">Back to the apps</a></div>
+<div class="actions"><a class="btn sec" href="/">Back to the apps</a></div>
 </div></body></html>"""
 
 
@@ -1381,7 +1377,7 @@ def report_page(token: str, via_sunshine: bool = False,
 <div class="wrap">
 {first}
 {facts}
-<div class="actions"><a class="btn sec" href="/?token={_e(token)}">Back to the apps</a></div>
+<div class="actions"><a class="btn sec" href="/">Back to the apps</a></div>
 </div></body></html>"""
 
 
@@ -1401,11 +1397,9 @@ def scanning_page(token: str, status: Dict[str, Any]) -> str:
     The page is its own URL rather than ``/?scan``, so a refresh watches the
     scan instead of starting another.
     """
-    q = f"?token={_eq(token)}" if token else ""
-    # Built here, not in the script: the token is escaped once, by the same
-    # rule as every other link on the page.
-    done = f"/?scanned=1&token={_eq(token)}" if token else "/?scanned=1"
-    poll = f"/scan/status?token={_eq(token)}" if token else "/scan/status"
+    # Built here, not in the script, so the script holds no addresses.
+    done = "/?scanned=1"
+    poll = "/scan/status"
     latest = status.get("latest") or "Starting..."
     error = status.get("error") or ""
     if error:
@@ -1431,13 +1425,13 @@ animation:spin 900ms linear infinite}}
 .dim{{opacity:.7;font-size:.9rem}}
 </style>
 <noscript><meta http-equiv="refresh" content="2"></noscript>
-<script src="/scanning.js{q}" defer></script>
+<script src="/scanning.js" defer></script>
 </head>
 <body>
 <div class="navbar"><span class="brand">Sunshine</span><span class="sep">/</span>
 <span class="where">app manager</span>{_version_chip()}</div>
 <div class="wrap">{body}
-<div class="actions"><a class="btn sec" href="/{q}">Stop watching</a></div>
+<div class="actions"><a class="btn sec" href="/">Stop watching</a></div>
 </div></body></html>"""
 
 
@@ -1553,17 +1547,17 @@ def grid_page(state: Dict[str, Any], token: str, *, new_ids: Optional[set] = Non
             label, tone = "NEW", "ghost found"
         else:
             label, tone = "NEW QUEUED", "ghost"
-        art = (f'<img src="/art?p={_eq(ghost["image-path"])}&token={_e(token)}" alt="">'
+        art = (f'<img src="/art?p={_eq(ghost["image-path"])}" alt="">'
                if ghost.get("image-path") else '<div class="fallback">&nbsp;</div>')
         qid = ghost.get("qid")
-        target = (f'/app?queued={_e(qid)}&token={_e(token)}' if qid else "")
+        target = (f'/app?queued={_e(qid)}' if qid else "")
         open_tag = (f'<a class="tile {tone}" href="{target}">' if target
                     else f'<span class="tile {tone}">')
         close_tag = "</a>" if target else "</span>"
         tiles.append(f'{open_tag}{art}'
                      f'<span class="flag">{label}</span>'
                      f'<span class="cap">{_e(ghost["name"])}</span>{close_tag}')
-    tiles.append(f'<a class="tile add" href="/app?new=1&token={_e(token)}">'
+    tiles.append(f'<a class="tile add" href="/app?new=1">'
                  f'<div class="fallback">+ Add an application</div></a>')
     queued = len(pending)
 
@@ -1625,7 +1619,7 @@ def grid_page(state: Dict[str, Any], token: str, *, new_ids: Optional[set] = Non
             f'<p class="why">Nothing has changed yet. A copy of the current file '
             f'is taken before this is applied, so this can be undone the same way.</p>'
             f'<div class="actions">'
-            f'<form method="post" action="/unqueue?token={_e(token)}">'
+            f'<form method="post" action="/unqueue">'
             f'<input type="hidden" name="qid" value="{_e(restore.get("qid", ""))}">'
             f'<button class="btn sec" type="submit">Cancel this restore</button>'
             f'</form></div></section>')
@@ -1634,10 +1628,10 @@ def grid_page(state: Dict[str, Any], token: str, *, new_ids: Optional[set] = Non
     read_only = bool(rights is not None and not rights.can_write)
     # An Apply that can only fail is worse than no Apply: it loses the queue's
     # meaning and teaches people the tool is broken rather than unprivileged.
-    apply_button = (f'<a class="btn" href="/apply?token={_e(token)}">'
+    apply_button = (f'<a class="btn" href="/apply">'
                     f'Apply {outstanding} change{"" if outstanding == 1 else "s"}</a>'
                     if outstanding and not read_only else "")
-    discard_button = (f'<form method="post" action="/discard?token={_e(token)}" '
+    discard_button = (f'<form method="post" action="/discard" '
                       f'style="display:inline">'
                       f'<button class="btn sec" type="submit">Discard</button></form>'
                       if queued else "")
@@ -1649,13 +1643,13 @@ def grid_page(state: Dict[str, Any], token: str, *, new_ids: Optional[set] = Non
         auth_note = (f'<section class="err"><h2>Sunshine is not answering</h2>'
                      f'<p class="why">{_e(auth_detail)}</p>'
                      f'<div class="actions"><a class="btn sec" '
-                     f'href="/connect?token={_e(token)}">Check the sign-in</a>'
+                     f'href="/connect">Check the sign-in</a>'
                      f'</div></section>')
     else:
         auth_note = (f'<div class="bar"><span class="chip">'
                      f'<span class="dot error"></span><b>sunshine</b> needs sign-in</span>'
                      f'<a class="chip" style="text-decoration:none;color:var(--primary)" '
-                     f'href="/connect?token={_e(token)}">Connect</a></div>')
+                     f'href="/connect">Connect</a></div>')
 
     # Said here, once, on the page someone is already looking at -- not at the
     # write, after a dozen changes are queued. See privilege.py.
@@ -1669,7 +1663,7 @@ def grid_page(state: Dict[str, Any], token: str, *, new_ids: Optional[set] = Non
             from .privilege import can_ask_for_elevation
             if can_ask_for_elevation():
                 offer = (f'<div class="actions">'
-                         f'<form method="post" action="/elevate?token={_e(token)}" '
+                         f'<form method="post" action="/elevate" '
                          f'style="display:inline">'
                          f'<button class="btn" type="submit">Run as administrator</button>'
                          f'</form></div>')
@@ -1690,16 +1684,16 @@ def grid_page(state: Dict[str, Any], token: str, *, new_ids: Optional[set] = Non
 <title>{_title()}</title><style>{_CSS}{_GRID_CSS}{CONFIG_CSS}</style></head>
 <body>
 <div class="navbar"><span class="brand">Sunshine</span><span class="sep">/</span>
-<span class="where">app manager</span>{_version_chip()}<a class="gear" href="/settings?token={_e(token)}">Settings</a></div>
+<span class="where">app manager</span>{_version_chip()}<a class="gear" href="/settings">Settings</a></div>
 <div class="wrap">
 <h1>{len(apps)} application{'' if len(apps) == 1 else 's'}</h1>
 <p class="sub"><code>{_e(state.get("apps_json", ""))}</code></p>
 {config_banner(config, token)}{rights_note}{auth_note}{restore_note}
 <div class="actions">{apply_button}{discard_button}
-<a class="btn{'' if not queued else ' sec'}" href="/?scan=1&token={_e(token)}">Rescan</a>
-<a class="btn sec" href="/backups?token={_e(token)}">Restore a copy</a>
-<a class="btn sec" href="/report?token={_e(token)}">Report a bug</a>
-<form method="post" action="/quit?token={_e(token)}" class="inline">
+<a class="btn{'' if not queued else ' sec'}" href="/?scan=1">Rescan</a>
+<a class="btn sec" href="/backups">Restore a copy</a>
+<a class="btn sec" href="/report">Report a bug</a>
+<form method="post" action="/quit" class="inline">
 <button class="btn sec" type="submit">Close the manager</button></form></div>
 {legend}
 <div class="grid">{"".join(tiles)}</div>
@@ -1828,7 +1822,7 @@ def picker_page(listing: Dict[str, Any], token: str, *, key: str, field: str,
         what = "go" if is_dir else "pick"
         return (f'<a class="{"dir" if is_dir else "file"}" '
                 f'href="/browse?key={_eq(key)}&field={_eq(field)}'
-                f'&{"path" if is_dir else "pick"}={_eq(path)}&token={_e(token)}">'
+                f'&{"path" if is_dir else "pick"}={_eq(path)}">'
                 f'<span class="k">{"folder" if is_dir else "choose"}</span>'
                 f'<span>{_e(name)}</span></a>')
 
@@ -1857,7 +1851,6 @@ def picker_page(listing: Dict[str, Any], token: str, *, key: str, field: str,
               f'<input type="hidden" name="key" value="{_e(key)}">'
               f'<input type="hidden" name="field" value="{_e(field)}">'
               f'<input type="hidden" name="path" value="{_e(here)}">'
-              f'<input type="hidden" name="token" value="{_e(token)}">'
               f'<input type="text" name="q" value="{_e(filter_text)}" '
               f'placeholder="Filter by name" aria-label="Filter by name">'
               f'<button class="btn sec" type="submit">Filter</button></form>'
@@ -1885,12 +1878,12 @@ def picker_page(listing: Dict[str, Any], token: str, *, key: str, field: str,
 def _form_url(key: str, token: str) -> str:
     """Where a form lives, so the picker can go back to the one that opened it."""
     if key == "new":
-        return f"/app?new=1&token={_e(token)}"
+        return f"/app?new=1"
     if key.startswith("qid:"):
-        return f"/app?queued={_e(key[4:])}&token={_e(token)}"
+        return f"/app?queued={_e(key[4:])}"
     if key.startswith("index:"):
-        return f"/app?index={_e(key[6:])}&token={_e(token)}"
-    return f"/?token={_e(token)}"
+        return f"/app?index={_e(key[6:])}"
+    return f"/"
 
 
 def hidden_page(entry: Dict[str, Any], token: str, queued: bool = False) -> str:
@@ -1902,7 +1895,7 @@ def hidden_page(entry: Dict[str, Any], token: str, queued: bool = False) -> str:
     """
     name = entry.get("name") or "(unnamed)"
     image = entry.get("image-path") or ""
-    art = (f'<img src="/art?p={_eq(image)}&token={_e(token)}" alt="">'
+    art = (f'<img src="/art?p={_eq(image)}" alt="">'
            if image else "")
     selector_text = f'{entry.get("source")}:{entry.get("id")}'
 
@@ -1911,21 +1904,21 @@ def hidden_page(entry: Dict[str, Any], token: str, queued: bool = False) -> str:
         # the queueing -- otherwise the only route back is the browser button.
         action = (f'<p class="why">Queued to come back. Apply on the grid to make '
                   f'it so, then its settings can be edited like any other app.</p>'
-                  f'<form method="post" action="/unqueue?token={_e(token)}">'
+                  f'<form method="post" action="/unqueue">'
                   f'<input type="hidden" name="op" value="restore">'
                   f'<input type="hidden" name="selector" value="{_e(selector_text)}">'
                   f'<div class="actions">'
                   f'<button class="btn sec" type="submit">Cancel un-hiding</button>'
-                  f'<a class="btn" href="/?token={_e(token)}">Back to the apps</a>'
+                  f'<a class="btn" href="/">Back to the apps</a>'
                   f'</div></form>')
     else:
-        action = (f'<form method="post" action="/queue?token={_e(token)}">'
+        action = (f'<form method="post" action="/queue">'
                   f'<input type="hidden" name="op" value="restore">'
                   f'<input type="hidden" name="selector" value="{_e(selector_text)}">'
                   f'<input type="hidden" name="name" value="{_e(name)}">'
                   f'<div class="actions">'
                   f'<button class="btn" type="submit">Un-hide it</button>'
-                  f'<a class="btn sec" href="/?token={_e(token)}">Back</a></div></form>')
+                  f'<a class="btn sec" href="/">Back</a></div></form>')
 
     return f"""<!doctype html>
 {_html()}<head><meta charset="utf-8">
@@ -2031,7 +2024,7 @@ overflow-y:auto}
    arithmetic written out: its wrap is 1100px with 1rem of padding each side
    and 1rem gaps, which at its full width is six columns of
    (1100 - 32 - 5*16) / 6. Change either and this wants changing with it.
-   Columns are then however many of those fit, centred in the sheet. */
+   Columns are then however many of those fit, centered in the sheet. */
 .sheet-body .arts{margin:0;align-content:start;justify-content:center;
 grid-template-columns:repeat(auto-fill,164.67px)}
 /* One line of name, always. The sheet is cut to fit a measured row height,
@@ -2109,7 +2102,7 @@ def _sheet_url(key: str, token: str, searched: str = "", page: int = 0,
     that actually calls SteamGridDB. Two addresses rather than one so there is
     something on screen during a wait that is nobody's idea of instant.
     """
-    bits = [f"key={_eq(key)}", f"token={_eq(token)}", "sgdb=1", f"sgdb_page={int(page)}"]
+    bits = [f"key={_eq(key)}", "sgdb=1", f"sgdb_page={int(page)}"]
     if searched:
         bits.append(f"q={_eq(searched)}")
     if go:
@@ -2159,8 +2152,8 @@ def _sgdb_sheet(sheet: Dict[str, Any], token: str, *, key: str, searched: str,
         # is made, and leaving the modal up over the answer asks it again.
         return (f'<figure class="{"current" if is_current else ""}">'
                 f'<a href="/artwork?key={_eq(key)}&choose={_eq(cid)}'
-                f'&q={_eq(searched)}&token={_e(token)}">'
-                f'<img src="/sgdb-art?id={_eq(cid)}&token={_e(token)}" alt=""></a>'
+                f'&q={_eq(searched)}">'
+                f'<img src="/sgdb-art?id={_eq(cid)}" alt=""></a>'
                 f'<figcaption><b>{_e(str(candidate.get("label") or ""))}</b>'
                 f'{"in use" if is_current else "choose"}</figcaption></figure>')
 
@@ -2175,7 +2168,7 @@ def _sgdb_sheet(sheet: Dict[str, Any], token: str, *, key: str, searched: str,
 
     # Closing goes back to the picker with the sheet shut, which is this same
     # page without sgdb= in the address.
-    close_url = f"/artwork?key={_eq(key)}&token={_e(token)}"
+    close_url = f"/artwork?key={_eq(key)}"
     if searched:
         close_url += f"&q={_eq(searched)}"
     shut = f'<a class="btn sec shut" href="{close_url}">Close</a>'
@@ -2238,13 +2231,13 @@ def artwork_page(candidates: List[Dict[str, Any]], token: str, *, key: str,
         # A candidate from a network is used from the cached copy, so that is
         # what the entry points at. One of ours is used from where it already
         # lies, so the entry points at the origin instead -- and comparing only
-        # the cached copy left the tile actually in use labelled "choose".
+        # the cached copy left the tile actually in use labeled "choose".
         origin = str(candidate.get("origin") or "")
         is_current = bool(current) and current in (path, origin)
         return (f'<figure class="{"current" if is_current else ""}">'
                 f'<a href="/artwork?key={_eq(key)}&choose={_eq(str(candidate.get("id")))}'
-                f'&q={_eq(searched)}&token={_e(token)}">'
-                f'<img src="/art?p={_eq(path)}&token={_e(token)}" alt=""></a>'
+                f'&q={_eq(searched)}">'
+                f'<img src="/art?p={_eq(path)}" alt=""></a>'
                 f'<figcaption><b>{_e(str(candidate.get("label") or ""))}</b>'
                 f'{"in use" if is_current else "choose"}</figcaption></figure>')
 
@@ -2268,7 +2261,7 @@ def artwork_page(candidates: List[Dict[str, Any]], token: str, *, key: str,
     # on a television there is nowhere to type one.
     if offer_sgdb:
         note_list += (f'<div class="actions" style="margin:-.5rem 0 1.25rem">'
-                      f'<a class="btn sec" href="/settings?token={_e(token)}">'
+                      f'<a class="btn sec" href="/settings">'
                       f'Settings</a></div>')
     # With a key, community artwork is a button rather than something that has
     # already happened. Nothing is fetched until this is pressed: hundreds of
@@ -2286,7 +2279,6 @@ def artwork_page(candidates: List[Dict[str, Any]], token: str, *, key: str,
     # match what SteamGridDB calls it -- an edition, a subtitle, a re-release.
     find = (f'<form class="find" method="get" action="/artwork">'
             f'<input type="hidden" name="key" value="{_e(key)}">'
-            f'<input type="hidden" name="token" value="{_e(token)}">'
             f'<input type="text" name="q" value="{_e(searched)}" '
             f'placeholder="Search by another name" aria-label="Search by another name">'
             f'<button class="btn sec" type="submit">Search</button></form>')
@@ -2305,7 +2297,7 @@ def artwork_page(candidates: List[Dict[str, Any]], token: str, *, key: str,
     # On the *waiting* page, not the results one: it measures the empty sheet
     # to decide how many pictures the screen holds, then goes on to fetch that
     # many. The results page needs no script at all. Issue #31.
-    fitter = (f'<script src="/sheet.js?token={_e(token)}"></script>'
+    fitter = (f'<script src="/sheet.js"></script>'
               if sheet and sheet.get("loading") and refresh_to else "")
 
     return f"""<!doctype html>
@@ -2322,7 +2314,7 @@ def artwork_page(candidates: List[Dict[str, Any]], token: str, *, key: str,
 {"".join(sections)}
 <div class="actions">
 <a class="btn sec" href="{_e(_form_url(key, token))}">Back</a>
-<a class="btn sec" href="/browse?key={_eq(key)}&field=image-path&token={_e(token)}">
+<a class="btn sec" href="/browse?key={_eq(key)}&field=image-path">
 Browse for a file</a></div>
 </div>{modal}{fitter}</body></html>"""
 
@@ -2381,7 +2373,7 @@ def app_page(entry: Dict[str, Any], token: str, *, is_new: bool = False,
 
     preview = ""
     if not is_new or qid:
-        art = (f'<img src="/art?p={_eq(image)}&token={_e(token)}" alt="">'
+        art = (f'<img src="/art?p={_eq(image)}" alt="">'
                if image else "")
         if qid:
             origin = ('<b>Not added yet.</b> This is queued, so these are the values '
@@ -2411,9 +2403,9 @@ def app_page(entry: Dict[str, Any], token: str, *, is_new: bool = False,
         # the only destructive option is to drop it from the queue.
         actions = (f'<button class="btn" data-apply type="submit" name="op" '
                    f'value="revise">Save changes</button>'
-                   f'<a class="btn sec" href="/?token={_e(token)}">Back</a>')
+                   f'<a class="btn sec" href="/">Back</a>')
         extra = (f'<div class="actions danger">'
-                 f'<form method="post" action="/unqueue?token={_e(token)}">'
+                 f'<form method="post" action="/unqueue">'
                  f'<input type="hidden" name="qid" value="{_e(qid)}">'
                  f'<button class="btn" type="submit">'
                  f'{"Do not add this" if queued_op in ("adopt", "add") else "Cancel this change"}'
@@ -2421,26 +2413,26 @@ def app_page(entry: Dict[str, Any], token: str, *, is_new: bool = False,
     elif is_new:
         actions = (f'<button class="btn" data-apply type="submit" name="op" value="add">'
                    f'Add to the queue</button>'
-                   f'<a class="btn sec" href="/?token={_e(token)}">Cancel</a>')
+                   f'<a class="btn sec" href="/">Cancel</a>')
         extra = ""
     elif locked:
         # Rename and leave. Every other way out of this page changes something
         # that would cost you the way back in.
         actions = (f'<button class="btn" data-apply type="submit" name="op" value="edit">'
                    f'Rename</button>'
-                   f'<a class="btn sec" href="/?token={_e(token)}">Back</a>')
+                   f'<a class="btn sec" href="/">Back</a>')
         extra = ""
     else:
         actions = (f'<button class="btn" data-apply type="submit" name="op" value="edit">'
                    f'Apply</button>'
                    f'<button class="btn sec" type="submit" name="op" value="clone">'
                    f'Save as a copy</button>'
-                   f'<a class="btn sec" href="/?token={_e(token)}">Back</a>')
+                   f'<a class="btn sec" href="/">Back</a>')
         extra = (f'<div class="actions danger">'
                  f'<a class="btn" href="/explain?op=hide&index={_e(index)}'
-                 f'&name={_eq(name)}&token={_e(token)}">Hide</a>'
+                 f'&name={_eq(name)}">Hide</a>'
                  f'<a class="btn" href="/explain?op=delete&index={_e(index)}'
-                 f'&name={_eq(name)}&token={_e(token)}">Delete</a></div>')
+                 f'&name={_eq(name)}">Delete</a></div>')
 
     return f"""<!doctype html>
 {_html()}<head><meta charset="utf-8">
@@ -2453,7 +2445,7 @@ def app_page(entry: Dict[str, Any], token: str, *, is_new: bool = False,
 <div class="wrap">
 <h1>{_e(name or "New application")}</h1>
 {preview}{warn}
-<form class="edit" method="post" action="/app?token={_e(token)}" data-dirty-guard{' data-dirty="1"' if dirty else ''}>
+<form class="edit" method="post" action="/app" data-dirty-guard{' data-dirty="1"' if dirty else ''}>
 {hidden_id}
 {"".join(fields)}
 <div class="row">{flags}</div>
@@ -2461,7 +2453,7 @@ def app_page(entry: Dict[str, Any], token: str, *, is_new: bool = False,
 </form>
 {extra}
 </div>
-<script src="/app.js?token={_e(token)}"></script>
+<script src="/app.js"></script>
 </body></html>"""
 
 
@@ -2492,7 +2484,7 @@ def explain_page(op: str, entry: Dict[str, Any], token: str) -> str:
 <div class="wrap">
 <h1>{_e(title)}</h1>
 <section><p class="why"><b>{_e(name)}</b> &mdash; {_e(body)}</p></section>
-<form method="post" action="/queue?token={_e(token)}">
+<form method="post" action="/queue">
 <input type="hidden" name="op" value="{_e(op)}">
 <input type="hidden" name="index" value="{_e(entry.get('index'))}">
 <input type="hidden" name="name" value="{_e(name)}">
@@ -2501,7 +2493,7 @@ def explain_page(op: str, entry: Dict[str, Any], token: str) -> str:
 <div class="actions danger">
 <button class="btn" type="submit">{_e(button)}</button>
 <a class="btn sec" style="border-color:var(--primary);color:var(--primary)"
-   href="/app?index={_e(entry.get('index'))}&token={_e(token)}">Cancel</a></div>
+   href="/app?index={_e(entry.get('index'))}">Cancel</a></div>
 </form>
 </div></body></html>"""
 

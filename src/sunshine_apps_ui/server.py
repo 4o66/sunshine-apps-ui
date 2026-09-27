@@ -7,6 +7,7 @@ about ownership markers, tombstones and Sunshine's own defaults live beside the
 reconciler, and one implementation of them is enough.
 """
 
+import html
 import json
 import logging
 import os
@@ -118,19 +119,63 @@ class PlanHandler(BaseHTTPRequestHandler):
         except OSError as e:
             log.warning("could not record that a window was shown: %s", e)
 
+    def _cookie(self) -> Optional[str]:
+        return security.cookie_token(self.headers.get("Cookie"), self.port)
+
+    def _trade_for_cookie(self, parts, query) -> None:
+        """A page opened with the token in its address: keep it, and lose it.
+
+        The token goes into a cookie, and the page moves to the same address
+        without it, so it is not in the address bar, the history, or any link
+        after this. Issue #55.
+
+        By a page that refreshes itself, not a redirect. The first address is
+        opened from the starting page, a local file, so a redirect would carry
+        that request's cross-site origin on to the next one, which the browser
+        then sends without a Strict cookie. A refresh is started by this page,
+        so it is same-site and the cookie goes with it.
+        """
+        rest = urlencode([(k, v) for k, values in query.items() if k != "token"
+                          for v in values])
+        target = parts.path + ("?" + rest if rest else "")
+        body = ('<!doctype html><html lang="en"><head><meta charset="utf-8">'
+                f'<meta http-equiv="refresh" content="0;url={html.escape(target)}">'
+                '<title>App Manager</title><style>body{background:#212529}</style>'
+                f'</head><body><a href="{html.escape(target)}">Continue</a></body></html>')
+        raw = body.encode("utf-8")
+        self.send_response(200)
+        self.send_header("Set-Cookie", security.session_cookie(self.token, self.port))
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(raw)))
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        # no-referrer here, not same-origin: the address this page was asked
+        # for is the one with the token in it.
+        self.send_header("Referrer-Policy", "no-referrer")
+        self.send_header("Content-Security-Policy",
+                         "default-src 'none'; style-src 'unsafe-inline'; "
+                         "frame-ancestors 'none'; base-uri 'none'")
+        self.end_headers()
+        if self.command != "HEAD":
+            self.wfile.write(raw)
+
     def do_GET(self) -> None:  # noqa: N802 - http.server's interface
         parts = urlsplit(self.path)
         query = parse_qs(parts.query)
         supplied = (query.get("token") or [None])[0]
 
         allowed, reason = security.check(self.headers, supplied, self.token,
-                                         self.port, self.command)
+                                         self.port, self.command, self._cookie())
         if not allowed:
             # Deliberately uninformative to the caller; the reason goes to our log.
             log.warning("refused %s: %s", parts.path, reason)
             self._send(404, error_page("Not found."))
             return
         self._note_shown()
+        if (security.token_matches(self.token, supplied)
+                and security.is_navigation(self.headers)):
+            self._trade_for_cookie(parts, query)
+            return
 
         if parts.path == "/art":
             wanted = (query.get("p") or [""])[0]
@@ -416,7 +461,7 @@ class PlanHandler(BaseHTTPRequestHandler):
             chosen = (query.get("restore") or [""])[0]
             if chosen:
                 # Queued, not applied. The grid then shows what it would do,
-                # and it can be cancelled from there like anything else.
+                # and it can be canceled from there like anything else.
                 state.drop_matching(op="rollback")
                 state.enqueue({"op": "rollback", "backup": chosen,
                                "name": f"the copy from {chosen}"})
@@ -696,12 +741,12 @@ class PlanHandler(BaseHTTPRequestHandler):
 
     def _form_target(self, key: str) -> str:
         if key == "new":
-            return f"/app?new=1&token={self.token}"
+            return "/app?new=1"
         if key.startswith("qid:"):
-            return f"/app?queued={key[4:]}&token={self.token}"
+            return f"/app?queued={key[4:]}"
         if key.startswith("index:"):
-            return f"/app?index={key[6:]}&token={self.token}"
-        return f"/?token={self.token}"
+            return f"/app?index={key[6:]}"
+        return "/"
 
     def _stop_soon(self, delay: float = 0.5) -> None:
         """Stop serving, once this response has had time to reach the browser.
@@ -724,9 +769,8 @@ class PlanHandler(BaseHTTPRequestHandler):
     def _redirect(self, location: str, **params) -> None:
         # Named "location", not "path": "path" is also a query parameter the
         # picker needs to pass, and the collision crashed the handler.
-        params.setdefault("token", self.token)
         self.send_response(303)
-        self.send_header("Location", location + "?" + urlencode(params))
+        self.send_header("Location", location + ("?" + urlencode(params) if params else ""))
         self.send_header("Content-Length", "0")
         self.end_headers()
 
@@ -757,7 +801,7 @@ class PlanHandler(BaseHTTPRequestHandler):
         # An unsafe method never gets the cross-site navigation exemption, so a
         # form posted from anywhere but this page is refused here.
         allowed, reason = security.check(self.headers, supplied, self.token,
-                                         self.port, self.command)
+                                         self.port, self.command, self._cookie())
         if not allowed:
             log.warning("refused POST %s: %s (Host=%r Origin=%r Sec-Fetch-Site=%r)",
                         parts.path, reason, self.headers.get("Host"),
@@ -1115,11 +1159,11 @@ class PlanHandler(BaseHTTPRequestHandler):
         log.info("credential save: %s", "accepted" if ok else "rejected")
 
         # Redirect after posting so a refresh cannot resubmit the form.
-        params = {"token": self.token}
+        params = {}
         if not ok:
             params["msg"] = message[:300]
         self.send_response(303)
-        self.send_header("Location", ("/?" if ok else "/connect?") + urlencode(params))
+        self.send_header("Location", "/" if ok else "/connect?" + urlencode(params))
         self.send_header("Content-Length", "0")
         self.end_headers()
 
@@ -1196,7 +1240,7 @@ class PlanHandler(BaseHTTPRequestHandler):
 
         Never the key. `load_sgdb_key` also honours SGDB_API_KEY, so a key in
         the environment counts as stored -- typing one here would be ignored in
-        favour of it, and saying "no key stored" beside working artwork is the
+        favor of it, and saying "no key stored" beside working artwork is the
         kind of small lie that costs an afternoon.
         """
         from .core.artwork_sources import load_sgdb_key
@@ -1325,7 +1369,7 @@ def _offer_artwork(token: str, code: str) -> None:
                 "state": "available",
                 "message": (f"Tiles are published for {candidate}. "
                             f"Until they are here, the wordless set is used."),
-                "action": f"/settings/art-fetch?token={token}&code={candidate}",
+                "action": f"/settings/art-fetch?code={candidate}",
                 "label": f"Download the {candidate} tiles"}
             return
     _ART[token] = {"state": "none",
@@ -1356,7 +1400,7 @@ def _check_artwork(token: str) -> None:
         "message": (f"{count} tile{'s' if count != 1 else ''} in the {code} "
                     f"set {'differ' if count != 1 else 'differs'} from the "
                     f"published artwork{rest}."),
-        "action": f"/settings/art-fetch?token={token}&code={code}",
+        "action": f"/settings/art-fetch?code={code}",
         "label": f"Update the {code} tiles"}
 
 
@@ -1372,7 +1416,7 @@ def _fetch_artwork(token: str, code: str) -> None:
         "message": (f"{written} tiles saved for {code}. They go onto the grid "
                     f"on the next scan, where you can see the change before "
                     f"anything is written."),
-        "action": f"/?scan=1&token={token}",
+        "action": "/?scan=1",
         "method": "get",
         "label": "Scan now"}
 

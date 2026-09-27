@@ -226,10 +226,10 @@ class TheSettingsOfferOnThePickerTest(unittest.TestCase):
 
     def test_the_link_is_there_when_a_key_could_be_added(self):
         body = self._page(True)
-        self.assertIn("/settings?token=tok", body)
+        self.assertIn('href="/settings"', body)
 
     def test_it_is_absent_when_a_key_is_already_stored(self):
-        self.assertNotIn("/settings?token=tok", self._page(False))
+        self.assertNotIn('href="/settings"', self._page(False))
 
     def test_the_picker_never_names_a_command(self):
         """Every command this ever named was one somebody could not run."""

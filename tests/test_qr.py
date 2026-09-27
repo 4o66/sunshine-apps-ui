@@ -168,11 +168,11 @@ class TheReportPageTest(unittest.TestCase):
         self.assertIn("through Sunshine", html)
 
     def test_it_can_be_left(self):
-        self.assertIn('href="/?token=tok-123"', self.page(True))
+        self.assertIn('href="/"', self.page(True))
 
     def test_the_grid_offers_it(self):
         grid = render.grid_page({"apps": [], "apps_json": "/x/apps.json"}, "tok")
-        self.assertIn("/report?token=tok", grid)
+        self.assertIn('href="/report"', grid)
         self.assertIn("Report a bug", grid)
 
 
