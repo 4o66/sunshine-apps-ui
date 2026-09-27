@@ -134,10 +134,10 @@ background:var(--primary);color:#fff;border:2px solid var(--primary);white-space
 border-radius:50%;font-size:.8rem;font-weight:800;color:#fff;background:#495057;flex:0 0 auto;
 box-shadow:0 0 0 .1rem rgba(0,0,0,.25)}
 /* A solid disc in the controller button's color, always with a white
-   letter, whatever button it sits on. Y is halfway between the title bar's yellow and a deep gold, so the white letter still reads. */
+   letter, whatever button it sits on. Y is the darker end of the title bar's gradient. */
 .pad .glyph{display:inline-flex}
 .glyph.a{background:#198754}.glyph.b{background:#c82333}
-.glyph.x{background:#0b5ed7}.glyph.y{background:#d3a000}
+.glyph.x{background:#0b5ed7}.glyph.y{background:#ff9d00}
 .glyph.wide{width:auto;padding:0 .4rem;border-radius:.4rem}
 
 /* ---- Notices ------------------------------------------------------------ */
