@@ -3,7 +3,11 @@
 This branch carries the 2.0 interface. Tracking is on GitHub, not here:
 the umbrella issue is [#56](https://github.com/4o66/sunshine-apps-ui/issues/56),
 and every element and screen has its own issue on the
-[2.0 milestone](https://github.com/4o66/sunshine-apps-ui/milestone/1).
+[2.0 milestone](https://github.com/4o66/sunshine-apps-ui/milestone/1) (#57 to #76).
+
+The screens are prototypes in [`design/2.0`](../design/2.0), written with the
+stylesheet 2.0 will ship. The design canvas the maintainer reviews shows each
+one as captured in the real window at every target size.
 
 ## How it is being made
 
