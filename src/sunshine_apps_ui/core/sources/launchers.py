@@ -126,6 +126,30 @@ def _host(cmd: str, sandboxed: bool) -> str:
     return f"flatpak-spawn --host {cmd}"
 
 
+def _host_as_launched(cmd: str, sandboxed: bool) -> str:
+    """_host(), but the command still learns that Sunshine launched it.
+
+    `flatpak-spawn --host` starts the command through flatpak-session-helper,
+    with the host's environment rather than the sandbox's -- so the SUNSHINE_*
+    variables Sunshine sets on everything it launches never arrive, and the
+    manager, finding none, takes itself to have been opened at the desk: an
+    ordinary window instead of a full-screen one, and none of what it does
+    differently inside a stream. Measured with Flathub's Sunshine on Ubuntu
+    26.04: the wrapper had fifteen SUNSHINE_ variables, the host process none.
+
+    So those are handed across -- Sunshine's own values, not ours asserted --
+    through --env-fd. Sunshine splits a command itself, with no shell, so it
+    goes through sh; single quotes around the path because Sunshine's
+    splitter only knows double ones, and the only double quotes are the pair
+    around the whole script. Only Sunshine's variables go: the sandbox's own
+    PATH and library paths would break a host program. Issue #50.
+    """
+    if not cmd or not sandboxed or cmd.startswith(("sh -c ", "flatpak-spawn ")):
+        return cmd
+    return (f'sh -c "env -0 | grep -z ^SUNSHINE_ | '
+            f"exec flatpak-spawn --host --env-fd=0 '{cmd}'\"")
+
+
 def _apps_ui(home: str) -> tuple[str, str]:
     """Return (cmd, poster) for the companion UI if installed, else ('', '').
 
@@ -371,7 +395,7 @@ def import_launchers(home: str, conf_dir: str, images_dir: str, settings: Dict[s
     if ui_cmd:
         apps.append(tag({
             "name": NAMES["apps-ui"],
-            "cmd": _host(ui_cmd, sandboxed),
+            "cmd": _host_as_launched(ui_cmd, sandboxed),
             "working-dir": home,
             "image-path": ui_poster,
             "detached": False,

@@ -145,8 +145,13 @@ class SandboxedSunshineTest(LauncherEntryTest):
     def test_the_managers_own_tile_runs_on_the_host(self):
         entry = next(a for a in self._entries(self._flatpak_conf())
                      if a.get(MARKER, {}).get("id") == "apps-ui")
-        self.assertTrue(entry["cmd"].startswith("flatpak-spawn --host "),
-                        entry["cmd"])
+        # Through sh, so Sunshine's own SUNSHINE_* variables cross to the host
+        # with it: flatpak-spawn --host does not carry the sandbox's
+        # environment, and without them the manager does not know a stream
+        # launched it (Ubuntu 26.04, Flathub's Sunshine, 2026-09-27).
+        self.assertIn("flatpak-spawn --host", entry["cmd"])
+        self.assertIn("grep -z ^SUNSHINE_", entry["cmd"])
+        self.assertIn("--env-fd=0", entry["cmd"])
         self.assertIn(self.ui, entry["cmd"])
 
     def test_reboot_runs_on_the_host_too(self):
