@@ -35,5 +35,28 @@ class ColorSchemeTest(unittest.TestCase):
                       rule(r':root:not\(\[data-theme="light"\]\)'))
 
 
+
+class ConfirmationWordingTest(unittest.TestCase):
+    """What the Apply page says each queued change will do."""
+
+    def test_a_restore_says_when_the_copy_is_from(self):
+        html = render._queued_list([{"op": "rollback",
+                                     "backup": "apps-20260927-005946.json",
+                                     "name": "the copy from apps-20260927-005946.json"}])
+        self.assertIn("Restore the copy from 27 Sep 2026 at 00:59:46", html)
+        self.assertNotIn("rollback", html)
+        self.assertNotIn(".json", html)
+
+    def test_a_rename_says_the_new_name(self):
+        html = render._queued_list([{"op": "edit", "name": "Team Fortress 2",
+                                     "fields": {"name": "TF2 test", "cmd": "x"}}])
+        self.assertIn("Rename Team Fortress 2 to TF2 test", html)
+
+    def test_an_edit_that_keeps_the_name_is_still_an_edit(self):
+        html = render._queued_list([{"op": "edit", "name": "Portal 2",
+                                     "fields": {"name": "Portal 2", "cmd": "y"}}])
+        self.assertIn("Edit Portal 2", html)
+
+
 if __name__ == "__main__":
     unittest.main()

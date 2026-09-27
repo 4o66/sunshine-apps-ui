@@ -381,6 +381,28 @@ class EngineSeamTest(ServerTest):
         self.assertIn("apps.json is not readable", body)
 
 
+class ConnectPageTest(ServerTest):
+    """Found on the Ubuntu 26.04 desktop, 2026-09-26: the first-time Connect
+    form opened with, in red, "No Sunshine credentials. Set SUNSHINE_USERNAME
+    and SUNSHINE_PASSWORD, or write them to ..." -- on the form that is there
+    so that nobody has to."""
+
+    NONE_YET = ("No Sunshine credentials. Set SUNSHINE_USERNAME and "
+                "SUNSHINE_PASSWORD, or write them to /x/.bsm-credentials")
+
+    def test_having_none_yet_is_not_an_error(self):
+        self.engine.auth = (False, self.NONE_YET)
+        status, body = self.get(f"/connect?token={self.token}")
+        self.assertEqual(status, 200)
+        self.assertNotIn("SUNSHINE_USERNAME", body)
+        self.assertIn('name="password"', body)
+
+    def test_a_wrong_password_is_still_said(self):
+        self.engine.auth = (False, "Sunshine rejected the credentials (401).")
+        _, body = self.get(f"/connect?token={self.token}")
+        self.assertIn("rejected the credentials", body)
+
+
 class CredentialsEndpointTest(ServerTest):
     """The first POST endpoint, and the reason the cross-site rules exist."""
 

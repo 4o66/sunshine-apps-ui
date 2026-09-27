@@ -524,6 +524,12 @@ class PlanHandler(BaseHTTPRequestHandler):
         if parts.path == "/connect":
             auth_ok, auth_message = self._auth_state()
             posted = (query.get("msg") or [""])[0]
+            # Having none yet is why you are on this page, not an error: the
+            # form is the answer. It used to open, in red, with instructions
+            # to set environment variables or write a file by hand. A wrong
+            # password, or Sunshine not answering, is still said.
+            if "No Sunshine credentials" in auth_message:
+                auth_message = ""
             self._send(200, connect_page(self.token, posted or ("" if auth_ok else auth_message)))
             return
 

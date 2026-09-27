@@ -315,8 +315,22 @@ def _queued_list(pending: List[Dict[str, Any]]) -> str:
                 text = f"{'Update' if op.get('fields') else 'Add'} {name}"
             items.append(f'<li><span class="name">{_e(text)}</span></li>')
             continue
+        if op.get("op") == "rollback":
+            # It said "rollback the copy from apps-20260927-005946.json": the
+            # queue's word and a file name, where the page that chose it had
+            # said "27 Sep 2026 at 00:59:46".
+            text = f"Restore the copy from {_when(str(op.get('backup') or ''))}"
+            items.append(f'<li><span class="name">{_e(text)}</span></li>')
+            continue
         verb = _QUEUED_WORDING.get(str(op.get("op")), str(op.get("op")))
         name = op.get("name") or (op.get("fields") or {}).get("name") or "(unnamed)"
+        renamed = (op.get("fields") or {}).get("name") if op.get("op") == "edit" else None
+        if renamed and renamed != name:
+            # "Edit Team Fortress 2" did not say it would be called something
+            # else afterwards, which is the one change you would look for.
+            items.append(f'<li><span class="name">'
+                         f'{_e(f"Rename {name} to {renamed}")}</span></li>')
+            continue
         items.append(f'<li><span class="name">{_e(verb)} {_e(name)}</span></li>')
     return (f'<h3 class="ch">Your changes <span class="n">{len(pending)}</span></h3>'
             f'<ul>{"".join(items)}</ul>')
