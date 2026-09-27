@@ -58,5 +58,32 @@ class ConfirmationWordingTest(unittest.TestCase):
         self.assertIn("Edit Portal 2", html)
 
 
+
+class TileCaptionTest(unittest.TestCase):
+    """The name goes under the picture, not over it. #47.
+
+    Over it, on a scrim, it covered the words our worded tiles carry at the
+    bottom -- seen in the WebKitGTK window on Ubuntu 26.04 with the English set.
+    """
+
+    def grid_rule(self, selector):
+        found = re.search(re.escape(selector) + r"\{([^}]*)\}", render._GRID_CSS)
+        self.assertTrue(found, selector)
+        return found.group(1)
+
+    def test_the_caption_is_not_laid_over_the_art(self):
+        cap = self.grid_rule(".tile .cap")
+        self.assertNotIn("position:absolute", cap)
+        self.assertNotIn("gradient", cap)
+
+    def test_the_picture_keeps_its_own_shape(self):
+        self.assertIn("aspect-ratio:2/3", self.grid_rule(".tile img"))
+        self.assertIn("aspect-ratio:2/3", self.grid_rule(".tile .fallback"))
+
+    def test_the_tile_itself_is_not_held_to_2_3(self):
+        """Or the caption would be squeezed into the picture's height again."""
+        self.assertNotIn("aspect-ratio", self.grid_rule(".tile"))
+
+
 if __name__ == "__main__":
     unittest.main()

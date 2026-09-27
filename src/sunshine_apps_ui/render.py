@@ -665,21 +665,20 @@ _GRID_CSS = """
 .grid{display:grid;gap:1rem;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));
 margin:0 0 1.5rem}
 .tile{position:relative;display:block;text-decoration:none;color:inherit;
-aspect-ratio:2/3;border-radius:var(--radius-lg);overflow:hidden;
+border-radius:var(--radius-lg);overflow:hidden;
 background:var(--bg-subtle);border:2px solid transparent;box-shadow:var(--shadow-sm)}
 .tile:hover,.tile:focus-visible{border-color:var(--primary);outline:none}
-.tile img{width:100%;height:100%;object-fit:cover;display:block}
-.tile .fallback{width:100%;height:100%;display:flex;align-items:center;
+/* The picture is the tile's own 2:3; the name goes under it, not over it.
+   Over it, on a scrim, it covered the words our worded tiles carry at the
+   bottom -- "APP MANAGER" and "BIG PICTURE" all but hidden on the one page
+   that is meant to show what Moonlight will. Issue #47. */
+.tile img{width:100%;aspect-ratio:2/3;object-fit:cover;display:block}
+.tile .fallback{width:100%;aspect-ratio:2/3;display:flex;align-items:center;
 justify-content:center;padding:.6rem;text-align:center;font-weight:600;
 font-size:.9rem;color:var(--text-muted);background:var(--bg-muted)}
-/* The scrim has to cover however many lines the name takes. It used to be as
-   short as one line, so "#2 Low Res Desktop" and "Zz Steam Big Picture" --
-   both of which we started writing when Sunshine's own tiles were adopted --
-   wrapped onto a second line that sat on bare artwork, on top of the words
-   already painted there. */
-.tile .cap{position:absolute;left:0;right:0;bottom:0;padding:2.1rem .55rem .45rem;
-font-size:.82rem;font-weight:600;color:#fff;line-height:1.25;
-background:linear-gradient(transparent,rgba(0,0,0,.97) 40%,rgba(0,0,0,.97))}
+.tile .cap{display:block;padding:.45rem .55rem .5rem;
+font-size:.82rem;font-weight:600;color:var(--text);line-height:1.25;
+overflow-wrap:anywhere}
 .tile.new{border-color:var(--success)}
 .tile.pending{border-color:var(--warning)}
 .tile.pending .flag{background:var(--warning);color:#1a1a1a}
@@ -694,11 +693,13 @@ color:#fff;font-size:.68rem;font-weight:700;letter-spacing:.04em;
 padding:.15rem .45rem;border-radius:999px}
 .tile.hidden img,.tile.hidden .fallback{filter:grayscale(1);opacity:.32}
 .tile.hidden{border-style:dashed;border-color:var(--border-strong)}
-.tile.hidden .mark{position:absolute;inset:0;display:flex;align-items:center;
+.tile.hidden .mark{position:absolute;top:0;left:0;right:0;aspect-ratio:2/3;display:flex;align-items:center;
 justify-content:center;transform:rotate(-20deg);font-size:1.1rem;font-weight:800;
 letter-spacing:.1em;color:var(--text);opacity:.75;text-transform:uppercase}
 .tile.add{border:2px dashed var(--border-strong);background:transparent}
-.tile.add .fallback{background:transparent;color:var(--text-muted);font-size:.9rem}
+/* It has no name under it, so it fills the row instead of stopping short. */
+.tile.add .fallback{background:transparent;color:var(--text-muted);font-size:.9rem;
+aspect-ratio:auto;height:100%;min-height:100%}
 .tile.add:hover{border-color:var(--primary)}
 .legend{display:flex;gap:1rem;flex-wrap:wrap;color:var(--text-muted);
 font-size:.85rem;margin:0 0 1rem}
