@@ -76,8 +76,10 @@ filled the screen, and was closed both from inside it and from Moonlight.
   own Python); our own WebView2 window, started elevated the way Sunshine starts
   it, against a real Sunshine; the full test suite. From Moonlight, 2026-09-26.
   Up to 1.3.0 the window could open behind another program that was already
-  in front ([issue #53](https://github.com/4o66/sunshine-apps-ui/issues/53),
-  fixed for 1.4).
+  in front ([issue #53](https://github.com/4o66/sunshine-apps-ui/issues/53)),
+  and quitting from Moonlight made Sunshine force-close the manager instead of
+  asking it to close ([issue #54](https://github.com/4o66/sunshine-apps-ui/issues/54)).
+  Both are fixed for 1.4.
 - **Debian 13, Arch Linux** — **engine tested, desktop not**. The full test
   suite on test machines with no display, 2026-09-15. The window has not been
   tried in a desktop session on either.
@@ -90,6 +92,11 @@ filled the screen, and was closed both from inside it and from Moonlight.
   and some of their web interfaces refuse Sunshine's kind of sign-in.
 
 On every platform, a controller does not work yet (see the note at the top).
+Up to 1.3.0, pointing at a link showed its address with the session's sign-in
+token in it, on screen and in the stream
+([issue #55](https://github.com/4o66/sunshine-apps-ui/issues/55)). From 1.4 the
+token stays out of every address after the first; checked in our own window on
+Linux and Windows and in the Chrome and Firefox fallbacks, 2026-09-27.
 
 ## Installing
 
