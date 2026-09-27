@@ -161,13 +161,22 @@ def _steam_candidates(home: str) -> List[Tuple[str, str]]:
     if sys.platform == "darwin":
         return [(os.path.join(home, "Library", "Application Support", "Steam"), "native")]
 
+    # The snap is what Ubuntu's App Center installs. Inside it Steam's home is
+    # ~/snap/steam/common, so its root is there and nothing is made in the real
+    # home: Steam's own log says "Setting up Steam content in
+    # ~/snap/steam/common/.local/share/Steam". Missed, a Rescan on Ubuntu found
+    # no games at all. Issue #43.
     return [(f"{home}/.var/app/com.valvesoftware.Steam/.local/share/Steam", "flatpak"),
+            (f"{home}/{SNAP_STEAM}", "snap"),
             (f"{home}/.local/share/Steam", "native"),
             (f"{home}/.steam/steam", "native")]
 
 
+SNAP_STEAM = "snap/steam/common/.local/share/Steam"
+
+
 def find_steam_root(home: str) -> Tuple[str, str]:
-    """Return (steam root, "flatpak"|"native"), or ("", "") if Steam is absent."""
+    """Return (steam root, "flatpak"|"snap"|"native"), or ("", "") if Steam is absent."""
     for path, kind in _steam_candidates(home):
         if os.path.isdir(path):
             return path, kind

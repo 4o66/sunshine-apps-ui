@@ -34,6 +34,9 @@ NAMES = {
     "reboot": "Zz Reboot Host",
 }
 
+SNAP_STEAM_BIN = "/snap/bin/steam"
+
+
 def _steam_cmd(home: str) -> tuple[str, str]:
     """Return (cmd, working_dir) for Steam if found, else ('','')."""
     if os.name == "nt":
@@ -49,6 +52,12 @@ def _steam_cmd(home: str) -> tuple[str, str]:
     flatpak_root = f"{home}/.var/app/com.valvesoftware.Steam/.local/share/Steam"
     if os.path.isdir(flatpak_root):
         return ("flatpak run com.valvesoftware.Steam", flatpak_root)
+    from ..artwork_sources import SNAP_STEAM
+    snap_root = f"{home}/{SNAP_STEAM}"
+    if os.path.isdir(snap_root) and os.path.exists(SNAP_STEAM_BIN):
+        # By its full path, as its games are: whether /snap/bin is on the PATH
+        # Sunshine was started with is not ours to know. #43.
+        return (SNAP_STEAM_BIN, snap_root)
     if have_cmd("steam"):
         for r in (f"{home}/.local/share/Steam", f"{home}/.steam/steam"):
             if os.path.isdir(r):

@@ -120,6 +120,12 @@ def import_steam(home: str, conf_dir: str, images_dir: str, settings: Dict[str, 
                 # survives Steam being moved to another drive.
                 cmd=f'steam://rungameid/{appid}'
                 workdir=steam_root
+            elif steam_mode=="snap":
+                # By its full path: `steam` is /snap/bin/steam, and whether
+                # /snap/bin is on the PATH Sunshine was started with is not
+                # this program's to know. #43.
+                cmd=f'/snap/bin/steam -applaunch {appid}'
+                workdir=steam_root
             else:
                 cmd=f'steam -applaunch {appid}'
                 workdir=steam_root
