@@ -18,6 +18,7 @@ import shutil
 import signal
 import subprocess
 import sys
+import threading
 import time
 from typing import List, Optional, Sequence, Tuple
 
@@ -780,6 +781,21 @@ def _leave_on_signal() -> None:
             pass
 
 
+def _leave_when_asked() -> threading.Event:
+    """On Windows, the same orderly exit when Sunshine asks us to close.
+
+    Sunshine does not signal an app there; it sends ``WM_CLOSE`` to the app's
+    windows, and without one of our own it terminated the launcher outright.
+    Issue #54. The event is set when that request arrives, and never elsewhere.
+    """
+    asked = threading.Event()
+    if WINDOWS:
+        from . import winbrowser
+        if winbrowser.launched_by_sunshine():
+            winbrowser.listen_for_close(asked)
+    return asked
+
+
 def launch(argv: Optional[List[str]] = None) -> int:
     """Open a window at once, start the server behind it, and stay until one goes.
 
@@ -794,6 +810,7 @@ def launch(argv: Optional[List[str]] = None) -> int:
     readable by every process on the machine.
     """
     _leave_on_signal()
+    asked = _leave_when_asked()
     stop_previous()
     profile = profile_dir()
     os.makedirs(profile, exist_ok=True)
@@ -855,8 +872,11 @@ def launch(argv: Optional[List[str]] = None) -> int:
             # that no longer loads. A quarter of a second, because the question
             # is now free and the answer is what decides how long closing the
             # window takes.
-            while browser_is_up(profile) and server.poll() is None:
+            while (browser_is_up(profile) and server.poll() is None
+                   and not asked.is_set()):
                 time.sleep(0.25)
+            if asked.is_set():
+                return 0
 
             # Our own window can fail after we have started it: the toolkit is
             # there but will not run, WebKit is refused its sandbox, a display

@@ -16,6 +16,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import unittest
 from unittest import mock
@@ -889,14 +890,8 @@ class SnapBrowserTest(unittest.TestCase):
         self.assertEqual(self.spawned[0][-1], "http://127.0.0.1:1/")
 
 
-class AWindowThatDiesTest(unittest.TestCase):
-    """Our window going before it showed anything is not the user closing it. #40.
-
-    Measured on Ubuntu 24.04 with the sandbox check forced wrong: the window
-    aborted at once, the crash reporter held its process for ten seconds, and
-    the launcher -- which had counted it as up the moment it existed -- then
-    took everything down. A browser that worked sat unused.
-    """
+class LaunchLoopHarness(unittest.TestCase):
+    """launch() with everything outside its loop replaced. No tests of its own."""
 
     PORT = 45678
 
@@ -947,6 +942,16 @@ class AWindowThatDiesTest(unittest.TestCase):
 
     def window(self, code=None):
         return mock.Mock(poll=mock.Mock(return_value=code), returncode=code)
+
+
+class AWindowThatDiesTest(LaunchLoopHarness):
+    """Our window going before it showed anything is not the user closing it. #40.
+
+    Measured on Ubuntu 24.04 with the sandbox check forced wrong: the window
+    aborted at once, the crash reporter held its process for ten seconds, and
+    the launcher -- which had counted it as up the moment it existed -- then
+    took everything down. A browser that worked sat unused.
+    """
 
     def test_a_window_that_went_unseen_gets_a_browser(self):
         self.run_with([(self.window(-6), launcher.OUR_WINDOW),
@@ -1103,3 +1108,40 @@ class KeyringTest(unittest.TestCase):
 
     def test_so_is_a_native_one(self):
         self.assertIn("--password-store=basic", self.launched(flatpak=False))
+
+
+class SunshineAsksUsToCloseTest(LaunchLoopHarness):
+    """On Windows Sunshine asks by WM_CLOSE, and the launcher must leave in order. #54."""
+
+    def asked(self, already):
+        event = threading.Event()
+        if already:
+            event.set()
+        return mock.patch.object(launcher, "_leave_when_asked", lambda: event)
+
+    def test_being_asked_ends_the_session_with_the_window_still_up(self):
+        calls = []
+
+        def up(profile):
+            calls.append(profile)
+            if len(calls) > 50:
+                raise AssertionError("the launcher kept waiting after being asked")
+            return True
+
+        with self.asked(True), mock.patch.object(launcher, "browser_is_up", up), \
+             mock.patch.object(launcher, "open_browser",
+                               lambda *a, **k: (self.window(), launcher.OUR_WINDOW)):
+            self.assertEqual(launcher.launch([]), 0)
+        self.assertEqual(len(self.shut), 1, "the teardown did not run")
+
+    def test_not_being_asked_changes_nothing(self):
+        with self.asked(False):
+            self.run_with([(self.window(0), launcher.OUR_WINDOW)],
+                          up=[True, True, False], shown=True)
+        self.assertEqual(len(self.shut), 1)
+
+    def test_nothing_listens_off_windows(self):
+        from sunshine_apps_ui import winbrowser
+        with mock.patch.object(winbrowser, "WINDOWS", False):
+            self.assertFalse(winbrowser.listen_for_close(threading.Event()))
+
