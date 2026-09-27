@@ -209,13 +209,21 @@ def execute(conf_dir: str, opts: Optional[Dict[str, Any]] = None,
         "PATH": "$(PATH):$(HOME)/.local/bin" + ((":" + opts.get("ENV_PATH_APPEND")) if opts.get("ENV_PATH_APPEND") else "")
     }
 
-    from .sources.launchers import FORMER_NAMES, factory_takeovers
+    from .sources.launchers import (FORMER_NAMES, _sunshine_is_flatpak,
+                                    carry_takeover_commands, factory_takeovers,
+                                    host_entry)
 
     # Sunshine's own Desktop / Low Res Desktop / Steam Big Picture, where they
     # are still exactly as shipped. Taking them over is what stops the grid
     # showing two sets of tiles by two different authors.
     takeovers, claim_by_name = factory_takeovers(existing_apps)
+    sandboxed = _sunshine_is_flatpak(conf_dir)
+    if sandboxed:
+        takeovers = carry_takeover_commands(takeovers, existing_apps, claim_by_name)
     apps.extend(takeovers)
+    # A Flatpak Sunshine runs a command inside its sandbox unless told
+    # otherwise, where none of ours exist. Decided once, for every source. #49.
+    apps = [host_entry(app, sandboxed) for app in apps]
     if claim_by_name:
         log("Taking over Sunshine's own tiles: " + ", ".join(sorted(claim_by_name)))
 

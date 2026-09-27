@@ -6,7 +6,7 @@ import sys
 from typing import List, Dict, Any, Optional
 from pathlib import Path
 from ..utils import log, have_cmd, yn
-from ..reconcile import MARKER as MARKER_KEY, tag
+from ..reconcile import MARKER as MARKER_KEY, identity, tag
 
 # The tiles we draw, by marker id. These ship with the program: until
 # 2026-09-19 they were downloaded at scan time from a third party's repository,
@@ -121,9 +121,68 @@ def _host(cmd: str, sandboxed: bool) -> str:
     the same: "the Flatpak of Sunshine requires commands to be prefixed with
     flatpak-spawn --host".
     """
-    if not cmd or not sandboxed or cmd.startswith("flatpak-spawn "):
+    if not cmd or not sandboxed or "flatpak-spawn --host" in cmd:
         return cmd
     return f"flatpak-spawn --host {cmd}"
+
+
+COMMAND_FIELDS = ("cmd", "detached", "prep-cmd")
+
+
+def host_entry(entry: Dict[str, Any], sandboxed: bool) -> Dict[str, Any]:
+    """Every command in *entry* made to run on the host, if Sunshine is sandboxed.
+
+    One place for all of them -- game tiles from Steam and Heroic, our own, and
+    the Sunshine tiles we take over -- rather than each source remembering. A
+    source writes a command the way it runs on this machine; whether Sunshine
+    can reach it from inside a Flatpak is decided here. Issue #49: game tiles
+    under Flathub's Sunshine failed with "No such file or directory".
+    """
+    if not sandboxed or not isinstance(entry, dict):
+        return entry
+    out = dict(entry)
+    if isinstance(out.get("cmd"), str):
+        out["cmd"] = _host(out["cmd"], True)
+    if isinstance(out.get("detached"), list):
+        out["detached"] = [_host(c, True) if isinstance(c, str) else c
+                           for c in out["detached"]]
+    if isinstance(out.get("prep-cmd"), list):
+        out["prep-cmd"] = [
+            {k: (_host(v, True) if k in ("do", "undo") and isinstance(v, str) else v)
+             for k, v in step.items()} if isinstance(step, dict) else step
+            for step in out["prep-cmd"]]
+    return out
+
+
+def carry_takeover_commands(takeovers: List[Dict[str, Any]],
+                            existing: List[Dict[str, Any]],
+                            claims: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Give each takeover the commands of the tile it takes over.
+
+    A takeover keeps what Sunshine's tile does and changes only its name and
+    picture, so its desired entry carries neither -- and so nothing could put
+    those commands on the host under a sandboxed Sunshine. Flathub's Sunshine
+    ships only Desktop; its Low Res Desktop and Steam Big Picture arrive by the
+    Flatpak moving a native install's configuration across, with commands that
+    cannot run inside it. Used only when Sunshine is sandboxed. Issue #49.
+    """
+    source_of = {}
+    for entry in existing or []:
+        if not isinstance(entry, dict):
+            continue
+        ident = identity(entry) or claims.get(entry.get("name"))
+        if ident is not None and ident not in source_of:
+            source_of[ident] = entry
+    out = []
+    for wanted in takeovers:
+        found = source_of.get(identity(wanted))
+        wanted = dict(wanted)
+        if found:
+            for field in COMMAND_FIELDS:
+                if field in found and field not in wanted:
+                    wanted[field] = found[field]
+        out.append(wanted)
+    return out
 
 
 def _host_as_launched(cmd: str, sandboxed: bool) -> str:

@@ -107,7 +107,11 @@ def import_steam(home: str, conf_dir: str, images_dir: str, settings: Dict[str, 
                 continue
 
             if steam_mode=="flatpak":
-                cmd=f'flatpak-spawn --host flatpak run com.valvesoftware.Steam steam -applaunch {appid}'
+                # As it runs on this machine. Whether Sunshine needs it put on
+                # the host is decided once, in run.py: a native Sunshine has no
+                # sandbox to leave, and Ubuntu has no flatpak-spawn outside
+                # one. #49.
+                cmd=f'flatpak run com.valvesoftware.Steam steam -applaunch {appid}'
                 workdir=f"{home}/.var/app/com.valvesoftware.Steam/.local/share/Steam"
             elif os.name == "nt":
                 # Not `steam -applaunch`: there is no `steam` on PATH on Windows,
