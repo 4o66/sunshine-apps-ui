@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>App Manager: sign in to Sunshine</title>
+<title>App Manager: connect to Sunshine</title>
 <link rel="stylesheet" href="app.css">
 </head>
 <body>
@@ -13,13 +13,13 @@
 <a class="gear" href="settings.html"><span class="glyph wide">☰</span>Settings</a>
 </header>
 <main class="main">
-<div class="head"><h1>Sign in to Sunshine</h1></div>
-<p class="muted" style="max-width:48rem;margin:0 0 1.4rem">Applying asks Sunshine to reload, and that needs Sunshine's own user name and password: the ones you set in Sunshine's web page. They are kept on this machine only.</p>
+<div class="head"><h1>Connect to Sunshine</h1></div>
+<p class="muted" style="max-width:48rem;margin:0 0 1.4rem">Applying changes asks Sunshine to reload, which needs the login you use for its web interface at port 47990.</p>
 <form class="fields" method="post" action="/credentials" style="max-width:40rem">
-<div class="field" style="grid-template-columns:9rem 1fr"><label for="u">User name</label><input id="u" type="text" value="sunshine"></div>
-<div class="field" style="grid-template-columns:9rem 1fr"><label for="p">Password</label><input id="p" type="password" value="" autofocus>
-<span class="hint" style="grid-column:2">Choosing a field opens the keyboard.</span></div>
+<div class="field" style="grid-template-columns:9rem 1fr"><label for="u">Username</label><input id="u" type="text" value="sunshine"></div>
+<div class="field" style="grid-template-columns:9rem 1fr"><label for="p">Password</label><input id="p" type="password" value="" autofocus></div>
 </form>
+<p class="muted small" style="max-width:48rem;margin:1.2rem 0 0">Checked against Sunshine before it is stored, so a typo fails here rather than later. Saved to the config directory, readable only by you.</p>
 </main>
 <footer class="bar">
 <a class="btn sec" href="grid.html" data-back><span class="glyph b">B</span>Back</a>

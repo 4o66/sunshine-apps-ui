@@ -13,7 +13,7 @@
 <a class="gear" href="settings.html"><span class="glyph wide">☰</span>Settings</a>
 </header>
 <main class="main">
-<div class="head"><h1>Settings</h1></div>
+<div class="head"><h1>Settings</h1><span class="sub">None of this touches your app list.</span></div>
 <div class="panes">
 <nav class="nav" aria-label="Settings">
 <a href="settings.html">Appearance</a>
@@ -26,11 +26,10 @@
 </nav>
 <div class="pane">
 <h2>Which builds</h2>
-<p>Which releases the update check offers.</p>
 <form method="post" action="/settings/channel"><input type="hidden" name="setting" value="dev_builds">
 <button class="switch" type="submit" name="value" value="1" role="switch" aria-checked="false" autofocus><span class="knob"></span><span class="t"><b>Offer development builds</b><span>Newer, and sometimes broken. Off means only finished releases.</span></span></button></form>
 <form method="post" action="/settings/channel"><input type="hidden" name="setting" value="stable_if_no_newer_dev">
-<button class="switch flat" type="submit" name="value" value="1" role="switch" aria-checked="true" disabled><span class="knob" style="background:var(--primary)"></span><span class="t"><b>Move to the finished release when it is newer</b><span>Only applies while development builds are on.</span></span></button></form>
+<button class="switch on flat" type="submit" name="value" value="0" role="switch" aria-checked="true" disabled><span class="knob"></span><span class="t"><b>Move to the finished release when it is newer</b><span>A release is where a development build was heading, so this leaves you on the finished one rather than stranded on an older preview. Only applies while development builds are on.</span></span></button></form>
 </div>
 </div>
 </main>

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>App Manager: settings</title>
+<title>App Manager: settings: appearance</title>
 <link rel="stylesheet" href="app.css">
 </head>
 <body>
@@ -13,7 +13,7 @@
 <a class="gear" href="settings.html"><span class="glyph wide">☰</span>Settings</a>
 </header>
 <main class="main">
-<div class="head"><h1>Settings</h1></div>
+<div class="head"><h1>Settings</h1><span class="sub">None of this touches your app list.</span></div>
 <div class="panes">
 <nav class="nav" aria-label="Settings">
 <a href="settings.html" class="here">Appearance</a>
@@ -24,22 +24,22 @@
 <a href="settings-updates.html">Updates</a>
 <a href="settings-builds.html">Which builds</a>
 </nav>
-<form class="pane" method="post" action="/settings/appearance">
+<div class="pane">
 <h2>Appearance</h2>
-<p>How the manager looks. It follows the system unless you choose.</p>
-<div class="choices">
-<button class="choice here" name="theme" value="system" autofocus><b>Follow the system</b><span>Dark here now</span></button>
-<button class="choice" name="theme" value="light"><b>Light</b><span>Always</span></button>
-<button class="choice" name="theme" value="dark"><b>Dark</b><span>Always</span></button>
-</div>
+<p>Following the system is the default. On a television, where there is no system to follow, pick the one that suits the room.</p>
+<form class="choices" method="post" action="/settings/theme">
+<button class="choice here" name="theme" value="system" autofocus><b>Follow the system</b></button>
+<button class="choice" name="theme" value="light"><b>Light</b></button>
+<button class="choice" name="theme" value="dark"><b>Dark</b></button>
+</form>
 <h2 style="margin-top:.8rem">Text size</h2>
 <p>Remembered for each device you stream to. This one is <b>Legion Go S</b>.</p>
-<div class="choices">
-<button class="choice" name="size" value="smaller"><b>Smaller</b><span>More on the screen</span></button>
-<button class="choice here" name="size" value="standard"><b>Standard</b><span>Sized to the screen</span></button>
-<button class="choice" name="size" value="larger"><b>Larger</b><span>Easier from a distance</span></button>
-</div>
+<form class="choices" method="post" action="/settings/size">
+<button class="choice" name="size" value="smaller"><b>Smaller</b></button>
+<button class="choice here" name="size" value="standard"><b>Standard</b></button>
+<button class="choice" name="size" value="larger"><b>Larger</b></button>
 </form>
+</div>
 </div>
 </main>
 <footer class="bar">

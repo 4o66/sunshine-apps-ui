@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>App Manager: restoring a copy</title>
+<title>App Manager: cannot save</title>
 <link rel="stylesheet" href="app.css">
 </head>
 <body>
@@ -13,11 +13,11 @@
 <a class="gear" href="settings.html"><span class="glyph wide">☰</span>Settings</a>
 </header>
 <main class="main">
-<div class="head"><h1>12 applications</h1><span class="sub"><code>/var/home/user/.config/sunshine/apps.json</code></span></div>
-<div class="notice warn"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3 2 21h20z"/><path d="M12 10v5M12 18v.5"/></svg><div class="text"><b>Restoring the copy from 26 Sep 2026 at 21:14:03</b><span><b>1</b> would be removed: NIMRODS · <b>1</b> would change: Satisfactory</span><span style="display:block;margin-top:.2rem">Nothing has changed yet. A copy of the current file is taken before this is applied, so this can be undone the same way.</span></div><form method="post" action="/unqueue"><button class="btn sec" type="submit" autofocus>Cancel this restore</button></form></div>
+<div class="head"><h1>12 applications</h1><span class="sub"><code>C:\Program Files\Sunshine\config\apps.json</code></span></div>
+<div class="notice err"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3 2 21h20z"/><path d="M12 10v5M12 18v.5"/></svg><div class="text"><b>Changes cannot be saved</b><span>This is running without administrator rights, and C:\Program Files\Sunshine\config\apps.json belongs to Sunshine's own directory, which only an administrator may write. Sunshine grants those rights to a tile marked “elevated” — but only when it is running as its service and the account is an administrator. Started by hand, or from a standard account, it launches this with your own rights and says so only in its log. Reading, scanning and reloading still work; nothing can be saved.</span></div><form method="post" action="/elevate"><button class="btn" type="submit" autofocus>Run as administrator</button></form></div>
 <div class="grid">
-<a class="tile" href="edit.html"><img class="pic" src="img/desktop-bazzite.png" alt=""><span class="cap">#1 Desktop</span></a>
-<a class="tile" href="edit.html"><img class="pic" src="img/desktop-lowres-bazzite.png" alt=""><span class="cap">#2 Low Res Desktop</span></a>
+<a class="tile" href="edit.html"><img class="pic" src="img/desktop-windows.png" alt=""><span class="cap">#1 Desktop</span></a>
+<a class="tile" href="edit.html"><img class="pic" src="img/desktop-lowres-windows.png" alt=""><span class="cap">#2 Low Res Desktop</span></a>
 <a class="tile" href="edit.html"><img class="pic" src="img/1091500.png" alt=""><span class="cap">Cyberpunk 2077</span></a>
 <a class="tile" href="edit.html"><img class="pic" src="img/1203620.png" alt=""><span class="cap">Enshrouded</span></a>
 <a class="tile" href="edit.html"><img class="pic" src="img/2086430.png" alt=""><span class="cap">NIMRODS</span></a>
@@ -37,8 +37,6 @@
 <a class="btn sec" href="backups.html">Restore a copy</a>
 <a class="btn sec" href="report.html">Report a bug</a>
 <a class="btn sec" href="scanning.html"><span class="glyph x">X</span>Rescan</a>
-<form method="post" action="/discard"><button class="btn sec" type="submit">Discard</button></form>
-<a class="btn" href="confirm.html"><span class="glyph y">Y</span>Apply 1 change</a>
 </footer>
 </body>
 </html>

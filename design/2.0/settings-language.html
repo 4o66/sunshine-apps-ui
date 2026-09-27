@@ -13,7 +13,7 @@
 <a class="gear" href="settings.html"><span class="glyph wide">☰</span>Settings</a>
 </header>
 <main class="main">
-<div class="head"><h1>Settings</h1></div>
+<div class="head"><h1>Settings</h1><span class="sub">None of this touches your app list.</span></div>
 <div class="panes">
 <nav class="nav" aria-label="Settings">
 <a href="settings.html">Appearance</a>
@@ -26,13 +26,14 @@
 </nav>
 <div class="pane">
 <h2>Language</h2>
-<p>Which language the words on the tiles are in. The manager itself is in English for now.</p>
+<p>Which language the words on the tiles are in. The interface itself is English for now; the strings are ready to be translated and a language is a file and a pull request &mdash; <a href="#" style="color:var(--primary)">how to add one</a>.</p>
 <form class="choices" method="post" action="/settings/language">
-<button class="choice here" name="language" value="" autofocus><b>Follow the system</b><span>English here</span></button>
-<button class="choice" name="language" value="en"><b>English</b><span>Always</span></button>
+<button class="choice here" name="language" value="" autofocus><b>Follow the system (English)</b></button>
+<button class="choice" name="language" value="en"><b>English</b></button>
 </form>
-<p>Tiles in English are on this machine. Others arrive with updates.</p>
+<p>Showing English tiles.</p>
 <form method="post" action="/settings/art-check"><button class="btn sec" type="submit">Check for new tile artwork</button></form>
+<p>Looks only at the sets on this machine &mdash; the wordless tiles and any language you have asked for &mdash; and never downloads the others.</p>
 </div>
 </div>
 </main>
