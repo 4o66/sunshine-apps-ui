@@ -115,7 +115,8 @@ border-radius:50%;font-size:.8rem;font-weight:800;background:rgba(0,0,0,.28);col
 .notice{display:flex;align-items:center;gap:1.2rem;padding:1rem 1.3rem;margin:0 0 1.2rem;
 background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg)}
 .notice .text{flex:1}
-.notice .text b{display:block;font-size:1.05rem;margin-bottom:.15rem}
+/* The notice's title only; a bold word inside its text stays in the line. */
+.notice .text > b{display:block;font-size:1.05rem;margin-bottom:.15rem}
 .notice .text span{color:var(--text-muted);font-size:.9rem}
 .notice.warn{border-color:#997404;background:linear-gradient(90deg,rgba(255,193,7,.16),transparent 60%)}
 .notice.err{border-color:#b02a37;background:linear-gradient(90deg,rgba(220,53,69,.16),transparent 60%)}
