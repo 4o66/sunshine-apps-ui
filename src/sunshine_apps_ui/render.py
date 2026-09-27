@@ -2085,7 +2085,7 @@ _ART_SOURCES = [
      "What Valve publishes today. Sometimes older than the copy above: these "
      "addresses are not always refreshed when a game's art changes."),
     ("sgdb", "From SteamGridDB",
-     "Made by other people and voted on, best first. Where to look when a game "
+     "Made by other people, in SteamGridDB's own order. Where to look when a game "
      "has no cover of its own."),
 ]
 
