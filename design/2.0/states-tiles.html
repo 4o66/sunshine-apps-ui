@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>App Manager: tile and control states</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<header class="top">
+<span class="brand">Sunshine</span><span class="sep">/</span><span class="where">App Manager</span>
+<span class="ver">2.0.0</span>
+</header>
+<main class="main">
+<style>
+.srow{display:grid;grid-template-columns:9rem repeat(5,minmax(0,1fr));gap:.8rem 1.4rem;align-items:center;margin:0 0 .8rem}
+.shead .scell{color:var(--text-muted);font-size:.85rem;font-weight:650}
+.slab{color:var(--text-muted);font-size:.85rem}
+.scell{display:flex;align-items:center}
+.sgrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1.4rem 3rem;margin-top:1.2rem}
+.sgrid .wide{grid-column:1/3}
+.sgrid h2{margin:0 0 .8rem}
+.tiles{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:1.1rem;max-width:62rem}
+.glyphs{display:flex;gap:1rem;flex-wrap:wrap;align-items:center}
+.minis{display:flex;gap:1rem;align-items:flex-start}
+.minis .pick{width:6.4rem;flex:0 0 auto}
+</style>
+<div class="head"><h1>Tile, switch and picture states</h1><span class="sub">Status is said in two places: the flag on the picture and the color of the name strip.</span></div>
+<div class="sgrid"><section class="wide"><h2>Tile status</h2>
+<div class="tiles">
+<a class="tile" href="#"><img class="pic" src="img/1091500.png" alt=""><span class="cap">Cyberpunk 2077</span></a>
+<a class="tile new" href="#"><span class="flag">NEW</span><img class="pic" src="img/2086430.png" alt=""><span class="cap">NIMRODS</span></a>
+<a class="tile pending" href="#"><span class="flag">EDITED</span><img class="pic" src="img/satisfactory.png" alt=""><span class="cap">Satisfactory</span></a>
+<a class="tile pending willgo" href="#"><span class="flag">WILL HIDE</span><img class="pic" src="img/1203620.png" alt=""><span class="cap">Enshrouded</span></a>
+<a class="tile ghost" href="#"><span class="flag">NEW QUEUED</span><span class="fallback">Hades II</span><span class="cap">Hades II</span></a>
+<a class="tile hidden" href="#"><span class="flag">HIDDEN</span><img class="pic" src="img/601360.png" alt=""><span class="cap">Portal: Revolution</span></a>
+<a class="tile is-focus" href="#"><img class="pic" src="img/1091500.png" alt=""><span class="cap">Focused</span></a>
+</div></section><section><h2>Switches, choices, pictures</h2>
+<div class="minis">
+<label class="switch" style="width:auto"><input type="checkbox"><span class="knob"></span><span class="t"><b>Off</b></span></label>
+<label class="switch" style="width:auto"><input type="checkbox" checked><span class="knob"></span><span class="t"><b>On</b></span></label>
+<button class="choice" type="button"><b>Choice</b></button>
+<button class="choice here" type="button"><b>Chosen</b></button>
+<a class="pick current" href="#"><img src="img/1091500.png" alt=""><span class="under">In use</span></a>
+<a class="pick is-focus" href="#"><img src="img/cand/0a826b35e23c540e.png" alt=""></a>
+</div></section></div>
+</main>
+<footer class="bar">
+<span class="say">A board of states, not a page of the app</span>
+<span class="grow"></span>
+<a class="btn sec icon gear" href="settings.html" aria-label="Settings"><span class="glyph wide">☰</span><span class="glyph wide">☰</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></a>
+</footer>
+</body>
+</html>

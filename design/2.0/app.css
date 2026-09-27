@@ -53,7 +53,10 @@ html.couch{font-size:clamp(16px,2.2vh,48px)}
 html.desk{font-size:clamp(15px,1.25vw,20px)}
 
 *{box-sizing:border-box}
-body{margin:0;min-height:100vh;background:var(--bg-base);color:var(--text);
+/* Three rows: the title bar, the page, the action bar. Only the page
+   scrolls, so the bars never cover content and the scroll bar runs between
+   them. */
+body{margin:0;height:100vh;display:flex;flex-direction:column;overflow:hidden;background:var(--bg-base);color:var(--text);
 font:1rem/1.45 system-ui,-apple-system,"Segoe UI","Noto Sans",Roboto,"Helvetica Neue",Arial,sans-serif}
 h1{font-size:1.6rem;line-height:1.2;margin:0}
 h2{font-size:1.2rem;line-height:1.25;margin:0}
@@ -68,10 +71,8 @@ code,.mono{font-family:var(--mono);font-size:.9em}
    control and text, so a ring never covers a neighbor. Script adds .pad to
    <html> while a controller is in use, and then shows focus on everything it
    moves to; a mouse user never sees rings they did not ask for. */
-:focus{outline:none}
-:focus-visible,.pad :focus{outline:none;
-box-shadow:0 0 0 .18rem var(--focus-halo),0 0 0 .45rem var(--focus)}
-.top{--focus:#212529;--focus-halo:#ffc400}
+/* The ring itself is at the end of this file, so no later rule (a tile's own
+   shadow, say) can take it away. */
 
 /* ---- Frame: bar at the top, page, action bar at the bottom -------------- */
 /* Only as tall as its words: the name of the thing, not a toolbar. Settings
@@ -82,12 +83,19 @@ background:var(--navbar-bg);box-shadow:var(--shadow-md);position:relative;z-inde
 .top .where{color:var(--navbar-text-muted);font-weight:600;font-size:1.05rem}
 .top .sep{color:var(--navbar-text-muted)}
 .top .ver{margin-left:auto;color:var(--navbar-text-muted);font-family:var(--mono);font-size:.8rem}
-.main{padding:1.4rem 2.5rem 7.5rem}
+.top,.bar{flex:0 0 auto}
+.main{flex:1 1 auto;min-height:0;overflow-y:auto;padding:1.4rem 2.5rem 1.6rem}
+/* A scroll bar you cannot miss whenever there is more below: a page that is
+   nearly the height of the screen must not look like all there is. Shown only
+   when the page is taller than the space. */
+.main::-webkit-scrollbar{width:1.1rem}
+.main::-webkit-scrollbar-track{background:var(--bg-muted);border-left:1px solid var(--border-strong)}
+.main::-webkit-scrollbar-thumb{background:var(--text);border-radius:999px;border:.25rem solid var(--bg-muted);min-height:3rem}
 .head{display:flex;align-items:flex-end;gap:1.2rem;margin:0 0 1.2rem}
 .head .sub{color:var(--text-muted);font-size:.9rem;padding-bottom:.2rem}
 /* The action bar is outside every scroll region, always at the bottom, and its
    right-hand button is the next thing to do. */
-.bar{position:fixed;left:0;right:0;bottom:0;z-index:2;display:flex;align-items:center;gap:1rem;
+.bar{position:relative;z-index:2;display:flex;align-items:center;gap:1rem;
 height:5rem;padding:0 2.5rem;background:var(--surface);border-top:1px solid var(--border);
 box-shadow:0 -4px 12px -6px rgba(0,0,0,.35)}
 .bar .say{color:var(--text-muted);font-size:.95rem}
@@ -96,11 +104,9 @@ box-shadow:0 -4px 12px -6px rgba(0,0,0,.35)}
 .bar{gap:.75rem}
 .bar .btn{padding:.45rem 1rem}
 .bar .grow{flex:1}
-/* Settings: always the last thing in the bar, a gear. Icon only, so it
-   costs the bar little width; its name is for screen readers and the Menu
-   glyph says which button reaches it. */
-.btn.gear{padding:.45rem .8rem;margin-left:.2rem}
-.btn.gear svg{width:1.6rem;height:1.6rem;display:block}
+/* Settings: a gear at the end of the bar (Report a bug, a bug, after it on
+   the grid). The Menu glyph says which button reaches it. */
+.btn.gear{margin-left:.2rem}
 
 /* ---- Buttons ------------------------------------------------------------ */
 .btn{display:inline-flex;align-items:center;justify-content:center;gap:.55rem;
@@ -111,14 +117,28 @@ background:var(--primary);color:#fff;border:2px solid var(--primary);white-space
 .btn.danger{background:transparent;color:#ff6b78;border-color:#b02a37}
 :root[data-theme="light"] .btn.danger{color:#b02a37}
 .btn.flat{opacity:.45;cursor:default}
+/* States. The label keeps its color in every state; what changes is the
+   fill. Focus from a controller or keyboard adds the ring as well. The
+   .is-* classes draw a state on the states board only. */
+.btn:hover,.btn:focus-visible,.pad .btn:focus,.btn.is-focus,.btn.is-hover{background:var(--primary-hover);border-color:var(--primary-hover)}
+.btn.sec:hover,.btn.sec:focus-visible,.pad .btn.sec:focus,.btn.sec.is-focus,.btn.sec.is-hover{background:var(--bg-muted);border-color:var(--text-muted)}
+.btn.danger:hover,.btn.danger:focus-visible,.pad .btn.danger:focus,.btn.danger.is-focus,.btn.danger.is-hover{background:rgba(220,53,69,.24);border-color:#dc3545}
+.btn:active,.btn.is-active{filter:brightness(.88);transform:translateY(1px)}
+.btn.flat:hover,.btn.flat.is-hover{background:transparent;border-color:var(--border-strong)}
+/* Icon-only buttons at the end of a bar: Settings, and Report a bug on the
+   grid. Their names are for screen readers. */
+.btn.icon{padding:.45rem .8rem}
+.btn.icon svg{width:1.6rem;height:1.6rem;display:block}
 /* Controller glyphs, shown only while a controller is in use. */
-.glyph{display:none;align-items:center;justify-content:center;width:1.55rem;height:1.55rem;
-border-radius:50%;font-size:.8rem;font-weight:800;background:rgba(0,0,0,.28);color:#fff;flex:0 0 auto}
-.btn.sec .glyph,.btn.danger .glyph{background:var(--bg-muted);color:var(--text)}
+.glyph{display:none;align-items:center;justify-content:center;width:1.6rem;height:1.6rem;
+border-radius:50%;font-size:.8rem;font-weight:800;background:transparent;color:inherit;
+border:.16rem solid currentColor;flex:0 0 auto}
+/* The letter is always the label's color; the ring carries the controller's
+   color, so a Y reads the same on a blue button and on a clear one. */
 .pad .glyph{display:inline-flex}
-.glyph.y{background:#e0a800;color:#1a1a1a}.glyph.x{background:#0b5ed7;color:#fff}
-.glyph.b{background:#b02a37;color:#fff}.glyph.a{background:#198754;color:#fff}
-.glyph.wide{width:auto;padding:0 .45rem;border-radius:.4rem}
+.glyph.y{border-color:#ffc400}.glyph.x{border-color:#3d8bfd}
+.glyph.b{border-color:#ff6b78}.glyph.a{border-color:#2fb36a}
+.glyph.wide{width:auto;padding:0 .4rem;border-radius:.4rem}
 
 /* ---- Notices ------------------------------------------------------------ */
 .notice{display:flex;align-items:center;gap:1.2rem;padding:1rem 1.3rem;margin:0 0 1.2rem;
@@ -141,16 +161,24 @@ background:var(--surface);box-shadow:var(--shadow-sm)}
 border-radius:var(--radius-lg) var(--radius-lg) 0 0;background:var(--bg-muted)}
 .tile .cap{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;
 padding:.45rem .6rem .55rem;font-size:.85rem;font-weight:620;line-height:1.25;min-height:3.1rem}
+/* The flag sits on the picture, so it carries its own dark edge and shadow
+   to read on any artwork. The name strip under the picture is colored by the
+   same status, so the state is never only on the picture. */
 .tile .flag{position:absolute;top:.45rem;left:.45rem;padding:.12rem .5rem;border-radius:999px;
-font-size:.8rem;font-weight:800;letter-spacing:.03em;background:var(--success);color:#fff}
-.tile.pending .flag{background:var(--warning);color:var(--flag-text)}
+font-size:.8rem;font-weight:800;letter-spacing:.03em;background:#146c43;color:#fff;
+box-shadow:0 0 0 .14rem rgba(0,0,0,.8),0 .25rem .6rem rgba(0,0,0,.55)}
+.tile.pending .flag,.tile.ghost .flag{background:#8c5a00;color:#fff}
+.tile.hidden .flag{background:#495057;color:#fff}
+.tile .cap{border-radius:0 0 var(--radius-lg) var(--radius-lg)}
+.tile.new .cap{background:#146c43;color:#fff}
+.tile.pending .cap,.tile.ghost .cap{background:#8c5a00;color:#fff}
+.tile.hidden .cap{background:#495057;color:#fff}
 .tile.willgo .pic{filter:grayscale(1);opacity:.4}
 .tile.hidden{background:transparent;box-shadow:none;outline:2px dashed var(--border-strong);outline-offset:-2px}
 .tile.hidden .pic{filter:grayscale(1);opacity:.3}
 /* Queued to be added, not yet in Sunshine: an outline of a tile. */
 .tile.ghost{background:transparent;box-shadow:none;border:2px dashed var(--warning)}
 .tile.ghost .pic{opacity:.55}
-.tile.ghost .flag{background:var(--warning);color:var(--flag-text)}
 .tile .fallback{display:flex;align-items:center;justify-content:center;width:100%;aspect-ratio:2/3;padding:.8rem;
 text-align:center;font-weight:650;color:var(--text-muted);background:var(--bg-muted);border-radius:var(--radius-lg) var(--radius-lg) 0 0}
 .tile.add{display:flex;align-items:center;justify-content:center;flex-direction:column;gap:.5rem;
@@ -171,6 +199,9 @@ input[type=text],input[type=password],input[type=search],select{font:inherit;fon
 background:var(--bg-subtle);border:2px solid var(--border);border-radius:var(--radius-md);
 height:2.9rem;padding:0 .85rem;width:100%;min-width:0}
 input[readonly]{color:var(--text-muted);border-style:dashed}
+/* A field with a button at its end: Show on a password. */
+.withbtn{display:flex;gap:.6rem;align-items:center}
+.withbtn input{flex:1}
 .switch{display:flex;align-items:center;gap:1rem;padding:.7rem 1rem;border-radius:var(--radius-md);
 background:var(--bg-subtle);border:2px solid var(--border);cursor:pointer;text-align:left;width:100%;
 font:inherit;color:var(--text)}
@@ -202,13 +233,17 @@ box-shadow:0 0 0 .18rem var(--focus-halo),0 0 0 .45rem var(--focus)}
 .source{margin:0 0 1.4rem}
 .source h2{display:flex;align-items:baseline;gap:.8rem;margin:0 0 .7rem}
 .source h2 .n{color:var(--text-muted);font-size:.9rem;font-weight:500}
-.row{display:grid;grid-auto-flow:column;grid-auto-columns:calc((100% - 8 * 1.1rem) / 9);gap:1.1rem;overflow:hidden}
+/* Not overflow:hidden: that cut the focus ring off the picture. The server
+   sends only as many as fit. */
+.row{display:grid;grid-auto-flow:column;grid-auto-columns:calc((100% - 8 * 1.1rem) / 9);gap:1.1rem;align-items:start}
 .pick{display:block;position:relative;border-radius:var(--radius-lg);text-decoration:none;color:inherit}
 .pick img{display:block;width:100%;aspect-ratio:2/3;object-fit:cover;border-radius:var(--radius-lg);background:var(--bg-muted)}
 .pick .tag{position:absolute;left:.45rem;bottom:.45rem;padding:.1rem .45rem;border-radius:.4rem;
 font-size:.8rem;font-weight:700;background:rgba(0,0,0,.72);color:#fff}
-.pick.current::after{content:"In use";position:absolute;top:.45rem;left:.45rem;padding:.1rem .5rem;
-border-radius:999px;font-size:.8rem;font-weight:800;background:var(--success);color:#fff}
+/* Said under the picture, not on it, where artwork of the same color would
+   swallow it. */
+.pick .under{display:block;margin-top:.45rem;padding:.12rem .4rem;border-radius:.4rem;text-align:center;
+font-size:.8rem;font-weight:800;letter-spacing:.02em;background:#146c43;color:#fff}
 .more{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:.35rem;aspect-ratio:2/3;
 border-radius:var(--radius-lg);border:2px dashed var(--border-strong);color:var(--text);text-decoration:none;
 font-weight:650;text-align:center;padding:.8rem}
@@ -260,10 +295,17 @@ font:inherit;color:var(--text);text-align:left;cursor:pointer}
 .choice:has(input:focus-visible),.pad .choice:has(input:focus){
 box-shadow:0 0 0 .18rem var(--focus-halo),0 0 0 .45rem var(--focus)}
 .choices.four{grid-template-columns:repeat(4,minmax(0,1fr))}
+.choices.three{grid-template-columns:repeat(3,minmax(0,1fr))}
+.choices.tight .choice span{font-size:.8rem}
+/* A number without typing: minus, the value, plus. The field still takes
+   typing from a keyboard. */
+.stepper{grid-column:2/4;display:flex;align-items:center;gap:.8rem;margin-top:.8rem}
+.stepper input{width:6rem;text-align:center}
+.stepper .btn{min-width:3rem;font-size:1.3rem}
 .choices.tight .choice{padding:.6rem .9rem;align-items:center}
 
 /* ---- Middle-of-the-screen messages (applied, closing, scanning, errors) ---- */
-.center{min-height:calc(100vh - var(--top-h) - 5rem);display:flex;flex-direction:column;align-items:center;
+.center{flex:1 1 auto;min-height:0;display:flex;flex-direction:column;align-items:center;
 justify-content:center;gap:1.1rem;text-align:center;padding:2rem 2.5rem}
 .center h1{font-size:2rem}
 .center p{color:var(--text-muted);max-width:40rem}
@@ -276,6 +318,11 @@ animation:spin 1s linear infinite}
 .facts{display:grid;grid-template-columns:auto 1fr;gap:.4rem 1.4rem;text-align:left;font-size:.95rem}
 .facts dt{color:var(--text-muted)}
 .facts dd{margin:0;font-family:var(--mono);font-size:.9rem}
+
+/* A log, shown before it is shared. What was taken out is in italics. */
+.log{margin:0;padding:1rem 1.2rem;background:var(--bg-subtle);border:1px solid var(--border);border-radius:var(--radius-md);
+font-family:var(--mono);font-size:.85rem;line-height:1.55;white-space:pre-wrap;overflow-wrap:anywhere}
+.log i{font-style:normal;background:rgba(255,193,7,.22);border-radius:.2rem;padding:0 .15rem}
 
 /* ---- On-screen keyboard ------------------------------------------------------
    Drawn in the page, over its lower half, when a text field is chosen with a
@@ -298,3 +345,11 @@ background:var(--surface);border:1px solid var(--border);font:inherit;font-size:
 .osk .help{display:flex;gap:1.6rem;justify-content:flex-end;color:var(--text-muted);font-size:.85rem}
 .osk .help span{display:inline-flex;align-items:center;gap:.45rem}
 .osk .help .glyph{display:inline-flex}
+
+/* ---- The focus ring, last so that it wins -------------------------------- */
+:focus{outline:none}
+:focus-visible,.pad :focus,.is-focus{outline:none;
+box-shadow:0 0 0 .18rem var(--focus-halo),0 0 0 .45rem var(--focus)}
+.switch:has(input:focus-visible),.pad .switch:has(input:focus),
+.choice:has(input:focus-visible),.pad .choice:has(input:focus){
+box-shadow:0 0 0 .18rem var(--focus-halo),0 0 0 .45rem var(--focus)}

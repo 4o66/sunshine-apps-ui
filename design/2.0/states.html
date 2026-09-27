@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>App Manager: states</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<header class="top">
+<span class="brand">Sunshine</span><span class="sep">/</span><span class="where">App Manager</span>
+<span class="ver">2.0.0</span>
+</header>
+<main class="main">
+<style>
+.srow{display:grid;grid-template-columns:9rem repeat(5,minmax(0,1fr));gap:.8rem 1.4rem;align-items:center;margin:0 0 .8rem}
+.shead .scell{color:var(--text-muted);font-size:.85rem;font-weight:650}
+.slab{color:var(--text-muted);font-size:.85rem}
+.scell{display:flex;align-items:center}
+.sgrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1.4rem 3rem;margin-top:1.2rem}
+.sgrid .wide{grid-column:1/3}
+.sgrid h2{margin:0 0 .8rem}
+.tiles{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:1.1rem;max-width:62rem}
+.glyphs{display:flex;gap:1rem;flex-wrap:wrap;align-items:center}
+.minis{display:flex;gap:1rem;align-items:flex-start}
+.minis .pick{width:6.4rem}
+</style>
+<div class="head"><h1>Button and control states</h1><span class="sub">The label keeps its color in every state; the fill changes, and focus adds the ring.</span></div>
+<div class="srow shead"><span class="slab"></span><span class="scell">Normal</span><span class="scell">Mouse over</span><span class="scell">Focused (controller, keyboard)</span><span class="scell">Pressed</span><span class="scell">Off</span></div>
+<div class="srow"><span class="slab">Main action</span><span class="scell"><a class="btn " href="#"><span class="glyph y">Y</span>Apply</a></span><span class="scell"><a class="btn  is-hover" href="#"><span class="glyph y">Y</span>Apply</a></span><span class="scell"><a class="btn  is-focus" href="#"><span class="glyph y">Y</span>Apply</a></span><span class="scell"><a class="btn  is-active is-hover" href="#"><span class="glyph y">Y</span>Apply</a></span><span class="scell"><span class="btn  flat"><span class="glyph y">Y</span>Apply</span></span></div>
+<div class="srow"><span class="slab">Other actions</span><span class="scell"><a class="btn sec" href="#">Restore</a></span><span class="scell"><a class="btn sec is-hover" href="#">Restore</a></span><span class="scell"><a class="btn sec is-focus" href="#">Restore</a></span><span class="scell"><a class="btn sec is-active is-hover" href="#">Restore</a></span><span class="scell"><span class="btn sec flat">Restore</span></span></div>
+<div class="srow"><span class="slab">Destructive</span><span class="scell"><a class="btn danger" href="#">Delete</a></span><span class="scell"><a class="btn danger is-hover" href="#">Delete</a></span><span class="scell"><a class="btn danger is-focus" href="#">Delete</a></span><span class="scell"><a class="btn danger is-active is-hover" href="#">Delete</a></span><span class="scell"><span class="btn danger flat">Delete</span></span></div>
+<div class="srow"><span class="slab">Icon buttons</span><span class="scell"><a class="btn sec icon" href="#" aria-label="Settings"><span class="glyph wide">☰</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></a></span><span class="scell"><a class="btn sec icon is-hover" href="#" aria-label="Settings"><span class="glyph wide">☰</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></a></span><span class="scell"><a class="btn sec icon is-focus" href="#" aria-label="Settings"><span class="glyph wide">☰</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></a></span><span class="scell"><a class="btn sec icon is-active is-hover" href="#" aria-label="Settings"><span class="glyph wide">☰</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></a></span><span class="scell"><span class="btn sec icon flat" aria-label="Settings"><span class="glyph wide">☰</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></span></span></div>
+<div class="sgrid"><section><h2>Controller glyphs</h2>
+<div class="glyphs pad-demo">
+<a class="btn" href="#"><span class="glyph a" style="display:inline-flex">A</span>Choose</a>
+<a class="btn sec" href="#"><span class="glyph b" style="display:inline-flex">B</span>Back</a>
+<a class="btn sec" href="#"><span class="glyph x" style="display:inline-flex">X</span>Rescan</a>
+<a class="btn" href="#"><span class="glyph y" style="display:inline-flex">Y</span>Apply</a>
+<a class="btn sec" href="#"><span class="glyph wide" style="display:inline-flex">LB</span>Back</a>
+<a class="btn sec" href="#"><span class="glyph wide" style="display:inline-flex">RB</span>Next</a>
+</div>
+<p class="muted small" style="margin-top:.7rem">Shown only while a controller is in use. The ring is the controller's color; the letter is the label's.</p>
+</section></div>
+</main>
+<footer class="bar">
+<span class="say">A board of states, not a page of the app</span>
+<span class="grow"></span>
+<a class="btn sec icon gear" href="settings.html" aria-label="Settings"><span class="glyph wide">☰</span><span class="glyph wide">☰</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></a>
+</footer>
+</body>
+</html>

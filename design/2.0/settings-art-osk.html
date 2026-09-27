@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>App Manager: settings: community artwork</title>
+<title>App Manager: typing the SteamGridDB key</title>
 <link rel="stylesheet" href="app.css">
 </head>
 <body>
@@ -28,7 +28,7 @@
 <div style="display:flex;gap:2rem;align-items:center">
 <div class="qr"><img src="img/qr-sgdb.svg" alt="QR code for the SteamGridDB key page"></div>
 <form style="display:flex;flex-direction:column;gap:1rem;flex:1" method="post" action="/settings/sgdb-key">
-<input type="password" name="sgdb-key" placeholder="API key" aria-label="SteamGridDB API key" autofocus>
+<input type="password" name="sgdb-key" placeholder="API key" aria-label="SteamGridDB API key">
 <div><button class="btn sec" type="submit">Save the key</button></div>
 </form>
 </div>
@@ -40,5 +40,12 @@
 <span class="grow"></span>
 <span class="btn sec icon gear flat" aria-label="Settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></span>
 </footer>
+<div class="veil"></div>
+<div class="osk" role="dialog" aria-label="Keyboard for the SteamGridDB key">
+<div class="entry"><label>Key</label><div class="value mono">3f9a0c7e41b2<span class="caret"></span></div><span class="muted small">12 of 32</span></div>
+<p class="muted small" style="margin:0">SteamGridDB keys are letters a to f and digits. If yours has anything else, Full keyboard has every letter.</p>
+<div class="keys"><button class="key" type="button">1</button><button class="key" type="button">2</button><button class="key" type="button">3</button><button class="key" type="button">4</button><button class="key" type="button">5</button><button class="key" type="button">6</button><button class="key" type="button" autofocus>7</button><button class="key" type="button">8</button><button class="key" type="button">9</button><button class="key" type="button">0</button><button class="key dim w2" type="button">⌫ Delete</button><button class="key" type="button">a</button><button class="key" type="button">b</button><button class="key" type="button">c</button><button class="key" type="button">d</button><button class="key" type="button">e</button><button class="key" type="button">f</button><button class="key dim w3" type="button">Full keyboard</button><button class="key go w3" type="button">Done</button></div>
+<div class="help"><span><span class="glyph a">A</span>Type</span><span><span class="glyph x">X</span>Delete</span><span><span class="glyph wide">LB RB</span>Move the cursor</span><span><span class="glyph wide">☰</span>Done</span><span><span class="glyph b">B</span>Cancel</span></div>
+</div>
 </body>
 </html>

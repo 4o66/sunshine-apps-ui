@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>App Manager: share the log</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<header class="top">
+<span class="brand">Sunshine</span><span class="sep">/</span><span class="where">App Manager</span>
+<span class="ver">2.0.0</span>
+</header>
+<main class="main">
+<div class="head"><h1>Share the log</h1><span class="sub">This is everything that would be sent.</span></div>
+<div class="notice"><div class="text"><b>Taken out before sending</b><span>The session token, your user name and home folder (shown as ~), this machine's name and addresses, and your SteamGridDB key. Nothing else is changed.</span></div></div>
+<pre class="log">20:31:02 WARNING Sunshine config: <i>~</i>/.config/sunshine
+20:31:02 WARNING launcher: window started (WebKitGTK 2.54)
+20:31:07 WARNING http://127.0.0.1:47999/?token=<i>[removed]</i>
+20:32:14 WARNING scan: steam: 7 found
+20:32:15 WARNING scan: heroic: library not found at <i>~</i>/.config/heroic
+20:33:40 ERROR apply: Sunshine did not answer at https://localhost:47990: connection refused</pre>
+<p class="muted" style="margin-top:1rem;max-width:56rem">It goes to <b>dpaste.com</b>, a public paste service: anyone with the link can read it, and it is deleted after 7 days. Once sent it cannot be taken back. Nothing is sent until you choose Send.</p>
+</main>
+<footer class="bar">
+<a class="btn sec" href="report.html" data-back autofocus><span class="glyph b">B</span>Back</a>
+<span class="grow"></span>
+<a class="btn" href="report-shared.html"><span class="glyph y">Y</span>Send</a>
+<a class="btn sec icon gear" href="settings.html" aria-label="Settings"><span class="glyph wide">☰</span><span class="glyph wide">☰</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></a>
+</footer>
+</body>
+</html>
