@@ -131,13 +131,14 @@ background:var(--primary);color:#fff;border:2px solid var(--primary);white-space
 .btn.icon svg{width:1.6rem;height:1.6rem;display:block}
 /* Controller glyphs, shown only while a controller is in use. */
 .glyph{display:none;align-items:center;justify-content:center;width:1.6rem;height:1.6rem;
-border-radius:50%;font-size:.8rem;font-weight:800;background:transparent;color:inherit;
-border:.16rem solid currentColor;flex:0 0 auto}
-/* The letter is always the label's color; the ring carries the controller's
-   color, so a Y reads the same on a blue button and on a clear one. */
+border-radius:50%;font-size:.8rem;font-weight:800;color:#fff;background:#495057;flex:0 0 auto;
+box-shadow:0 0 0 .1rem rgba(0,0,0,.25)}
+/* A solid disc in the controller button's color, always with a white
+   letter, whatever button it sits on. Y is a deeper gold than the pad's so
+   the white letter still reads. */
 .pad .glyph{display:inline-flex}
-.glyph.y{border-color:#ffc400}.glyph.x{border-color:#3d8bfd}
-.glyph.b{border-color:#ff6b78}.glyph.a{border-color:#2fb36a}
+.glyph.a{background:#198754}.glyph.b{background:#c82333}
+.glyph.x{background:#0b5ed7}.glyph.y{background:#a77b00}
 .glyph.wide{width:auto;padding:0 .4rem;border-radius:.4rem}
 
 /* ---- Notices ------------------------------------------------------------ */
