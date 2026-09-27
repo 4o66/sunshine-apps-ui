@@ -7,12 +7,16 @@ writes them into Sunshine's `apps.json` — and it does that from a window you
 open **through Moonlight, on the television you are already looking at**. No
 SSH, no editing JSON on a laptop in another room.
 
-> **Controllers are the goal, not yet the reality.** The aim is for the whole
-> manager to be driven with a game controller. Today it cannot be: the d-pad
-> and sticks do nothing
-> ([issue #32](https://github.com/4o66/sunshine-apps-ui/issues/32)).
-> **Use a mouse and keyboard for now** — Moonlight passes both through, and
-> they work at the machine itself. A touch screen works too.
+> **Full controller support is coming in 2.0.** Today's interface was laid
+> out for a desk, and a controller cannot really drive it
+> ([issue #32](https://github.com/4o66/sunshine-apps-ui/issues/32)). 2.0 is a
+> new interface, designed for a controller at TV and handheld distance, with
+> text that scales to the screen and an on-screen keyboard. It will still work
+> fully with a mouse, keyboard or touch screen. It is being designed now
+> ([2.0 milestone](https://github.com/4o66/sunshine-apps-ui/milestone/1),
+> [issue #56](https://github.com/4o66/sunshine-apps-ui/issues/56)).
+> **Until then, use a mouse and keyboard.** Moonlight passes both through,
+> and they work at the machine itself. A touch screen works too.
 
 ![The grid](docs/images/grid.png)
 
@@ -91,7 +95,7 @@ filled the screen, and was closed both from inside it and from Moonlight.
   `apps.json` is the same, but most of them are not found where they install,
   and some of their web interfaces refuse Sunshine's kind of sign-in.
 
-On every platform, a controller does not work yet (see the note at the top).
+On every platform, a controller cannot really drive it until 2.0 (see the note at the top).
 Up to 1.3.0, pointing at a link showed its address with the session's sign-in
 token in it, on screen and in the stream
 ([issue #55](https://github.com/4o66/sunshine-apps-ui/issues/55)). From 1.4 the
