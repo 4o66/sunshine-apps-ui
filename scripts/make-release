@@ -42,8 +42,28 @@ def version() -> str:
     return v.version()
 
 
+# Written fresh for each archive, never copied from the tree. The tree's copy
+# is whatever the last install or deploy stamped there -- 1.3.0 shipped one
+# saying build 122, the commit before the release, dirty -- and an install
+# from the archive carries it on, so every copy reported the wrong commit.
+BUILD_STAMP = os.path.join("src", "sunshine_apps_ui", "_build.py")
+
+
+def fresh_stamp() -> str:
+    """A _build.py describing the commit being packaged, in a scratch dir."""
+    import tempfile
+    sys.path.insert(0, os.path.join(ROOT, "src"))
+    from sunshine_apps_ui.installer import stamp_build
+
+    scratch = tempfile.mkdtemp(prefix="sau-stamp-")
+    if not stamp_build(scratch):
+        raise SystemExit("Could not write a build stamp: is this a git checkout?")
+    return os.path.join(scratch, "_build.py")
+
+
 def members():
     """Every file to ship, as (absolute path, path inside the archive)."""
+    yield fresh_stamp(), BUILD_STAMP
     for item in INCLUDE:
         origin = os.path.join(ROOT, item)
         if os.path.isfile(origin):
@@ -57,6 +77,8 @@ def members():
                 if name.endswith(".local.md") or name.endswith(".draft.md"):
                     continue
                 path = os.path.join(base, name)
+                if os.path.relpath(path, ROOT) == BUILD_STAMP:
+                    continue                  # see BUILD_STAMP
                 yield path, os.path.relpath(path, ROOT)
 
 
@@ -87,10 +109,15 @@ def main(argv=None):
     args = parser.parse_args(argv)
 
     tag = args.tag or version()
-    if "+" in tag:
-        print("Refusing to build from a dirty tree: the version says %r, which "
-              "means uncommitted changes. Commit first, so the archive and the "
-              "tag describe the same thing." % tag, file=sys.stderr)
+    # Asked of git, not read off the version: the version carries a "+" for a
+    # build off a branch of its own, never for uncommitted changes, so this
+    # check used to pass on any tree at all.
+    sys.path.insert(0, os.path.join(ROOT, "src"))
+    from sunshine_apps_ui import version as v
+    if v.details(refresh=True).get("dirty"):
+        print("Refusing to build from a dirty tree: there are uncommitted "
+              "changes. Commit first, so the archive and the tag describe the "
+              "same thing.", file=sys.stderr)
         return 2
 
     files, zip_path, tar_path = build(tag)
