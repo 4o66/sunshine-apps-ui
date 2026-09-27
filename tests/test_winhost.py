@@ -51,6 +51,13 @@ class ShippedSourceTest(unittest.TestCase):
         source = open(winhost.source_path(), encoding="utf-8").read()
         self.assertIn("0x21, 0x25, 0x29", source)
 
+    def test_it_takes_the_foreground_only_when_streamed(self):
+        """Streamed, it must be in front (#53); at the machine, it must not snatch focus."""
+        source = open(winhost.source_path(), encoding="utf-8").read()
+        self.assertIn("if (fullscreen) ComeForward();", source)
+        self.assertEqual(source.count("ComeForward();"), 1,
+                         "ComeForward is called somewhere other than the streamed case")
+
 
 class PinnedArtifactTest(unittest.TestCase):
     def test_the_sdk_is_pinned_by_hash(self):

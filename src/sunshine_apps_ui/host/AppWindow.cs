@@ -36,6 +36,7 @@ using System;
 using System.Diagnostics;
 using System.Drawing;
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Windows.Forms;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.WinForms;
@@ -107,10 +108,43 @@ class AppWindow {
         // Source before Application.Run gets the control's handle recreated
         // underneath it, and WebView2 fails with ERROR_INVALID_WINDOW_HANDLE
         // (0x80070578) -- which is exactly what the first build did.
-        form.Shown += delegate { view.Source = new Uri(url); };
+        form.Shown += delegate {
+            if (fullscreen) ComeForward();
+            view.Source = new Uri(url);
+        };
 
         Application.Run(form);
         return 0;
+    }
+
+    [DllImport("user32.dll")] static extern IntPtr GetForegroundWindow();
+    [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr hwnd, IntPtr pid);
+    [DllImport("kernel32.dll")] static extern uint GetCurrentThreadId();
+    [DllImport("user32.dll")] static extern bool AttachThreadInput(uint from, uint to, bool attach);
+    [DllImport("user32.dll")] static extern bool SetForegroundWindow(IntPtr hwnd);
+    [DllImport("user32.dll")] static extern bool BringWindowToTop(IntPtr hwnd);
+
+    /// <summary>Take the foreground from whatever holds it.</summary>
+    /// Streamed, this window is what the stream is for. But it is started by
+    /// the de-elevated helper, through the task scheduler, and Windows refuses
+    /// the foreground to a process like that while another program has it:
+    /// the window opened behind Firefox, and the stream showed Firefox (#53).
+    /// Sharing the input state of the foreground window's thread for the length
+    /// of the call is what lets the request through. Streamed only -- at the
+    /// machine, a window that snatches focus from what you are typing in is
+    /// exactly the thing Windows is protecting against.
+    static void ComeForward() {
+        IntPtr front = GetForegroundWindow();
+        uint theirs = front == IntPtr.Zero ? 0 : GetWindowThreadProcessId(front, IntPtr.Zero);
+        uint ours = GetCurrentThreadId();
+        bool attached = theirs != 0 && theirs != ours && AttachThreadInput(ours, theirs, true);
+        try {
+            BringWindowToTop(form.Handle);
+            SetForegroundWindow(form.Handle);
+            form.Activate();
+        } finally {
+            if (attached) AttachThreadInput(ours, theirs, false);
+        }
     }
 
     /// <summary>Is there a runtime, and can the loader find it?</summary>
