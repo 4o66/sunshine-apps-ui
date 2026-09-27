@@ -55,7 +55,8 @@ filled the screen, and was closed both from inside it and from Moonlight.
   Moonlight on the maintainer's own machine since 2026-09-13. Every way the
   window opens (our own window, the Chrome and Firefox Flatpaks, and falling
   back to a browser when our window fails) checked on a Bazzite test machine,
-  2026-09-25. *Not yet re-checked with the changes in 1.3.*
+  2026-09-25. Re-checked with the 1.4 development build, 2026-09-26: our own
+  window; Connect, Rescan, Apply; from Moonlight.
 - **Ubuntu 26.04 LTS** (GNOME, Wayland) — **supported**. Stock desktop,
   2026-09-26/27: install; our own window; Connect, Rescan, Apply, rename, hide,
   restore a copy, Settings and the tile language; Steam installed as a snap;
@@ -73,8 +74,10 @@ filled the screen, and was closed both from inside it and from Moonlight.
 - **Windows 11** — **supported**. On a test machine, as a normal account with
   administrator rights, 2026-09-19 to 2026-09-26: the installer (it brings its
   own Python); our own WebView2 window, started elevated the way Sunshine starts
-  it, against a real Sunshine; the full test suite. *Not yet opened from a real
-  Moonlight stream.*
+  it, against a real Sunshine; the full test suite. From Moonlight, 2026-09-26.
+  Up to 1.3.0 the window could open behind another program that was already
+  in front ([issue #53](https://github.com/4o66/sunshine-apps-ui/issues/53),
+  fixed for 1.4).
 - **Debian 13, Arch Linux** — **engine tested, desktop not**. The full test
   suite on test machines with no display, 2026-09-15. The window has not been
   tried in a desktop session on either.
@@ -299,7 +302,7 @@ chance you wanted one.
 | Decisions and their reasons | [docs/backlog.md](docs/backlog.md) |
 | How this was built, and how it was tested | [docs/ai-usage.md](docs/ai-usage.md) |
 
-## Licence
+## License
 
 The program is **GPL-3.0-or-later**. See [LICENSE](LICENSE).
 
@@ -312,7 +315,7 @@ full, and [docs/tile-art.md](docs/tile-art.md) records how each is used.
 The three-cover mark, the monitor, the reboot arrow, the Windows panes, and
 every tile background. GPL-3.0-or-later, like the rest.
 
-### Artwork under a compatible licence
+### Artwork under a compatible license
 
 | | from | terms |
 |---|---|---|
