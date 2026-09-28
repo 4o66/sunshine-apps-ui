@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>App Manager: un-hide waiting</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<header class="top">
+<span class="brand">Sunshine</span><span class="sep">/</span><span class="where">App Manager</span>
+<span class="ver">2.0.0</span>
+</header>
+<main class="main">
+<div class="head"><h1>12 applications</h1><span class="sub"><code>/var/home/user/.config/sunshine/apps.json</code></span></div>
+<div class="grid">
+<a class="tile" href="edit.html"><img class="pic" src="img/desktop-bazzite.png" alt=""><span class="cap">#1 Desktop</span></a>
+<a class="tile" href="edit.html"><img class="pic" src="img/desktop-lowres-bazzite.png" alt=""><span class="cap">#2 Low Res Desktop</span></a>
+<a class="tile" href="edit.html"><img class="pic" src="img/1091500.png" alt=""><span class="cap">Cyberpunk 2077</span></a>
+<a class="tile" href="edit.html"><img class="pic" src="img/1203620.png" alt=""><span class="cap">Enshrouded</span></a>
+<a class="tile new" href="edit.html"><span class="flag">NEW</span><img class="pic" src="img/2086430.png" alt=""><span class="cap">NIMRODS</span></a>
+<a class="tile pending" href="edit-unhidden.html" autofocus><span class="flag">WILL UN-HIDE</span><img class="pic" src="img/601360.png" alt=""><span class="cap">Portal: Revolution</span></a>
+<a class="tile pending" href="edit.html"><span class="flag">EDITED</span><img class="pic" src="img/satisfactory.png" alt=""><span class="cap">Satisfactory</span></a>
+<a class="tile" href="edit.html"><img class="pic" src="img/app-manager.png" alt=""><span class="cap">Zz App Manager</span></a>
+<a class="tile" href="edit.html"><img class="pic" src="img/heroic.png" alt=""><span class="cap">Zz Heroic</span></a>
+<a class="tile" href="edit.html"><img class="pic" src="img/reboot-host.png" alt=""><span class="cap">Zz Reboot Host</span></a>
+<a class="tile" href="edit.html"><img class="pic" src="img/steam.png" alt=""><span class="cap">Zz Steam</span></a>
+<a class="tile" href="edit.html"><img class="pic" src="img/steam-bigpicture.png" alt=""><span class="cap">Zz Steam Big Picture</span></a>
+<a class="tile add" href="edit.html"><span class="plus">+</span>Add an application</a>
+</div>
+</main>
+<footer class="bar">
+<form method="post" action="/quit"><button class="btn sec" type="submit">Close the manager</button></form>
+<span class="grow"></span>
+<a class="btn sec" href="backups.html">Restore a copy</a>
+<a class="btn sec" href="scanning.html"><span class="glyph x">X</span>Rescan</a>
+<form method="post" action="/discard"><button class="btn sec" type="submit">Discard</button></form>
+<a class="btn" href="confirm.html"><span class="glyph y">Y</span>Apply 3 changes</a>
+<a class="btn sec icon gear" href="settings.html" aria-label="Settings"><span class="glyph wide">☰</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></a>
+<a class="btn sec icon" href="report.html" aria-label="Report a bug"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2l1.9 1.9M16 2l-1.9 1.9M9 7.1V6a3 3 0 1 1 6 0v1.1"/><path d="M12 20c-3.3 0-6-2.7-6-6v-3a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v3c0 3.3-2.7 6-6 6z"/><path d="M12 20v-9M6.5 9C4.600 8.800 3 7.200 3 5M6 13H2M3 21c0-2.100 1.700-3.900 3.800-4M20.970 5c0 2.100-1.600 3.800-3.500 4M22 13h-4M17.200 17c2.100.100 3.800 1.900 3.800 4"/></svg></a>
+</footer>
+</body>
+</html>

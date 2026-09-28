@@ -107,6 +107,14 @@ box-shadow:0 -4px 12px -6px rgba(0,0,0,.35)}
 /* Settings: a gear at the end of the bar (Report a bug, a bug, after it on
    the grid). The Menu glyph says which button reaches it. */
 .btn.gear{margin-left:.2rem}
+/* While a text field has focus, the bar says which button opens the keyboard.
+   Only with a controller: at the machine there is a real keyboard. */
+.btn.kb{display:none}
+.pad .btn.kb{display:inline-flex}
+.btn.kb svg{width:1.5rem;height:1.5rem;display:block}
+/* More than one state on a tile: the flags stack. */
+.tile .flags{position:absolute;top:.45rem;left:.45rem;display:flex;flex-direction:column;align-items:flex-start;gap:.3rem}
+.tile .flags .flag{position:static}
 
 /* ---- Buttons ------------------------------------------------------------ */
 .btn{display:inline-flex;align-items:center;justify-content:center;gap:.55rem;
