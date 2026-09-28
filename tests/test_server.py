@@ -869,6 +869,11 @@ class GridTest(ServerTest):
         _, body = self.get(token=self.token)
         self.assertNotIn("tile new", body)
 
+    def test_the_heading_counts_the_file_and_nothing_waits(self):
+        _, body = self.get(token=self.token)
+        self.assertRegex(body, r"<h1>\d+ applications?</h1>")
+        self.assertNotIn("waiting</h1>", body)
+
     def test_a_scan_stages_what_it_found_onto_the_grid(self):
         """Findings become pending changes you can see, not a separate channel."""
         import tempfile as tf, shutil as sh
@@ -880,6 +885,8 @@ class GridTest(ServerTest):
             _, body = self.scan()
             self.assertIn(">NEW<", body)
             self.assertIn('class="tile new"', body)
+            # Counted as waiting, not as an application: it is not in the file yet.
+            self.assertRegex(body, r"<h1>\d+ applications?, 1 waiting</h1>")
             self.assertEqual([o["op"] for o in st.queue()], ["adopt"])
             self.assertIn("Apply 1 change", body)
         finally:

@@ -1585,8 +1585,11 @@ def grid_page(state: Dict[str, Any], token: str, *, new_ids: Optional[set] = Non
     if queued and not read_only:
         bar.append(f'<a class="btn" href="/apply"><span class="glyph y">Y</span>'
                    f'{_e(apply_label(queued, restore))}</a>')
+    # What apps.json holds now, then what is queued to appear on top of it.
     count = len(apps)
-    main = (f'<main class="main">\n<div class="head"><h1>{count} application{"" if count == 1 else "s"}</h1>'
+    waiting = len(ghosts) + sum(1 for h in hidden if f'{h.get("source")}:{h.get("id")}' in restores)
+    heading = f'{count} application{"" if count == 1 else "s"}' + (f", {waiting} waiting" if waiting else "")
+    main = (f'<main class="main">\n<div class="head"><h1>{heading}</h1>'
             f'<span class="sub"><code>{_e(state.get("apps_json", ""))}</code></span></div>\n'
             + "".join(n + "\n" for n in notices)
             + '<div class="grid">\n' + "\n".join(tiles) + '\n</div>\n</main>')
