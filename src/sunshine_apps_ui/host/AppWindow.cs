@@ -175,6 +175,10 @@ class AppWindow {
         }
 
         CoreWebView2 core = view.CoreWebView2;
+        // The status bubble is a browser's: it showed the address of whatever
+        // link was pointed at or had focus, over the page's own controls, and
+        // with a controller that is nearly always something. #79.
+        core.Settings.IsStatusBarEnabled = false;
         // The window is the app, not a browser: it has no address bar, so a
         // link that leaves the app would strand whoever followed it with no
         // way back. Anything not ours goes to the real browser instead.
