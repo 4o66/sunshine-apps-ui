@@ -1,15 +1,29 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// A controller, read through the Gamepad API and turned into focus movement.
+// A controller, read through the Gamepad API: focus movement and the 2.0
+// button mapping (#56, #59).
 //
-// Nothing in a web page moves focus when a d-pad is pushed. The window does
-// hand the page the pad -- WebKitGTK through libmanette, WebView2 through
-// Windows' own input -- but only as numbers to poll, so until this ran a
-// controller reached the page and did nothing (#32). Every control here is
-// already a link, button or field, so moving focus between them and pressing
-// the focused one is the whole job; the pages work unchanged without it.
+// Nothing in a web page moves focus when a d-pad is pushed. The window hands
+// the page the pad -- WebKitGTK through libmanette, WebView2 through Windows'
+// own input -- only as numbers to poll (#32). Every control is a link, button
+// or field, so this moves focus between them and presses them; the pages work
+// unchanged without it, with a mouse, keyboard or touch.
 //
-// The standard mapping: 0 is A, 1 is B, 12-15 are the d-pad, axes 0/1 the
-// left stick, 2/3 the right.
+// The buttons are found by the glyphs the page already shows, so what a
+// button says and what it does cannot drift apart: Y presses the control
+// showing the Y glyph, X the one showing X, LB and RB the ones showing LB and
+// RB, Menu the Settings gear. B presses the control showing B, else the page's
+// Back link, else goes back.
+//
+// Menu acts on a short tap only. Moonlight on a desktop or Android takes Start
+// held for 750 ms as its own mouse-mode switch, after which no controller input
+// reaches this page at all, so nothing here may ever ask for a hold.
+//
+// While a controller is in use, <html> carries .pad: the stylesheet then shows
+// the glyphs, the focus ring and the Keyboard button. A mouse movement takes it
+// away again.
+//
+// The standard mapping: 0 A, 1 B, 2 X, 3 Y, 4 LB, 5 RB, 9 Menu (Start),
+// 12-15 the d-pad; axes 0/1 the left stick, 2/3 the right.
 (function () {
   "use strict";
   if (typeof navigator.getGamepads !== "function") return;
@@ -18,9 +32,20 @@
   var REPEAT = 130;           // ms between repeats after that
   var DEAD = 0.5;             // stick travel that counts as a push
   var SCROLL = 24;            // px per frame at full right-stick travel
+  var TAP = 600;              // Menu counts only if let go within this, in ms
   var FOCUSABLE = "a[href], button:not([disabled]), summary, " +
     "input:not([disabled]):not([type=hidden]), select:not([disabled]), " +
     "textarea:not([disabled]), [tabindex]:not([tabindex='-1'])";
+  var root = document.documentElement;
+  // WebKit shows a page its pads only after a button is pressed on that page,
+  // so "a controller is in use" is carried across pages for the session;
+  // otherwise every page would open without its hints until the next press.
+  function remember(on) {
+    try { if (on) sessionStorage.setItem("pad", "1"); else sessionStorage.removeItem("pad"); }
+    catch (e) { /* private mode: hints come back on the next press */ }
+  }
+  try { if (sessionStorage.getItem("pad") === "1") root.classList.add("pad"); } catch (e) {}
+  function usingPad() { if (!root.classList.contains("pad")) { root.classList.add("pad"); } remember(true); }
 
   function shown(el) {
     var r = el.getBoundingClientRect();
@@ -34,17 +59,19 @@
       document.querySelectorAll(FOCUSABLE), shown);
   }
 
+  // The page scrolls between the bars, not the window.
+  function scroller() {
+    return document.querySelector("main.main") || document.scrollingElement;
+  }
+
   function put(el) {
     el.focus({ preventScroll: true, focusVisible: true });
     el.scrollIntoView({ block: "nearest", inline: "nearest" });
   }
 
   // The nearest control in the direction pushed. Distance along the push
-  // counts from the facing edges, so the tile beside this one beats a wider
-  // one further on; distance across it counts three times, so moving down a
-  // column stays in the column rather than jumping to whatever is closest.
-  // Left and right stay in the row: from the last tile, right used to reach
-  // Settings, which is further right but at the top of the page.
+  // counts from the facing edges; distance across it counts three times, so
+  // moving down a column stays in the column. Left and right stay in the row.
   function nearest(from, dx, dy, all) {
     var a = from.getBoundingClientRect();
     var best = null, bestScore = Infinity;
@@ -72,7 +99,6 @@
     var all = targets();
     var here = document.activeElement;
     if (!here || all.indexOf(here) < 0) {
-      // Nothing focused yet: start at the first control on screen.
       var first = all.filter(function (el) {
         var r = el.getBoundingClientRect();
         return r.bottom > 0 && r.top < innerHeight;
@@ -82,7 +108,28 @@
     }
     var next = nearest(here, dx, dy, all);
     if (next) put(next);
-    else if (dy) scrollBy(0, dy * innerHeight / 2);  // at the end: show what is past it
+    else if (dy) scroller().scrollBy(0, dy * innerHeight / 2);  // at the end: show what is past it
+  }
+
+  // The control that shows a glyph, by its letter: ".glyph.y", or a wide one
+  // whose text is "LB". Only controls that are shown and not drawn flat.
+  function byGlyph(name) {
+    var sel = name.length === 1 ? ".glyph." + name : ".glyph.wide";
+    var found = null;
+    Array.prototype.forEach.call(document.querySelectorAll(sel), function (g) {
+      if (found) return;
+      if (name.length > 1 && g.textContent.trim().indexOf(name.toUpperCase()) < 0) return;
+      var control = g.closest("a[href], button, label");
+      if (!control || control.classList.contains("flat") || control.disabled) return;
+      if (shown(control)) found = control;
+    });
+    return found;
+  }
+
+  function activate(el) {
+    if (!el) return false;
+    el.click();
+    return true;
   }
 
   function press() {
@@ -91,15 +138,24 @@
     var tag = el.tagName;
     if (tag === "TEXTAREA" || tag === "SELECT" ||
         (tag === "INPUT" && !/^(checkbox|radio|submit|button|reset)$/.test(el.type))) {
-      return;               // already where typing goes
+      // A text field: the on-screen keyboard's job (phase 3). Until then the
+      // focused field simply keeps focus.
+      document.dispatchEvent(new CustomEvent("pad:type", { detail: el }));
+      return;
     }
     el.click();
   }
 
   function back() {
+    if (activate(byGlyph("b"))) return;
     var link = document.querySelector("[data-back]");
     if (link && shown(link)) link.click();
     else if (history.length > 1) history.back();
+  }
+
+  function menu() {
+    var gear = document.querySelector("a.gear");
+    if (gear && shown(gear)) gear.click();
   }
 
   var held = {};            // name -> {since, last}
@@ -112,6 +168,8 @@
       action();
     }
   }
+  // Menu: remembered on press, acted on at release, and only if short.
+  var menuSince = null;
 
   function pressed(pad, i) {
     var b = pad.buttons[i];
@@ -122,33 +180,54 @@
     requestAnimationFrame(frame);
     // A pad is shared by everything on the machine; only the window in front
     // should act on it.
-    if (!document.hasFocus()) { held = {}; return; }
+    if (!document.hasFocus()) { held = {}; menuSince = null; return; }
     var pads = navigator.getGamepads();
     var pad = null;
     for (var i = 0; i < pads.length; i++) {
       if (pads[i] && pads[i].connected) { pad = pads[i]; break; }
     }
     if (!pad) return;
+    var any = false;
+    for (var b = 0; b < pad.buttons.length; b++) if (pressed(pad, b)) { any = true; break; }
     var ax = pad.axes[0] || 0, ay = pad.axes[1] || 0;
+    var rx = pad.axes[2] || 0, ry = pad.axes[3] || 0;
+    if (any || Math.abs(ax) > DEAD || Math.abs(ay) > DEAD) usingPad();
+
     edge("up", pressed(pad, 12) || ay < -DEAD, now, true, function () { move(0, -1); });
     edge("down", pressed(pad, 13) || ay > DEAD, now, true, function () { move(0, 1); });
     edge("left", pressed(pad, 14) || ax < -DEAD, now, true, function () { move(-1, 0); });
     edge("right", pressed(pad, 15) || ax > DEAD, now, true, function () { move(1, 0); });
     edge("a", pressed(pad, 0), now, false, press);
     edge("b", pressed(pad, 1), now, false, back);
-    var rx = pad.axes[2] || 0, ry = pad.axes[3] || 0;
-    if (Math.abs(rx) > 0.2 || Math.abs(ry) > 0.2) scrollBy(rx * SCROLL, ry * SCROLL);
+    edge("x", pressed(pad, 2), now, false, function () { activate(byGlyph("x")); });
+    edge("y", pressed(pad, 3), now, false, function () { activate(byGlyph("y")); });
+    edge("lb", pressed(pad, 4), now, false, function () { activate(byGlyph("lb")); });
+    edge("rb", pressed(pad, 5), now, false, function () { activate(byGlyph("rb")); });
+
+    if (pressed(pad, 9)) {
+      if (menuSince === null) menuSince = now;
+    } else if (menuSince !== null) {
+      if (now - menuSince < TAP) menu();
+      menuSince = null;
+    }
+
+    if (Math.abs(rx) > 0.2 || Math.abs(ry) > 0.2) scroller().scrollBy(rx * SCROLL, ry * SCROLL);
   }
+
+  // A mouse in use: no controller hints.
+  addEventListener("mousemove", function (e) {
+    if (e.movementX || e.movementY) { root.classList.remove("pad"); remember(false); }
+  });
 
   // Held on arrival (B pressed on the last page, say) is not a new press.
   requestAnimationFrame(function (now) {
     var pads = navigator.getGamepads();
+    var names = { 0: "a", 1: "b", 2: "x", 3: "y", 4: "lb", 5: "rb", 12: "up", 13: "down", 14: "left", 15: "right" };
     for (var i = 0; i < pads.length; i++) {
       var pad = pads[i];
       if (!pad) continue;
-      [0, 1, 12, 13, 14, 15].forEach(function (b) {
-        if (pressed(pad, b)) held[b === 0 ? "a" : b === 1 ? "b" :
-          ["up", "down", "left", "right"][b - 12]] = { since: now, last: now };
+      Object.keys(names).forEach(function (b) {
+        if (pressed(pad, +b)) held[names[b]] = { since: now, last: now };
       });
     }
     requestAnimationFrame(frame);

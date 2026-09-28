@@ -17,7 +17,7 @@ from typing import Any, Dict, List, Optional
 from urllib.parse import parse_qs, urlencode, urlsplit
 
 from . import __version__, security
-from . import artwork, privilege, state
+from . import artwork, frame, privilege, state
 from .engine import (EngineError, art_choose, art_search, art_sgdb,
                      art_sgdb_one, backup_diff, browse,
                      check_auth, choose_config, config_choice, forget_state,
@@ -1469,6 +1469,14 @@ def _describe_platform() -> str:
     return f"{system} {release}".strip()
 
 
+def text_size_for(client_name: str) -> str:
+    """The text size chosen for this device; standard until one is chosen."""
+    sizes = state.prefs().get("text_size")
+    if isinstance(sizes, dict):
+        return str(sizes.get(client_name or "", "standard"))
+    return "standard"
+
+
 def serve(token: str, conf_dir: str,
            importer_opts: Optional[Dict[str, Any]] = None,
            port: int = 0, choice: Optional[Dict[str, Any]] = None,
@@ -1489,7 +1497,12 @@ def serve(token: str, conf_dir: str,
         "importer_opts": dict(importer_opts or {}),
         # Set by our launcher, which only ever runs inside a streamed session.
         "via_sunshine": os.getenv("BSM_UI_VIA_SUNSHINE", "") == "1",
+        # The device being streamed to, as Sunshine names it; the launcher
+        # passes Sunshine's environment through. Text size is kept per device.
+        "client_name": os.getenv("SUNSHINE_CLIENT_NAME", ""),
     })
+    frame.set_context(streamed=handler.via_sunshine,
+                      text_size=text_size_for(handler.client_name))
     # The queue is deliberately kept between runs; drafts are not. They belong
     # to a form that is no longer open, and a stale one silently overrides the
     # file it was drafted against.
