@@ -23,7 +23,7 @@ import os
 import sys
 import tempfile
 from unittest import mock
-from urllib.parse import urlsplit
+from urllib.parse import parse_qs, urlsplit
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.abspath(os.path.join(HERE, "..", "..", ".."))
@@ -58,13 +58,28 @@ BOARD_APPS = [
 ]
 
 
-def board_state():
+def board_state(*, without=(), hidden=()):
+    """The boards' apps.json: `without` leaves tiles out (a game a scan has
+    found is not in the file yet); `hidden` moves them to the hidden list."""
+    apps, hide = [], []
+    for a in BOARD_APPS:
+        if a["name"] in without:
+            continue
+        (hide if a["name"] in hidden else apps).append(dict(a))
+    for i, a in enumerate(apps):
+        a["index"] = i
+    for a in hide:
+        a["index"] = None
     return {
         "schema": 1, "generator": {"name": "bazzite-sunshine-manager", "version": "2.0"},
         "config_dir": "/var/home/user/.config/sunshine",
         "apps_json": "/var/home/user/.config/sunshine/apps.json",
-        "apps": [dict(a) for a in BOARD_APPS], "hidden": [],
+        "apps": apps, "hidden": hide,
     }
+
+
+def app(name):
+    return next(dict(a) for a in BOARD_APPS if a["name"] == name)
 
 
 # name -> (setup(engine), [(address, board file)])
@@ -78,15 +93,112 @@ def scenario(name, pages):
     return register
 
 
+def found_by_scan(name):
+    """What a scan queues for a game it found: an adopt, with the entry."""
+    a = app(name)
+    state.enqueue({"op": "adopt", "name": name, "source": a["source"], "id": a["id"],
+                   "from_scan": True, "entry": {"name": name, "image-path": a["image-path"]}})
+
+
+def edited(name):
+    a = app(name)
+    state.enqueue({"op": "edit", "name": name, "source": a["source"], "id": a["id"],
+                   "fields": {"image-path": a["image-path"]}})
+
+
 @scenario("grid", [("/", "grid.html")])
 def _grid(engine):
+    engine.state = board_state(without=["NIMRODS"])
+    found_by_scan("NIMRODS")
+    edited("Satisfactory")
+
+
+FLATPAK = "/var/home/user/.var/app/dev.lizardbyte.app.Sunshine/config/sunshine"
+NATIVE = "/var/home/user/.config/sunshine"
+
+
+@scenario("grid-states", [("/", "grid-states.html")])
+def _grid_states(engine):
+    engine.state = board_state(without=["NIMRODS"], hidden=["Portal: Revolution"])
+    a = app("Enshrouded")
+    state.enqueue({"op": "hide", "name": "Enshrouded", "source": a["source"], "id": a["id"]})
+    found_by_scan("NIMRODS")
+    edited("Satisfactory")
+    state.enqueue({"op": "add", "fields": {"name": "Hades II"}})
+    engine.auth = (False, "The sign-in was refused: 401 Unauthorized.")
+    config = {"how": "running", "chosen": NATIVE, "stale": True, "stale_reason": "running",
+              "was": FLATPAK, "queued": 0,
+              "candidates": [{"path": NATIVE, "apps": 12, "last_used": 0},
+                             {"path": FLATPAK, "apps": 3, "last_used": 0}]}
+    mock.patch.object(srv.PlanHandler, "_config_panel", lambda self: dict(config)).start()
+
+
+@scenario("grid-rights", [("/", "grid-rights.html")])
+def _grid_rights(engine):
     engine.state = board_state()
-    state.enqueue({"op": "edit", "index": 6, "name": "Satisfactory",
-                   "fields": {"image-path": os.path.join(IMG, "satisfactory.png")}})
-    state.enqueue({"op": "add", "name": "NIMRODS", "source": "steam", "id": "2086430"})
+    for a in engine.state["apps"][:2]:
+        a["image-path"] = a["image-path"].replace("-bazzite.png", "-windows.png")
+    engine.state["apps_json"] = "C:\\Program Files\\Sunshine\\config\\apps.json"
+    detail = ("This is running without administrator rights, and C:\\Program Files\\Sunshine\\config\\apps.json "
+              "belongs to Sunshine's own directory, which only an administrator may write. Sunshine grants those "
+              "rights to a tile marked \u201celevated\u201d \u2014 but only when it is running as its service and "
+              "the account is an administrator. Started by hand, or from a standard account, it launches this "
+              "with your own rights and says so only in its log. Reading, scanning and reloading still work; "
+              "nothing can be saved.")
+    from sunshine_apps_ui import privilege
+    refused = privilege.Privilege(False, False, detail, "Changes cannot be saved")
+    mock.patch.object(privilege, "check", lambda conf_dir: refused).start()
+    mock.patch.object(privilege, "can_ask_for_elevation", lambda: True).start()
 
 
-def run(name, port, streamed, pad):
+@scenario("grid-restore", [("/", "grid-restore.html")])
+def _grid_restore(engine):
+    engine.state = board_state()
+    state.enqueue({"op": "rollback", "backup": "apps-20260926-211403.json"})
+    engine.diff = {"returning": [], "going": [{"name": "NIMRODS", "key": "steam:2086430"}],
+                   "changing": [{"name": "Satisfactory", "key": "heroic:satisfactory", "fields": []}],
+                   "hidden_now": 0, "hidden_then": 0}
+
+
+def _unhide(engine, *, edit):
+    engine.state = board_state(without=["NIMRODS"], hidden=["Portal: Revolution"])
+    found_by_scan("NIMRODS")
+    a = app("Portal: Revolution")
+    state.enqueue({"op": "restore", "selector": f'{a["source"]}:{a["id"]}', "name": a["name"]})
+    edited("Satisfactory")
+    if edit:
+        edited("Portal: Revolution")
+
+
+@scenario("grid-unhide", [("/", "grid-unhide.html")])
+def _grid_unhide(engine):
+    _unhide(engine, edit=False)
+
+
+@scenario("grid-unhide-edited", [("/", "grid-unhide-edited.html")])
+def _grid_unhide_edited(engine):
+    _unhide(engine, edit=True)
+
+
+# What the address asks for, for a capture: ?theme=, ?scale=couch|desk (couch
+# is streamed and in controller use, as the boards are drawn) and ?focus=, the
+# control the board shows focused ("text:Keep this one", or a CSS selector).
+LOOK = {"theme": None, "scale": None}
+
+DRIVE_JS = r"""(function(){
+var me=location.pathname+location.search;
+var q=new URLSearchParams(location.search), f=q.get("focus");
+function put(){if(!f)return;var el=null;
+ if(f.indexOf("text:")===0){var t=f.slice(5);
+  Array.prototype.forEach.call(document.querySelectorAll("a,button"),function(c){if(!el&&c.textContent.trim()===t)el=c;});}
+ else el=document.querySelector(f);
+ if(el)el.focus({preventScroll:true,focusVisible:true});}
+if(document.readyState!=="loading")put();else addEventListener("DOMContentLoaded",put);
+setInterval(function(){fetch('/_target',{cache:'no-store'}).then(function(r){return r.text()}).then(function(t){
+t=t.trim();if(t&&t!==me){location.replace(t)}}).catch(function(){})},300)})();"""
+
+
+def run(name, port, streamed, pad, drive_dir=None):
     setup, pages = SCENARIOS[name]
     tmp = tempfile.mkdtemp(prefix="design-states-")
     os.environ["XDG_STATE_HOME"] = tmp
@@ -97,23 +209,32 @@ def run(name, port, streamed, pad):
         mock.patch.object(srv, fn, getattr(engine, fn)).start()
     mock.patch.object(security, "check", lambda *a, **k: (True, "")).start()
     mock.patch.object(security, "token_matches", lambda *a, **k: False).start()
-    if pad:
-        real_open = frame.html_open
-        mock.patch.object(frame, "html_open",
-                          lambda t=None: real_open(t).replace('class="', 'class="pad ', 1)).start()
+    real_open = frame.html_open
+
+    def html_open(theme_name=None):
+        if LOOK["theme"]:
+            theme_name = LOOK["theme"]
+        if LOOK["scale"]:
+            frame.set_context(streamed=LOOK["scale"] == "couch")
+        opened = real_open(theme_name)
+        if pad or LOOK["scale"] == "couch":
+            opened = opened.replace('class="', 'class="pad ', 1)
+        return opened
+
+    mock.patch.object(frame, "html_open", html_open).start()
     setup(engine)
 
-    target_file = os.path.join(tmp, ".target")
-    served_file = os.path.join(tmp, ".served")
+    drive_dir = drive_dir or tmp
+    target_file = os.path.join(drive_dir, ".target")
+    served_file = os.path.join(drive_dir, ".served")
     real_get = srv.PlanHandler.do_GET
 
     def do_get(self):
-        path = urlsplit(self.path).path
+        parts = urlsplit(self.path)
+        path = parts.path
         if path in ("/_target", "/_drive.js", "/drive"):
             if path == "/_drive.js":
-                body = (b"(function(){var me=location.pathname+location.search;setInterval(function(){"
-                        b"fetch('/_target',{cache:'no-store'}).then(function(r){return r.text()}).then(function(t){"
-                        b"t=t.trim();if(t&&t!==me){location.replace(t)}}).catch(function(){})},300)})();")
+                body = DRIVE_JS.encode()
                 kind = "text/javascript"
             else:
                 try:
@@ -126,9 +247,12 @@ def run(name, port, streamed, pad):
             self.send_response(200); self.send_header("Content-Type", kind)
             self.send_header("Content-Length", str(len(body))); self.send_header("Cache-Control", "no-store")
             self.end_headers(); self.wfile.write(body); return
+        query = parse_qs(parts.query)
+        LOOK["theme"] = (query.get("theme") or [None])[0]
+        LOOK["scale"] = (query.get("scale") or [None])[0]
+        real_get(self)
         with open(served_file, "w") as handle:
             handle.write(self.path)
-        return real_get(self)
 
     mock.patch.object(srv.PlanHandler, "do_GET", do_get).start()
     real_pad = srv.with_pad
@@ -147,12 +271,13 @@ def main():
     p.add_argument("--port", type=int, default=8766)
     p.add_argument("--streamed", action="store_true")
     p.add_argument("--pad", action="store_true")
+    p.add_argument("--drive-dir", help="where .target and .served live (default: the state folder)")
     a = p.parse_args()
     if a.scenario == "list":
         for name, (_, pages) in sorted(SCENARIOS.items()):
             print(name, " ".join(board for _, board in pages))
         return
-    run(a.scenario, a.port, a.streamed, a.pad)
+    run(a.scenario, a.port, a.streamed, a.pad, a.drive_dir)
 
 
 if __name__ == "__main__":

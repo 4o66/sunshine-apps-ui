@@ -384,7 +384,7 @@ def confirm_page(doc: Dict[str, Any], token: str, via_sunshine: bool = False,
 <title>{_title('Apply changes')}</title><style>{_CSS}</style></head>
 <body>
 <div class="navbar"><span class="brand">Sunshine</span><span class="sep">/</span>
-<span class="where">app manager</span>{_version_chip()}</div>
+<span class="where">App Manager</span>{_version_chip()}</div>
 <div class="wrap">
 <h1>Apply {changing} change{'' if changing == 1 else 's'}?</h1>
 <section>{_queued_list(pending)
@@ -416,7 +416,7 @@ def closing_page(via_sunshine: bool = False) -> str:
 <title>{_title('Closing')}</title><style>{_CSS}</style></head>
 <body>
 <div class="navbar"><span class="brand">Sunshine</span><span class="sep">/</span>
-<span class="where">app manager</span>{_version_chip()}</div>
+<span class="where">App Manager</span>{_version_chip()}</div>
 <div class="wrap">
 <section class="ok"><h2>Closed</h2><p class="why">{_e(detail)}</p></section>
 </div></body></html>"""
@@ -435,7 +435,7 @@ def leaving_with_changes_page(token: str, queued: int) -> str:
 <title>{_title('Close?')}</title><style>{_CSS}</style></head>
 <body>
 <div class="navbar"><span class="brand">Sunshine</span><span class="sep">/</span>
-<span class="where">app manager</span>{_version_chip()}</div>
+<span class="where">App Manager</span>{_version_chip()}</div>
 <div class="wrap">
 <h1>Close without applying?</h1>
 <p class="sub">{queued} change{'' if queued == 1 else 's'} {'is' if queued == 1
@@ -473,7 +473,7 @@ def applied_page(token: str, via_sunshine: bool = False) -> str:
 <title>{_title('Applied')}</title><style>{_CSS}</style></head>
 <body>
 <div class="navbar"><span class="brand">Sunshine</span><span class="sep">/</span>
-<span class="where">app manager</span>{_version_chip()}</div>
+<span class="where">App Manager</span>{_version_chip()}</div>
 <div class="wrap">
 <h1>Applied</h1>
 <section class="ok"><p class="why">apps.json was written. {_e(detail)}</p></section>
@@ -531,7 +531,7 @@ def page(doc: Dict[str, Any], log: str = "", token: str = "",
 <title>{_title()}</title><style>{_CSS}</style></head>
 <body>
 <div class="navbar"><span class="brand">Sunshine</span><span class="sep">/</span>
-<span class="where">app manager</span>{_version_chip()}<span class="ro">read-only preview</span></div>
+<span class="where">App Manager</span>{_version_chip()}<span class="ro">read-only preview</span></div>
 <div class="wrap">
 <h1>{_e(summary)}</h1>
 <p class="sub"><code>{_e(doc.get("apps_json", ""))}</code></p>
@@ -559,7 +559,7 @@ def error_page(message: str, detail: str = "", token: str = "",
 <title>{_title()}</title><style>{_CSS}</style></head>
 <body>
 <div class="navbar"><span class="brand">Sunshine</span><span class="sep">/</span>
-<span class="where">app manager</span>{_version_chip()}</div>
+<span class="where">App Manager</span>{_version_chip()}</div>
 <div class="wrap">
 <section class="err"><h2>{_e(title)}</h2>
 <p class="why">{_e(message)}</p>{extra}</section>
@@ -642,7 +642,7 @@ def backups_page(copies: List[Dict[str, Any]], token: str,
 <style>{_CSS}{_BACKUPS_CSS}</style></head>
 <body>
 <div class="navbar"><span class="brand">Sunshine</span><span class="sep">/</span>
-<span class="where">app manager</span>{_version_chip()}</div>
+<span class="where">App Manager</span>{_version_chip()}</div>
 <div class="wrap">
 <h1>Restore a copy</h1>
 <p class="sub">A copy of apps.json is taken before anything is written to it.
@@ -752,7 +752,7 @@ def connect_page(token: str, message: str = "", username: str = "") -> str:
 <title>{_title('Connect to Sunshine')}</title><style>{_CSS}</style></head>
 <body>
 <div class="navbar"><span class="brand">Sunshine</span><span class="sep">/</span>
-<span class="where">app manager</span>{_version_chip()}</div>
+<span class="where">App Manager</span>{_version_chip()}</div>
 <div class="wrap">
 {credentials_form(token, message, username)}
 <div class="actions"><a class="btn sec" href="/" data-back>Back</a></div>
@@ -1226,7 +1226,7 @@ def settings_page(token: str, *, prefs: Dict[str, Any],
 <title>{_title("Settings")}</title><style>{_CSS}{SETTINGS_CSS}{_QR_CSS}{CONFIG_CSS}</style></head>
 <body>
 <div class="navbar"><span class="brand">Sunshine</span><span class="sep">/</span>
-<span class="where">app manager</span>{_version_chip()}</div>
+<span class="where">App Manager</span>{_version_chip()}</div>
 <div class="wrap">
 <h1>Settings</h1>
 <p class="sub">None of this touches your app list.</p>
@@ -1373,7 +1373,7 @@ def report_page(token: str, via_sunshine: bool = False,
 <title>{_title("Report a bug")}</title><style>{_CSS}{_QR_CSS}</style></head>
 <body>
 <div class="navbar"><span class="brand">Sunshine</span><span class="sep">/</span>
-<span class="where">app manager</span>{_version_chip()}</div>
+<span class="where">App Manager</span>{_version_chip()}</div>
 <div class="wrap">
 {first}
 {facts}
@@ -1429,7 +1429,7 @@ animation:spin 900ms linear infinite}}
 </head>
 <body>
 <div class="navbar"><span class="brand">Sunshine</span><span class="sep">/</span>
-<span class="where">app manager</span>{_version_chip()}</div>
+<span class="where">App Manager</span>{_version_chip()}</div>
 <div class="wrap">{body}
 <div class="actions"><a class="btn sec" href="/">Stop watching</a></div>
 </div></body></html>"""
@@ -1451,6 +1451,7 @@ def grid_page(state: Dict[str, Any], token: str, *, new_ids: Optional[set] = Non
     # matches them: by position, falling back to an unambiguous name.
     by_ident = {f'{a.get("source")}:{a.get("id")}': i
                 for i, a in enumerate(apps) if a.get("source")}
+    hidden_keys = {f'{h.get("source")}:{h.get("id")}' for h in hidden if h.get("source")}
     marks: Dict[int, tuple] = {}
     ghosts: List[Dict[str, Any]] = []
     restores: set = set()
@@ -1477,6 +1478,9 @@ def grid_page(state: Dict[str, Any], token: str, *, new_ids: Optional[set] = Non
 
         index = None
         key = f'{op.get("source")}:{op.get("id")}'
+        if kind in ("edit", "adopt") and key in hidden_keys:
+            # An edit to a hidden entry is drawn on its own tile, below.
+            continue
         if key in by_ident:
             index = by_ident[key]
         else:
@@ -1531,173 +1535,267 @@ def grid_page(state: Dict[str, Any], token: str, *, new_ids: Optional[set] = Non
             ghosts.append({"name": item.get("name") or "(unnamed)", "op": "add",
                            "from_scan": False, "qid": None, "image-path": ""})
 
+    # 2.0 (#60): a tile carries its status twice, as a flag on the picture
+    # and as the color of its name strip; a tile can carry more than one.
+    edits_by_key: Dict[str, List[str]] = {}
+    for op in pending:
+        if str(op.get("op", "")) in ("edit", "adopt") and op.get("source"):
+            edits_by_key.setdefault(f'{op.get("source")}:{op.get("id")}', []).append(str(op.get("op")))
+
+    # Sunshine keeps apps.json sorted by name, so a hidden tile and a game a
+    # scan found are drawn where they would be; what was added by hand, or
+    # copied, waits at the end, beside Add, where it was asked for.
     tiles = []
     for position, entry in enumerate(apps):
         kind, scanned_op = marks.get(position, ("", False))
-        tiles.append(_tile(entry, token, pending=kind, from_scan=scanned_op))
+        tiles.append((entry.get("name") or "", tile2(entry, pending=[kind] if kind else [], from_scan=scanned_op)))
+    placed = []
     for entry in hidden:
         key = f'{entry.get("source")}:{entry.get("id")}'
-        coming_back = key in restores
-        tiles.append(_tile(entry, token, is_hidden=not coming_back,
-                           pending="restore" if coming_back else ""))
-    for ghost in ghosts:
-        if ghost["op"] == "clone":
-            label, tone = "COPY QUEUED", "ghost"
-        elif ghost.get("from_scan"):
-            label, tone = "NEW", "ghost found"
+        if key in restores:
+            placed.append((entry.get("name") or "", tile2(entry, pending=["restore"] + edits_by_key.get(key, []))))
         else:
-            label, tone = "NEW QUEUED", "ghost"
-        art = (f'<img src="/art?p={_eq(ghost["image-path"])}" alt="">'
-               if ghost.get("image-path") else '<div class="fallback">&nbsp;</div>')
-        qid = ghost.get("qid")
-        target = (f'/app?queued={_e(qid)}' if qid else "")
-        open_tag = (f'<a class="tile {tone}" href="{target}">' if target
-                    else f'<span class="tile {tone}">')
-        close_tag = "</a>" if target else "</span>"
-        tiles.append(f'{open_tag}{art}'
-                     f'<span class="flag">{label}</span>'
-                     f'<span class="cap">{_e(ghost["name"])}</span>{close_tag}')
-    tiles.append(f'<a class="tile add" href="/app?new=1">'
-                 f'<div class="fallback">+ Add an application</div></a>')
+            placed.append((entry.get("name") or "", tile2(entry, is_hidden=True)))
+    at_end = []
+    for ghost in ghosts:
+        if ghost.get("from_scan") and ghost["op"] != "clone":
+            placed.append((ghost["name"], ghost2(ghost)))
+        else:
+            at_end.append(ghost2(ghost))
+    for name, markup in placed:
+        where = next((i for i, (other, _) in enumerate(tiles) if other.casefold() > name.casefold()), len(tiles))
+        tiles.insert(where, (name, markup))
+    tiles = [markup for _, markup in tiles] + at_end
+    tiles.append('<a class="tile add" href="/app?new=1"><span class="plus">+</span>Add an application</a>')
     queued = len(pending)
 
-    legend = ""
-    parts = []
-    if queued:
-        parts.append('<span><i class="pend">&nbsp;</i> queued, not applied yet</span>')
-    if scanned:
-        parts.append('<span><i class="new">&nbsp;</i> found by the last scan</span>')
-    if hidden:
-        parts.append('<span><i class="hid">&nbsp;</i> hidden, will not come back</span>')
-    if parts:
-        legend = f'<div class="legend">{"".join(parts)}</div>'
+    notices = [n for n in (config_notice2(config), rights_notice2(rights, queued),
+                           auth_notice2(auth_ok, auth_detail), restore_notice2(restore)) if n]
 
-    # A queued restore is a whole-file change, so it is said in words above the
-    # grid as well as drawn on it -- including the part no tile can show.
-    restore_note = ""
-    if restore:
-        counts = []
-        for key, word in (("returning", "would come back"),
-                          ("going", "would be removed"),
-                          ("changing", "would change")):
-            items = restore.get(key) or []
-            if not items:
-                continue
-            if key == "changing":
-                # Saying that something changes without saying what leaves you
-                # to guess, and the interesting part is usually the rename.
-                said = []
-                for item in items[:6]:
-                    name = _e(str(item.get("name")))
-                    becomes = item.get("becomes")
-                    detail = _fields_in_words(item.get("fields") or [])
-                    if becomes:
-                        line = f"{name} &rarr; <b>{_e(str(becomes))}</b>"
-                        if detail:
-                            line += f" ({detail})"
-                    else:
-                        line = f"{name}{f' ({detail})' if detail else ''}"
-                    said.append(line)
-                names = "; ".join(said)
-            else:
-                names = ", ".join(_e(str(i.get("name"))) for i in items[:6])
-            if len(items) > 6:
-                names += f" and {len(items) - 6} more"
-            counts.append(f"<li><b>{len(items)}</b> {word}: {names}</li>")
-        hidden_change = ""
-        if restore.get("hidden_now") != restore.get("hidden_then"):
-            hidden_change = (f'<li>What you have hidden goes from '
-                             f'<b>{restore.get("hidden_now")}</b> to '
-                             f'<b>{restore.get("hidden_then")}</b> entries</li>')
-        body = "".join(counts) + hidden_change
-        if not body:
-            body = "<li>Nothing would change. This copy matches what you have now.</li>"
-        restore_note = (
-            f'<section class="warn"><h2>Restoring the copy from '
-            f'{_e(_when(restore.get("backup", "")))}</h2>'
-            f'<ul class="why">{body}</ul>'
-            f'<p class="why">Nothing has changed yet. A copy of the current file '
-            f'is taken before this is applied, so this can be undone the same way.</p>'
-            f'<div class="actions">'
-            f'<form method="post" action="/unqueue">'
-            f'<input type="hidden" name="qid" value="{_e(restore.get("qid", ""))}">'
-            f'<button class="btn sec" type="submit">Cancel this restore</button>'
-            f'</form></div></section>')
-
-    outstanding = queued
     read_only = bool(rights is not None and not rights.can_write)
-    # An Apply that can only fail is worse than no Apply: it loses the queue's
-    # meaning and teaches people the tool is broken rather than unprivileged.
-    apply_button = (f'<a class="btn" href="/apply">'
-                    f'Apply {outstanding} change{"" if outstanding == 1 else "s"}</a>'
-                    if outstanding and not read_only else "")
-    discard_button = (f'<form method="post" action="/discard" '
-                      f'style="display:inline">'
-                      f'<button class="btn sec" type="submit">Discard</button></form>'
-                      if queued else "")
-    # Not every failure is a sign-in failure. Saying so sent me looking at
-    # credentials when apps.json held a value Sunshine could not parse.
-    if auth_ok:
-        auth_note = ""
-    elif auth_detail:
-        auth_note = (f'<section class="err"><h2>Sunshine is not answering</h2>'
-                     f'<p class="why">{_e(auth_detail)}</p>'
-                     f'<div class="actions"><a class="btn sec" '
-                     f'href="/connect">Check the sign-in</a>'
-                     f'</div></section>')
+    bar = ['<form method="post" action="/quit"><button class="btn sec" type="submit">Close the manager</button></form>',
+           '<span class="grow"></span>',
+           '<a class="btn sec" href="/backups">Restore a copy</a>',
+           '<a class="btn sec" href="/?scan=1"><span class="glyph x">X</span>Rescan</a>']
+    # An Apply that can only fail is worse than no Apply; and with nothing
+    # queued there is nothing to apply or discard.
+    if queued:
+        # Read-only is not a reason to throw away what somebody typed.
+        bar.append('<form method="post" action="/discard"><button class="btn sec" type="submit">Discard</button></form>')
+    if queued and not read_only:
+        bar.append(f'<a class="btn" href="/apply"><span class="glyph y">Y</span>'
+                   f'{_e(apply_label(queued, restore))}</a>')
+    count = len(apps)
+    main = (f'<main class="main">\n<div class="head"><h1>{count} application{"" if count == 1 else "s"}</h1>'
+            f'<span class="sub"><code>{_e(state.get("apps_json", ""))}</code></span></div>\n'
+            + "".join(n + "\n" for n in notices)
+            + '<div class="grid">\n' + "\n".join(tiles) + '\n</div>\n</main>')
+    from . import frame
+    return frame.page("", main, "\n".join(bar), with_bug=True)
+
+
+# ------------------------------------------------------------- 2.0 grid bits ---
+
+WARN_SVG = ('<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">'
+            '<path d="M12 3 2 21h20z"/><path d="M12 10v5M12 18v.5"/></svg>')
+
+
+def notice2(kind: str, title: str, text_html: str, actions_html: str = "") -> str:
+    """A full-width notice above the page's content, with its own buttons."""
+    cls = "notice" + (f" {kind}" if kind else "")
+    icon = WARN_SVG if kind in ("warn", "err") else ""
+    head = f"<b>{title}</b>" if title else ""
+    return (f'<div class="{cls}">{icon}<div class="text">{head}<span>{text_html}</span></div>'
+            f'{actions_html}</div>')
+
+
+def apply_label(queued: int, restore: Optional[Dict[str, Any]] = None) -> str:
+    return f'Apply {queued} change{"" if queued == 1 else "s"}'
+
+
+def tile2(entry: Dict[str, Any], *, pending: Optional[List[str]] = None,
+          is_hidden: bool = False, from_scan: bool = False) -> str:
+    """One application on the 2.0 grid."""
+    pending = [p for p in (pending or []) if p]
+    name = _e(entry.get("name") or "(unnamed)")
+    image = entry.get("image-path") or ""
+    pic = (f'<img class="pic" src="/art?p={_eq(image)}" alt="">' if image
+           else f'<span class="fallback">{name}</span>')
+    labels = [_PENDING[p][0] for p in pending if p in _PENDING]
+    greyed = any(_PENDING[p][1] for p in pending if p in _PENDING)
+    if is_hidden:
+        labels, tone = ["HIDDEN"], " hidden"
+    elif labels:
+        tone = " new" if from_scan else " pending"
     else:
-        auth_note = (f'<div class="bar"><span class="chip">'
-                     f'<span class="dot error"></span><b>sunshine</b> needs sign-in</span>'
-                     f'<a class="chip" style="text-decoration:none;color:var(--primary)" '
-                     f'href="/connect">Connect</a></div>')
+        tone = ""
+    classes = "tile" + tone + (" willgo" if greyed else "")
+    if len(labels) > 1:
+        flags = '<span class="flags">' + "".join(f'<span class="flag">{_e(l)}</span>' for l in labels) + "</span>"
+    elif labels:
+        flags = f'<span class="flag">{_e(labels[0])}</span>'
+    else:
+        flags = ""
+    if entry.get("index") is not None and not is_hidden and "restore" not in pending:
+        target = f'/app?index={_e(entry.get("index"))}'
+    else:
+        target = f'/app?hidden={_eq(str(entry.get("source")) + ":" + str(entry.get("id")))}'
+    return f'<a class="{classes}" href="{target}">{flags}{pic}<span class="cap">{name}</span></a>'
 
-    # Said here, once, on the page someone is already looking at -- not at the
-    # write, after a dozen changes are queued. See privilege.py.
-    rights_note = ""
-    if read_only:
-        # An offer, where there is one to make. Saying "you cannot do this" and
-        # stopping is what made this warn and then do nothing: the change was
-        # taken, queued, and left with no way to apply it.
+
+def ghost2(ghost: Dict[str, Any]) -> str:
+    """A tile that is not in apps.json yet: found by a scan, or added by hand."""
+    name = _e(ghost["name"])
+    image = ghost.get("image-path") or ""
+    qid = ghost.get("qid")
+    if ghost["op"] == "clone":
+        label, classes = "COPY QUEUED", "tile ghost"
+    elif ghost.get("from_scan"):
+        label, classes = "NEW", "tile new"
+    else:
+        label, classes = "NEW QUEUED", "tile ghost"
+    pic = (f'<img class="pic" src="/art?p={_eq(image)}" alt="">' if image
+           else f'<span class="fallback">{name}</span>')
+    inner = f'<span class="flag">{label}</span>{pic}<span class="cap">{name}</span>'
+    if qid:
+        return f'<a class="{classes}" href="/app?queued={_e(qid)}">{inner}</a>'
+    return f'<span class="{classes}">{inner}</span>'
+
+
+def config_notice2(config: Optional[Dict[str, Any]]) -> str:
+    """config_banner's facts, as a 2.0 notice."""
+    config = config or {}
+    how = config.get("how")
+    candidates = config.get("candidates") or []
+    chosen_raw = str(config.get("chosen") or "")
+    chosen = _e(chosen_raw)
+    if config.get("missing"):
+        missing = _e(str(config["missing"]))
+        return notice2("err", "This is not the Sunshine that runs",
+                       f'Sunshine is set up to use <code>{missing}</code>, which does not exist yet &mdash; '
+                       f'Sunshine creates it the first time it starts. What is shown here is <code>{chosen}</code>, '
+                       f'left by another install, and changes to it will do nothing. Start Sunshine once, then '
+                       f'open this again.')
+    if (how not in ("newest", "tie") and not config.get("stale")) or len(candidates) < 2:
+        notice = str(config.get("notice") or "")
+        return notice2("warn", "", _e(notice)) if notice else ""
+
+    def form(path: str, label: str, disabled: bool = False) -> str:
+        return (f'<form method="post" action="/config-dir"><input type="hidden" name="path" value="{_e(path)}">'
+                f'<input type="hidden" name="back" value=""><button class="btn sec" type="submit"'
+                f'{" disabled" if disabled else ""}>{label}</button></form>')
+
+    count_queued = int(config.get("queued") or 0)
+    queued = bool(count_queued)
+    others = [str(c.get("path") or "") for c in candidates if str(c.get("path") or "") != chosen_raw]
+    # What 1.x listed under the question, kept as sentences: which trees there
+    # are and what each holds, why switching is held, and why it was refused.
+    trees = []
+    for c in candidates:
+        apps = c.get("apps")
+        count = ("apps.json unreadable" if apps is None else f"{apps} app{'' if apps == 1 else 's'}")
+        trees.append(f'<code>{_e(str(c.get("path") or ""))}</code>, '
+                     f'{_last_used_text(float(c.get("last_used") or 0))}, {count}')
+    after = ""
+    if count_queued:
+        after += (f' {count_queued} change{"" if count_queued == 1 else "s"} '
+                  f'{"is" if count_queued == 1 else "are"} waiting to be applied to the one in use, so switching '
+                  f'waits until {"it is" if count_queued == 1 else "they are"} applied or discarded.')
+    if config.get("notice"):
+        after += f' <b>{_e(str(config["notice"]))}</b>'
+    if config.get("stale"):
+        was_raw = str(config.get("was") or "")
+        was = _e(was_raw)
+        title = "The config you chose earlier has been set aside"
+        if config.get("stale_reason") == "running":
+            why = (f"You chose <code>{was}</code>, but Sunshine is running from "
+                   f"<code>{chosen}</code>, so that is the one showing.")
+        elif how == "service":
+            why = (f"You chose <code>{was}</code>, but another Sunshine config has been used since, so this is "
+                   f"showing <code>{chosen}</code>, the one Sunshine's service starts. Choose again if that is wrong.")
+        else:
+            why = (f"You chose <code>{was}</code>, but another Sunshine config has been used since, so this is "
+                   f"showing <code>{chosen}</code>, the one used most recently. Choose again if that is wrong.")
+        other = was_raw if was_raw in others else (others[0] if others else "")
+        actions = (form(other, "Use this one", disabled=queued) if other else "") + form(chosen_raw, "Keep this one")
+        return notice2("warn", title, why + after, actions)
+    if how == "tie":
+        never = all(not c.get("last_used") for c in candidates[:2])
+        reason = ("none of them has been used yet" if never else "two were last used at the same moment")
+        why = (f"There is more than one Sunshine config here and nothing tells them apart: {reason}. This is "
+               f"showing <code>{chosen}</code>, which is a guess. If the tiles below are not the ones you see in "
+               f"Moonlight, use the other one. Found: " + "; ".join(trees) + ".")
+        actions = (form(others[0], "Use this one", disabled=queued) if others else "") + form(chosen_raw, "Keep this one")
+        return notice2("warn", "Which Sunshine is this machine running?", why + after, actions)
+    why = ("This is showing the one Sunshine used most recently. "
+           + ("The other is" if len(candidates) == 2 else "The others are")
+           + " usually left behind by an install that has since been removed, and changes written there do "
+             "nothing. Keep this one and you will not be asked again. Found: " + "; ".join(trees) + ".")
+    actions = "".join(form(o, "Use this one", disabled=queued) for o in others) + form(chosen_raw, "Keep this one")
+    return notice2("", "More than one Sunshine config here", why + after, actions)
+
+
+def rights_notice2(rights: Any, queued: int) -> str:
+    if rights is None or rights.can_write:
+        return ""
+    offer = ""
+    try:
+        from .privilege import can_ask_for_elevation
+        if can_ask_for_elevation():
+            offer = ('<form method="post" action="/elevate"><button class="btn" type="submit">'
+                     'Run as administrator</button></form>')
+    except Exception:                                # noqa: BLE001 - never break the page
         offer = ""
-        try:
-            from .privilege import can_ask_for_elevation
-            if can_ask_for_elevation():
-                offer = (f'<div class="actions">'
-                         f'<form method="post" action="/elevate" '
-                         f'style="display:inline">'
-                         f'<button class="btn" type="submit">Run as administrator</button>'
-                         f'</form></div>')
-        except Exception:                        # noqa: BLE001 - never break the page
-            offer = ""
-        queued_note = ""
-        if queued:
-            queued_note = (f'<p class="why"><b>{queued} change'
-                           f'{"" if queued == 1 else "s"} '
-                           f'{"is" if queued == 1 else "are"} waiting</b> and cannot '
-                           f'be applied until then. Nothing has been lost.</p>')
-        rights_note = (f'<section class="err"><h2>{_e(rights.headline or "Changes cannot be saved")}</h2>'
-                       f'<p class="why">{_e(rights.detail)}</p>{queued_note}{offer}</section>')
+    text = _e(rights.detail)
+    if queued:
+        text += (f' <b>{queued} change{"" if queued == 1 else "s"} {"is" if queued == 1 else "are"} waiting</b> '
+                 f'and cannot be applied until then. Nothing has been lost.')
+    return notice2("err", _e(rights.headline or "Changes cannot be saved"), text, offer)
 
-    return f"""<!doctype html>
-{_html()}<head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>{_title()}</title><style>{_CSS}{_GRID_CSS}{CONFIG_CSS}</style></head>
-<body>
-<div class="navbar"><span class="brand">Sunshine</span><span class="sep">/</span>
-<span class="where">app manager</span>{_version_chip()}<a class="gear" href="/settings">Settings</a></div>
-<div class="wrap">
-<h1>{len(apps)} application{'' if len(apps) == 1 else 's'}</h1>
-<p class="sub"><code>{_e(state.get("apps_json", ""))}</code></p>
-{config_banner(config, token)}{rights_note}{auth_note}{restore_note}
-<div class="actions">{apply_button}{discard_button}
-<a class="btn{'' if not queued else ' sec'}" href="/?scan=1">Rescan</a>
-<a class="btn sec" href="/backups">Restore a copy</a>
-<a class="btn sec" href="/report">Report a bug</a>
-<form method="post" action="/quit" class="inline">
-<button class="btn sec" type="submit">Close the manager</button></form></div>
-{legend}
-<div class="grid">{"".join(tiles)}</div>
-</div></body></html>"""
+
+def auth_notice2(auth_ok: bool, auth_detail: str) -> str:
+    if auth_ok:
+        return ""
+    button = '<a class="btn sec" href="/connect">Check the sign-in</a>'
+    if auth_detail:
+        return notice2("err", "Sunshine is not answering", _e(auth_detail), button)
+    return notice2("err", "Sunshine needs sign-in", "", '<a class="btn sec" href="/connect">Connect</a>')
+
+
+def restore_notice2(restore: Optional[Dict[str, Any]]) -> str:
+    if not restore:
+        return ""
+    counts = []
+    for key, word in (("returning", "would come back"), ("going", "would be removed"), ("changing", "would change")):
+        items = restore.get(key) or []
+        if not items:
+            continue
+        if key == "changing":
+            said = []
+            for item in items[:6]:
+                name = _e(str(item.get("name")))
+                becomes = item.get("becomes")
+                detail = _fields_in_words(item.get("fields") or [])
+                if becomes:
+                    said.append(f"{name} &rarr; <b>{_e(str(becomes))}</b>" + (f" ({detail})" if detail else ""))
+                else:
+                    said.append(name + (f" ({detail})" if detail else ""))
+            names = "; ".join(said)
+        else:
+            names = ", ".join(_e(str(i.get("name"))) for i in items[:6])
+        if len(items) > 6:
+            names += f" and {len(items) - 6} more"
+        counts.append(f"<b>{len(items)}</b> {word}: {names}")
+    if restore.get("hidden_now") != restore.get("hidden_then"):
+        counts.append(f'What you have hidden goes from <b>{restore.get("hidden_now")}</b> to '
+                      f'<b>{restore.get("hidden_then")}</b> entries')
+    body = " \u00b7 ".join(counts) or "Nothing would change. This copy matches what you have now."
+    body += ('</span><span style="display:block;margin-top:.2rem">Nothing has changed yet. A copy of the current '
+             'file is taken before this is applied, so this can be undone the same way.')
+    cancel = (f'<form method="post" action="/unqueue"><input type="hidden" name="qid" '
+              f'value="{_e(restore.get("qid", ""))}"><button class="btn sec" type="submit">Cancel this restore'
+              f'</button></form>')
+    return notice2("warn", f'Restoring the copy from {_e(_when(restore.get("backup", "")))}', body, cancel)
 
 
 # ------------------------------------------------------- app detail / edit ---
@@ -1863,7 +1961,7 @@ def picker_page(listing: Dict[str, Any], token: str, *, key: str, field: str,
 <style>{_CSS}{_APP_CSS}{_PICKER_CSS}</style></head>
 <body>
 <div class="navbar"><span class="brand">Sunshine</span><span class="sep">/</span>
-<span class="where">app manager</span>{_version_chip()}</div>
+<span class="where">App Manager</span>{_version_chip()}</div>
 <div class="wrap">
 <h1>Choose {_e(label)}</h1>
 {problem}
@@ -1926,7 +2024,7 @@ def hidden_page(entry: Dict[str, Any], token: str, queued: bool = False) -> str:
 <title>{_title(_e(name))}</title><style>{_CSS}{_APP_CSS}{_GRID_CSS}</style></head>
 <body>
 <div class="navbar"><span class="brand">Sunshine</span><span class="sep">/</span>
-<span class="where">app manager</span>{_version_chip()}</div>
+<span class="where">App Manager</span>{_version_chip()}</div>
 <div class="wrap">
 <h1>{_e(name)}</h1>
 <div class="preview">{art}<div class="meta">
@@ -2307,7 +2405,7 @@ def artwork_page(candidates: List[Dict[str, Any]], token: str, *, key: str,
 <style>{_CSS}{_APP_CSS}{_ARTWORK_CSS}</style></head>
 <body>
 <div class="navbar"><span class="brand">Sunshine</span><span class="sep">/</span>
-<span class="where">app manager</span>{_version_chip()}</div>
+<span class="where">App Manager</span>{_version_chip()}</div>
 <div class="wrap">
 <h1>Artwork for {_e(label)}</h1>
 {problem}{note_list}{find}
@@ -2441,7 +2539,7 @@ def app_page(entry: Dict[str, Any], token: str, *, is_new: bool = False,
 <style>{_CSS}{_APP_CSS}</style></head>
 <body>
 <div class="navbar"><span class="brand">Sunshine</span><span class="sep">/</span>
-<span class="where">app manager</span>{_version_chip()}</div>
+<span class="where">App Manager</span>{_version_chip()}</div>
 <div class="wrap">
 <h1>{_e(name or "New application")}</h1>
 {preview}{warn}
@@ -2480,7 +2578,7 @@ def explain_page(op: str, entry: Dict[str, Any], token: str) -> str:
 <title>{_title(_e(title))}</title><style>{_CSS}{_APP_CSS}</style></head>
 <body>
 <div class="navbar"><span class="brand">Sunshine</span><span class="sep">/</span>
-<span class="where">app manager</span>{_version_chip()}</div>
+<span class="where">App Manager</span>{_version_chip()}</div>
 <div class="wrap">
 <h1>{_e(title)}</h1>
 <section><p class="why"><b>{_e(name)}</b> &mdash; {_e(body)}</p></section>

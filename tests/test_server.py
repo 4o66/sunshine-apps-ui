@@ -862,7 +862,7 @@ class GridTest(ServerTest):
     def test_hidden_entries_appear_muted_and_marked(self):
         _, body = self.get(token=self.token)
         self.assertIn("tile hidden", body)
-        self.assertIn('class="mark">hidden', body)
+        self.assertIn('<span class="flag">HIDDEN</span>', body)
         self.assertIn("TF2", body)
 
     def test_nothing_is_marked_new_until_a_scan(self):
@@ -879,7 +879,7 @@ class GridTest(ServerTest):
             from sunshine_apps_ui import state as st
             _, body = self.scan()
             self.assertIn(">NEW<", body)
-            self.assertIn("ghost found", body)
+            self.assertIn('class="tile new"', body)
             self.assertEqual([o["op"] for o in st.queue()], ["adopt"])
             self.assertIn("Apply 1 change", body)
         finally:
@@ -922,7 +922,6 @@ class GridTest(ServerTest):
             _, body = self.get(token=self.token)
             self.assertIn("WILL HIDE", body)
             self.assertIn("tile pending", body)
-            self.assertIn("queued, not applied yet", body)
         finally:
             if old is None:
                 os.environ.pop("XDG_STATE_HOME", None)

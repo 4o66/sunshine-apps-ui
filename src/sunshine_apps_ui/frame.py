@@ -100,7 +100,7 @@ def page(title: str, main: str, bar: str = "", *, settings_here: bool = False,
            f'<span class="ver">{_e(version_display())}</span>\n</header>')
     footer = ""
     if bar is not None:
-        end = gear(settings_here) + (bug() if with_bug else "")
+        end = gear(settings_here) + ("\n" + bug() if with_bug else "")
         footer = f'\n<footer class="bar">\n{bar}\n{end}\n</footer>'
     return ("<!doctype html>\n" + html_open(theme_name) + "\n<head>\n<meta charset=\"utf-8\">\n"
             '<meta name="viewport" content="width=device-width,initial-scale=1">\n'
