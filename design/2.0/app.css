@@ -126,6 +126,8 @@ background:var(--primary);color:#fff;border:2px solid var(--primary);white-space
 :root[data-theme="light"] .btn.danger{color:#b02a37}
 /* Off: faded, and half way to greyscale, so a colored button reads as off
    and not just as dim. */
+/* An action that fixes something missing first: the warning triangle. */
+.btn.warn svg{width:1.3rem;height:1.3rem;display:block;color:#ffc400}
 .btn.flat{opacity:.45;filter:grayscale(.5);cursor:default}
 /* States. The label keeps its color in every state; what changes is the
    fill. Focus from a controller or keyboard adds the ring as well. The
