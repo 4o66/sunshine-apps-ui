@@ -359,6 +359,10 @@ background:var(--surface);border:1px solid var(--border);font:inherit;font-size:
 .key.w2{grid-column:span 2}.key.w3{grid-column:span 3}.key.w4{grid-column:span 4}.key.w6{grid-column:span 6}
 .key.dim{color:var(--text-muted);font-size:.95rem}
 .key.go{background:var(--primary);border-color:var(--primary);color:#fff}
+/* Caps or Shift while on: the look of a chosen option. A key that does nothing
+   on this layer (Caps and Shift on symbols) is faded, as a flat button is. */
+.key.on{background:rgba(13,110,253,.14);border-color:var(--primary);color:var(--text)}
+.key:disabled{opacity:.45;filter:grayscale(.5);cursor:default}
 .osk .help{display:flex;gap:1.6rem;justify-content:flex-end;color:var(--text-muted);font-size:.85rem}
 .osk .help span{display:inline-flex;align-items:center;gap:.45rem}
 .osk .help .glyph{display:inline-flex}

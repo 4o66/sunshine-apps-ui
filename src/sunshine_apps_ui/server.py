@@ -41,7 +41,8 @@ log = logging.getLogger("sunshine-apps-ui")
 STOP_AFTER_APPLY = 3.0
 
 
-PAD_SCRIPT = '<script src="/pad.js" defer></script>'
+# The controller (#32) and, for its text fields, the on-screen keyboard (#62).
+PAD_SCRIPT = '<script src="/osk.js" defer></script><script src="/pad.js" defer></script>'
 
 
 def with_pad(page: str) -> str:
@@ -365,6 +366,10 @@ class PlanHandler(BaseHTTPRequestHandler):
 
         if parts.path == "/pad.js":
             self._send_asset("pad.js", "text/javascript; charset=utf-8")
+            return
+
+        if parts.path == "/osk.js":
+            self._send_asset("osk.js", "text/javascript; charset=utf-8")
             return
 
         if parts.path == "/app.js":

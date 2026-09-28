@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>App Manager: typing a name</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<header class="top">
+<span class="brand">Sunshine</span><span class="sep">/</span><span class="where">App Manager</span>
+<span class="ver">2.0.0</span>
+</header>
+<main class="main">
+<div class="head"><h1>Cyberpunk 2077</h1><span class="sub">Created by the importer (<code>steam:1091500</code>). Fields you change here are kept and it stops updating them.</span></div>
+<form class="form" method="post" action="/app">
+<div class="cover">
+<img src="img/1091500.png" alt="">
+<a class="btn sec" href="artwork.html">Find artwork</a>
+</div>
+<div class="fields">
+<div class="field"><label for="name">Name</label><input id="name" type="text" value="Cyberpunk 2077"><span></span>
+<span class="hint">Shown in Moonlight.</span></div>
+<div class="field"><label for="cmd">Command</label><input id="cmd" type="text" value="steam steam://rungameid/1091500"><a class="btn sec" href="browse.html">Browse</a>
+<span class="hint">Run when the app is launched. Leave empty for a desktop session.</span></div>
+<div class="field"><label for="dir">Working directory</label><input id="dir" type="text" value=""><a class="btn sec" href="browse.html">Browse</a>
+<span class="hint">Where the command runs.</span></div>
+<div class="field"><label>Exit timeout</label>
+<div class="choices three tight">
+<label class="choice"><input type="radio" name="exit-timeout" value="0"><b>Immediately</b></label>
+<label class="choice"><input type="radio" name="exit-timeout" value="5" checked><b>5 seconds</b></label>
+<label class="choice"><input type="radio" name="exit-timeout" value="10"><b>10 seconds</b></label>
+<label class="choice"><input type="radio" name="exit-timeout" value="30"><b>30 seconds</b></label>
+<label class="choice"><input type="radio" name="exit-timeout" value="60"><b>1 minute</b></label>
+<label class="choice"><input type="radio" name="exit-timeout" value="custom"><b>Custom</b></label>
+</div><span></span>
+<span class="hint">Seconds to wait for a clean exit before forcing it. Immediately ends it at once.</span></div>
+
+<div class="switches">
+<label class="switch"><input type="checkbox"><span class="knob"></span><span class="t"><b>Run elevated</b></span></label>
+<label class="switch"><input type="checkbox" checked><span class="knob"></span><span class="t"><b>Auto-detach</b></span></label>
+<label class="switch"><input type="checkbox" checked><span class="knob"></span><span class="t"><b>Wait for all processes</b></span></label>
+<label class="switch"><input type="checkbox"><span class="knob"></span><span class="t"><b>Skip global prep commands</b></span></label>
+</div>
+<div class="field"><label for="log">Output log</label><input id="log" type="text" value=""><span></span>
+<span class="hint">File to capture the command's output. Usually empty.</span></div>
+</div>
+</form>
+</main>
+<footer class="bar">
+<a class="btn sec" href="grid.html" data-back><span class="glyph b">B</span>Back</a>
+<a class="btn danger" href="explain.html">Hide</a>
+<a class="btn danger" href="explain.html">Delete</a>
+<span class="grow"></span>
+<button class="btn sec" type="button">Save as a copy</button>
+<button class="btn flat" type="button" disabled><span class="glyph y">Y</span>Apply</button>
+<a class="btn sec icon gear" href="settings.html" aria-label="Settings"><span class="glyph wide">☰</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></a>
+</footer>
+<div class="veil"></div>
+<div class="osk" role="dialog" aria-label="Keyboard">
+<div class="entry"><label>Name</label><div class="value">Cyberpunk 2077 U<span class="caret"></span></div></div>
+<div class="keys">
+<button class="key" type="button">1</button><button class="key" type="button">2</button><button class="key" type="button">3</button><button class="key" type="button">4</button><button class="key" type="button">5</button><button class="key" type="button">6</button><button class="key" type="button">7</button><button class="key" type="button">8</button><button class="key" type="button">9</button><button class="key" type="button">0</button><button class="key" type="button">-</button><button class="key" type="button">:</button>
+<button class="key" type="button">Q</button><button class="key" type="button">W</button><button class="key" type="button">E</button><button class="key" type="button">R</button><button class="key" type="button">T</button><button class="key" type="button">Y</button><button class="key" type="button">U</button><button class="key" type="button">I</button><button class="key" type="button">O</button><button class="key" type="button">P</button><button class="key dim w2" type="button">⌫ Delete</button>
+<button class="key" type="button">A</button><button class="key" type="button">S</button><button class="key" type="button">D</button><button class="key" type="button">F</button><button class="key" type="button">G</button><button class="key" type="button">H</button><button class="key" type="button">J</button><button class="key" type="button">K</button><button class="key" type="button" autofocus>L</button><button class="key" type="button">'</button><button class="key go w2" type="button">Done</button>
+<button class="key dim on" type="button" aria-label="Caps lock">⇪ Caps</button><button class="key dim" type="button" aria-label="Shift, for the next letter">⇧ Shift</button><button class="key" type="button">Z</button><button class="key" type="button">X</button><button class="key" type="button">C</button><button class="key" type="button">V</button><button class="key" type="button">B</button><button class="key" type="button">N</button><button class="key" type="button">M</button><button class="key" type="button">,</button><button class="key" type="button">.</button><button class="key" type="button">/</button>
+<button class="key dim w2" type="button">&amp;123 Symbols</button><button class="key w6" type="button">Space</button><button class="key dim" type="button">←</button><button class="key dim" type="button">→</button><button class="key dim w2" type="button">Cancel</button>
+</div>
+<div class="help"><span><span class="glyph a">A</span>Type</span><span><span class="glyph x">X</span>Delete</span><span><span class="glyph y">Y</span>Space</span><span><span class="glyph wide">LB RB</span>Move the cursor</span><span><span class="glyph wide">☰</span>Done</span><span><span class="glyph b">B</span>Cancel</span></div>
+</div>
+</body>
+</html>

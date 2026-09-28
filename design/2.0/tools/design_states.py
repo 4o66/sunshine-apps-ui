@@ -240,6 +240,30 @@ def _edit_unhidden(engine):
     state.enqueue({"op": "restore", "selector": "steam:601360", "name": "Portal: Revolution"})
 
 
+def osk(address_tail):
+    return "/app?index=2&osk=%23name&" + address_tail
+
+
+@scenario("edit-osk", [(osk("type=%20Ultimate"), "edit-osk.html")])
+def _edit_osk(engine):
+    engine.state = edit_state()
+
+
+@scenario("edit-osk-caps", [(osk("type=%20U&press=caps"), "edit-osk-caps.html")])
+def _edit_osk_caps(engine):
+    engine.state = edit_state()
+
+
+@scenario("edit-osk-shift", [(osk("type=%20&press=shift"), "edit-osk-shift.html")])
+def _edit_osk_shift(engine):
+    engine.state = edit_state()
+
+
+@scenario("edit-osk-symbols", [(osk("type=%3A%20Ultimate&press=symbols"), "edit-osk-symbols.html")])
+def _edit_osk_symbols(engine):
+    engine.state = edit_state()
+
+
 # What the address asks for, for a capture: ?theme=, ?scale=couch|desk (couch
 # is streamed and in controller use, as the boards are drawn) and ?focus=, the
 # control the board shows focused ("text:Keep this one", or a CSS selector).
@@ -247,7 +271,7 @@ LOOK = {"theme": None, "scale": None}
 
 DRIVE_JS = r"""(function(){
 var me=location.pathname+location.search;
-var q=new URLSearchParams(location.search), f=q.get("focus"), osk=q.get("osk"), typed=q.get("type")||"";
+var q=new URLSearchParams(location.search), f=q.get("focus"), osk=q.get("osk"), typed=q.get("type")||"", press=q.get("press")||"";
 function find(spec,within){var el=null;within=within||document;
  if(spec.indexOf("text:")===0){var t=spec.slice(5);
   Array.prototype.forEach.call(within.querySelectorAll("a,button"),function(c){if(!el&&c.textContent.trim()===t)el=c;});}
@@ -259,7 +283,8 @@ function put(){
   typed.split("").forEach(function(ch){
    if(ch===" "){k.querySelector('[data-do=space]').click();return;}
    if(ch!==ch.toLowerCase()){k.querySelector('[data-do=shift]').click();}
-   var key=k.querySelector('[data-type="'+ch.replace(/"/g,'\\"')+'"]');if(key)key.click();});}
+   var key=k.querySelector('[data-type="'+ch.replace(/"/g,'\\"')+'"]');if(key)key.click();});
+  press.split(",").filter(Boolean).forEach(function(d){k.querySelector('[data-do="'+d+'"]').click();});}
  if(!f)return;var el=find(f,osk&&window.OSK?window.OSK.area():document);
  if(el){el.focus({preventScroll:true,focusVisible:true});
   if(el.tagName==="INPUT"&&el.type==="text"){try{el.setSelectionRange(0,0)}catch(e){}}}}

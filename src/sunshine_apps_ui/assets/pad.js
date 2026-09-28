@@ -22,7 +22,7 @@
 // the glyphs, the focus ring and the Keyboard button. A mouse movement takes it
 // away again.
 //
-// The standard mapping: 0 A, 1 B, 2 X, 3 Y, 4 LB, 5 RB, 9 Menu (Start),
+// The standard mapping: 0 A, 1 B, 2 X, 3 Y (but see faceX), 4 LB, 5 RB, 9 Menu (Start),
 // 12-15 the d-pad; axes 0/1 the left stick, 2/3 the right.
 (function () {
   "use strict";
@@ -187,6 +187,17 @@
     return !!b && (b.pressed || b.value > 0.5);
   }
 
+  // X and Y, by the letter printed on the button. An Xbox pad on Linux --
+  // the kernel's own driver, and the virtual pad Sunshine makes through
+  // inputtino -- reports X as BTN_NORTH and Y as BTN_WEST. WebKitGTK maps
+  // those by where the kernel says they sit, so X arrives as button 3 and Y
+  // as 2, the wrong way round. Measured on bsm-bazzite, 2026-09-27, with a
+  // uinput pad sending inputtino's codes. WebView2 reads XInput and gets
+  // them right, so this is only for WebKit on Linux.
+  var SWAPPED_XY = /Linux/.test(navigator.userAgent) && !/Chrom/.test(navigator.userAgent);
+  function faceX(pad) { return SWAPPED_XY && /x-?box|xinput/i.test(pad.id) ? 3 : 2; }
+  function faceY(pad) { return SWAPPED_XY && /x-?box|xinput/i.test(pad.id) ? 2 : 3; }
+
   function frame(now) {
     requestAnimationFrame(frame);
     // A pad is shared by everything on the machine; only the window in front
@@ -216,8 +227,8 @@
     var typing = !!keyboard();
     edge("a", pressed(pad, 0), now, false, press);
     edge("b", pressed(pad, 1), now, false, to("b", back));
-    edge("x", pressed(pad, 2), now, typing, to("x", function () { activate(byGlyph("x")); }));
-    edge("y", pressed(pad, 3), now, false, to("y", function () { activate(byGlyph("y")); }));
+    edge("x", pressed(pad, faceX(pad)), now, typing, to("x", function () { activate(byGlyph("x")); }));
+    edge("y", pressed(pad, faceY(pad)), now, false, to("y", function () { activate(byGlyph("y")); }));
     edge("lb", pressed(pad, 4), now, typing, to("lb", function () { activate(byGlyph("lb")); }));
     edge("rb", pressed(pad, 5), now, typing, to("rb", function () { activate(byGlyph("rb")); }));
 

@@ -752,6 +752,13 @@ class ControllerTest(ServerTest):
             self.assertEqual(body.count(server_module.PAD_SCRIPT), 1, path)
             self.assertLess(body.index(server_module.PAD_SCRIPT), body.rindex("</body>"), path)
 
+    def test_the_keyboard_comes_with_it(self):
+        """Every text field can be typed into from a controller (#62)."""
+        self.assertIn('<script src="/osk.js" defer></script>', server_module.PAD_SCRIPT)
+        status, body = self.get(f"/osk.js?token={self.token}")
+        self.assertEqual(status, 200)
+        self.assertIn('addEventListener("pad:type"', body)
+
     def test_adding_it_twice_is_adding_it_once(self):
         once = server_module.with_pad("<html><body>x</body></html>")
         self.assertEqual(server_module.with_pad(once), once)
