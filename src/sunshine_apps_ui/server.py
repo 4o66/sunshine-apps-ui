@@ -29,7 +29,7 @@ from .render import (LOCK_NOTE, app_page, applied_page, artwork_page,
                      closing_page, leaving_with_changes_page,
                      render_elevating,
                      backups_page, confirm_page, connect_page, error_page,
-                     explain_page, grid_page, hidden_page, is_protected, page,
+                     exit_timeout_value, explain_page, grid_page, hidden_page, is_protected, page,
                      picker_page, render_browsable, render_fields, render_flags,
                      report_page, scanning_page, settings_page)
 
@@ -416,6 +416,20 @@ class PlanHandler(BaseHTTPRequestHandler):
                 already = any(op.get("op") == "restore"
                               and op.get("selector") == wanted
                               for op in state.queue())
+                kept = entry.get("entry")
+                if already and isinstance(kept, dict) and kept.get("name"):
+                    # The hide kept the whole entry, so it can be edited before
+                    # it is back; an edit already queued for it shows here.
+                    shown = dict(kept)
+                    shown["managed"] = True
+                    shown["source"], shown["id"] = entry.get("source"), entry.get("id")
+                    for op in state.queue():
+                        if (op.get("op") == "edit" and f'{op.get("source")}:{op.get("id")}' == wanted):
+                            shown.update(op.get("fields") or {})
+                    shown, dirty = self._with_draft(shown, f"hidden:{wanted}")
+                    self._send(200, app_page(shown, self.token, unhidden=wanted, dirty=dirty,
+                                             draft_key=f"hidden:{wanted}"))
+                    return
                 self._send(200, hidden_page(entry, self.token, queued=already))
                 return
             entry = self._entry(query)
@@ -748,6 +762,11 @@ class PlanHandler(BaseHTTPRequestHandler):
             name = name or str(op.get("name") or "")
             marker = (op.get("entry") or {}).get("bsm") or {}
             source, ident = str(marker.get("source") or ""), str(marker.get("id") or "")
+        elif key.startswith("hidden:"):
+            source, _, ident = key[7:].partition(":")
+            if not name:
+                grave = self._hidden_entry(key[7:]) or {}
+                name = str(grave.get("name") or "")
         elif key.startswith("index:"):
             try:
                 current = get_state(self.conf_dir, use_cache=True)
@@ -761,6 +780,15 @@ class PlanHandler(BaseHTTPRequestHandler):
                     break
         return name, source, ident
 
+    def _hidden_entry(self, wanted: str):
+        """The hidden entry with this selector, or None."""
+        try:
+            current = get_state(self.conf_dir, use_cache=True)
+        except EngineError:
+            return None
+        return next((h for h in (current.get("hidden") or [])
+                     if f'{h.get("source")}:{h.get("id")}' == wanted), None)
+
     def _form_target(self, key: str) -> str:
         if key == "new":
             return "/app?new=1"
@@ -768,6 +796,8 @@ class PlanHandler(BaseHTTPRequestHandler):
             return f"/app?queued={key[4:]}"
         if key.startswith("index:"):
             return f"/app?index={key[6:]}"
+        if key.startswith("hidden:"):
+            return "/app?" + urlencode({"hidden": key[7:]})
         return "/"
 
     def _stop_soon(self, delay: float = 0.5) -> None:
@@ -982,9 +1012,12 @@ class PlanHandler(BaseHTTPRequestHandler):
                           for k, _l, _t, _h in render_fields()}
                 for k, _label in render_flags():
                     values[k] = k in fields
+                values["exit-timeout"] = exit_timeout_value(fields)
                 qid = (fields.get("qid") or [""])[0]
                 index = (fields.get("index") or [""])[0]
+                chosen = (fields.get("selector") or [""])[0]
                 key = (f"qid:{qid}" if qid
+                       else f"hidden:{chosen}" if chosen
                        else f"index:{index}" if index != "" else "new")
                 state.set_draft(key, values)
                 if op == "artwork":
@@ -1006,6 +1039,7 @@ class PlanHandler(BaseHTTPRequestHandler):
                           for key, _l, _k, _h in render_fields()}
                 for key, _label in render_flags():
                     values[key] = key in fields
+                values["exit-timeout"] = exit_timeout_value(fields)
                 # Revise the payload this operation actually carries, so the
                 # ownership marker on an adopted entry survives being edited.
                 if isinstance(existing.get("entry"), dict):
@@ -1027,6 +1061,7 @@ class PlanHandler(BaseHTTPRequestHandler):
                       for key, _l, _k, _h in render_fields()}
             for key, _label in render_flags():
                 values[key] = key in fields
+            values["exit-timeout"] = exit_timeout_value(fields)
 
             posted_index = (fields.get("index") or [""])[0]
             if op != "add" and self._protects(posted_index):
@@ -1039,6 +1074,17 @@ class PlanHandler(BaseHTTPRequestHandler):
                 # Rename and nothing else. The importer updates exactly the
                 # fields it is given, so sending only this one is the guard.
                 values = {"name": values.get("name", "")}
+
+            chosen = (fields.get("selector") or [""])[0]
+            if chosen and op == "edit":
+                source, _, ident = chosen.partition(":")
+                while state.drop_matching(op="edit", source=source, id=ident):
+                    pass
+                state.enqueue({"op": "edit", "source": source, "id": ident,
+                               "name": (fields.get("orig_name") or [""])[0], "fields": values})
+                state.clear_draft(f"hidden:{chosen}")
+                self._redirect("/")
+                return
 
             entry = {"op": op, "fields": values}
             key_for_form = "new"
@@ -1062,9 +1108,11 @@ class PlanHandler(BaseHTTPRequestHandler):
                 if not selector:
                     self._send(400, error_page("Nothing to un-hide.", token=self.token))
                     return
-                state.enqueue({"op": "restore", "selector": selector,
-                               "name": (fields.get("name") or [""])[0]})
-                self._redirect("/")
+                if not any(o.get("op") == "restore" and o.get("selector") == selector
+                           for o in state.queue()):
+                    state.enqueue({"op": "restore", "selector": selector,
+                                   "name": (fields.get("name") or [""])[0]})
+                self._redirect("/app", hidden=selector)
                 return
             if op not in state.EXPLAINED:
                 self._send(400, error_page("Unknown action.", token=self.token))
@@ -1099,6 +1147,10 @@ class PlanHandler(BaseHTTPRequestHandler):
                     criteria[key] = value
             if not op or not state.drop_matching(**criteria):
                 log.info("nothing matched to un-queue: %r", criteria)
+            if op == "restore" and criteria.get("selector"):
+                source, _, ident = criteria["selector"].partition(":")
+                while state.drop_matching(op="edit", source=source, id=ident):
+                    pass
             self._redirect("/")
             return
 

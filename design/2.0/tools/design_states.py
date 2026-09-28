@@ -180,6 +180,66 @@ def _grid_unhide_edited(engine):
     _unhide(engine, edit=True)
 
 
+def edit_state():
+    """The boards' apps with the fields the edit boards show."""
+    st = board_state()
+    for a in st["apps"]:
+        a.update({"auto-detach": True, "wait-all": True, "exit-timeout": 5, "working-dir": "", "output": ""})
+    return st
+
+
+@scenario("edit", [("/app?index=2", "edit.html")])
+def _edit(engine):
+    engine.state = edit_state()
+
+
+@scenario("edit-custom", [("/app?index=2", "edit-custom.html")])
+def _edit_custom(engine):
+    engine.state = edit_state()
+    engine.state["apps"][2]["exit-timeout"] = 15
+
+
+@scenario("edit-new", [("/app?new=1", "edit-new.html")])
+def _edit_new(engine):
+    engine.state = edit_state()
+
+
+@scenario("edit-locked", [("/app?index=7", "edit-locked.html")])
+def _edit_locked(engine):
+    engine.state = edit_state()
+    engine.state["apps"][7].update({"cmd": "/var/home/user/.local/bin/sunshine-apps-ui",
+                                    "working-dir": "/var/home/user"})
+
+
+@scenario("explain", [("/explain?op=hide&index=3", "explain.html")])
+def _explain(engine):
+    engine.state = edit_state()
+
+
+def hidden_portal(engine):
+    engine.state = edit_state()
+    portal = next(a for a in engine.state["apps"] if a["name"] == "Portal: Revolution")
+    engine.state["apps"].remove(portal)
+    for i, a in enumerate(engine.state["apps"]):
+        a["index"] = i
+    kept = {k: v for k, v in portal.items() if k not in ("index", "source", "id", "managed")}
+    kept["cmd"] = "steam steam://rungameid/601360"
+    kept["bsm"] = {"source": "steam", "id": "601360"}
+    engine.state["hidden"] = [{"name": portal["name"], "source": "steam", "id": "601360",
+                               "image-path": portal["image-path"], "entry": kept}]
+
+
+@scenario("hidden", [("/app?hidden=steam%3A601360", "hidden.html")])
+def _hidden(engine):
+    hidden_portal(engine)
+
+
+@scenario("edit-unhidden", [("/app?hidden=steam%3A601360", "edit-unhidden.html")])
+def _edit_unhidden(engine):
+    hidden_portal(engine)
+    state.enqueue({"op": "restore", "selector": "steam:601360", "name": "Portal: Revolution"})
+
+
 # What the address asks for, for a capture: ?theme=, ?scale=couch|desk (couch
 # is streamed and in controller use, as the boards are drawn) and ?focus=, the
 # control the board shows focused ("text:Keep this one", or a CSS selector).
@@ -187,13 +247,23 @@ LOOK = {"theme": None, "scale": None}
 
 DRIVE_JS = r"""(function(){
 var me=location.pathname+location.search;
-var q=new URLSearchParams(location.search), f=q.get("focus");
-function put(){if(!f)return;var el=null;
- if(f.indexOf("text:")===0){var t=f.slice(5);
-  Array.prototype.forEach.call(document.querySelectorAll("a,button"),function(c){if(!el&&c.textContent.trim()===t)el=c;});}
- else el=document.querySelector(f);
- if(el)el.focus({preventScroll:true,focusVisible:true});}
-if(document.readyState!=="loading")put();else addEventListener("DOMContentLoaded",put);
+var q=new URLSearchParams(location.search), f=q.get("focus"), osk=q.get("osk"), typed=q.get("type")||"";
+function find(spec,within){var el=null;within=within||document;
+ if(spec.indexOf("text:")===0){var t=spec.slice(5);
+  Array.prototype.forEach.call(within.querySelectorAll("a,button"),function(c){if(!el&&c.textContent.trim()===t)el=c;});}
+ else el=within.querySelector(spec);
+ return el;}
+function put(){
+ if(osk&&window.OSK){var field=document.querySelector(osk);field.focus();window.OSK.open(field);
+  var k=window.OSK.area();
+  typed.split("").forEach(function(ch){
+   if(ch===" "){k.querySelector('[data-do=space]').click();return;}
+   if(ch!==ch.toLowerCase()){k.querySelector('[data-do=shift]').click();}
+   var key=k.querySelector('[data-type="'+ch.replace(/"/g,'\\"')+'"]');if(key)key.click();});}
+ if(!f)return;var el=find(f,osk&&window.OSK?window.OSK.area():document);
+ if(el){el.focus({preventScroll:true,focusVisible:true});
+  if(el.tagName==="INPUT"&&el.type==="text"){try{el.setSelectionRange(0,0)}catch(e){}}}}
+if(document.readyState==="complete")put();else addEventListener("DOMContentLoaded",put);
 setInterval(function(){fetch('/_target',{cache:'no-store'}).then(function(r){return r.text()}).then(function(t){
 t=t.trim();if(t&&t!==me){location.replace(t)}}).catch(function(){})},300)})();"""
 
@@ -275,7 +345,8 @@ def main():
     a = p.parse_args()
     if a.scenario == "list":
         for name, (_, pages) in sorted(SCENARIOS.items()):
-            print(name, " ".join(board for _, board in pages))
+            for address, board in pages:
+                print(name, board, address)
         return
     run(a.scenario, a.port, a.streamed, a.pad, a.drive_dir)
 

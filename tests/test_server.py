@@ -2,6 +2,7 @@
 """End-to-end tests against a real server on a loopback port."""
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -763,8 +764,9 @@ class ControllerTest(ServerTest):
         import inspect
         from sunshine_apps_ui import render
         source = inspect.getsource(render)
-        self.assertGreater(source.count(">Back</a>"), 0)
-        self.assertEqual(source.count(">Back</a>"), source.count("data-back>Back</a>"))
+        backs = re.findall(r'<a [^>]*>(?:<span class="glyph b">B</span>)?Back</a>', source)
+        self.assertGreater(len(backs), 0)
+        self.assertEqual([b for b in backs if "data-back" not in b], [])
 
 
 class ExplainTest(ServerTest):
@@ -1189,7 +1191,7 @@ class HiddenEntryTest(ServerTest):
         self.assertIn("Queued to come back", body)
         self.assertNotIn("Un-hide it", body)
         self.assertIn("Cancel un-hiding", body)
-        self.assertIn("Back to the apps", body)
+        self.assertIn('href="/" data-back><span class="glyph b">B</span>Back</a>', body)
 
     def test_canceling_removes_it_from_the_queue(self):
         from sunshine_apps_ui import state as st
@@ -1387,8 +1389,10 @@ class FilePickerTest(ServerTest):
 
     def test_the_form_offers_a_browse_button_for_path_fields(self):
         _, body = self.get(f"/app?new=1&token={self.token}")
-        for field in ("cmd", "working-dir", "image-path"):
+        for field in ("cmd", "working-dir"):
             self.assertIn(f'value="browse:{field}"', body)
+        # The artwork path is chosen on the picture page, which has its own Browse.
+        self.assertIn('value="artwork"', body)
 
     def test_it_does_not_offer_one_for_a_field_that_is_not_a_path(self):
         _, body = self.get(f"/app?new=1&token={self.token}")
@@ -1634,8 +1638,8 @@ class EditFormShowsTheFileTest(ServerTest):
 
     def test_the_exit_timeout_is_shown(self):
         _, body = self.get(f"/app?index=0&token={self.token}")
-        self.assertIn('id="f_exit-timeout" name="exit-timeout" type="text" value="5"',
-                      body)
+        # A choice now, not a number to type (#61).
+        self.assertIn('name="exit-timeout" value="5" checked>', body)
 
     def test_the_output_log_is_shown(self):
         _, body = self.get(f"/app?index=0&token={self.token}")
@@ -1793,7 +1797,7 @@ class ProtectedTileTest(ServerTest):
         _, body = self.get(f"/app?index=1&token={self.token}")
         self.assertIn("op=delete", body)
         self.assertIn('value="clone"', body)
-        self.assertNotIn("readonly", body)
+        self.assertNotRegex(body, r"<input[^>]* readonly")
 
     # --- what the server allows, which is the part that counts
 
@@ -3156,3 +3160,132 @@ class TheLastPageLooksLikeTheLastPageTest(ServerTest):
         body = self._page(1, 48)
         self.assertIn("49-96 of 689", body)
         self.assertIn("Page 2 of 15", body)
+
+
+class ExitTimeoutChoicesTest(ServerTest):
+    """Exit timeout is a set of choices with Custom's stepper (#61)."""
+
+    def entry(self, seconds):
+        state = dict(STATE)
+        apps = [dict(a) for a in STATE["apps"]]
+        apps[1]["exit-timeout"] = seconds
+        state["apps"] = apps
+        self.engine.state = state
+
+    def test_a_preset_is_chosen_and_the_stepper_waits(self):
+        self.entry(10)
+        _, body = self.get(f"/app?index=1&token={self.token}")
+        self.assertIn('name="exit-timeout" value="10" checked>', body)
+        self.assertIn('<div class="stepper" style="display:none">', body)
+
+    def test_any_other_value_is_custom_and_kept(self):
+        self.entry(15)
+        _, body = self.get(f"/app?index=1&token={self.token}")
+        self.assertIn('name="exit-timeout" value="custom" checked>', body)
+        self.assertIn('name="exit-timeout-custom" value="15"', body)
+        self.assertIn('<div class="stepper">', body)
+
+    def test_custom_posts_its_own_number(self):
+        from sunshine_apps_ui import state as st
+        self.post({"op": "edit", "index": "1", "orig_name": "Portal 2", "name": "Portal 2",
+                   "exit-timeout": "custom", "exit-timeout-custom": "45"},
+                  token=self.token, path="/app")
+        self.assertEqual(st.queue()[0]["fields"]["exit-timeout"], "45")
+
+    def test_a_preset_posts_its_value(self):
+        from sunshine_apps_ui import state as st
+        self.post({"op": "edit", "index": "1", "orig_name": "Portal 2", "name": "Portal 2",
+                   "exit-timeout": "0", "exit-timeout-custom": "45"},
+                  token=self.token, path="/app")
+        self.assertEqual(st.queue()[0]["fields"]["exit-timeout"], "0")
+
+
+class UnhideGoesToTheEditPageTest(ServerTest):
+    """Un-hide it opens the entry's edit page; Back shows it waiting (#75)."""
+
+    SELECTOR = "steam:440"
+
+    def setUp(self):
+        super().setUp()
+        state = dict(STATE)
+        state["hidden"] = [dict(STATE["hidden"][0], entry={
+            "name": "TF2", "cmd": "steam -applaunch 440", "image-path": "/img/440.png",
+            "exit-timeout": 5, "bsm": {"source": "steam", "id": "440"}})]
+        self.engine.state = state
+
+    def unhide(self):
+        return self.post({"op": "restore", "selector": self.SELECTOR, "name": "TF2"},
+                         token=self.token, path="/queue")
+
+    def test_un_hiding_opens_its_edit_page(self):
+        status, headers = self.unhide()
+        self.assertEqual(status, 303)
+        self.assertEqual(headers["Location"], "/app?hidden=steam%3A440")
+        _, body = self.get(f"/app?hidden=steam%3A440&token={self.token}")
+        self.assertIn("Coming back when you apply.", body)
+        self.assertIn('value="steam -applaunch 440"', body)
+        self.assertIn("Cancel un-hiding", body)
+        # Opened as if nothing were edited: Apply is off.
+        self.assertNotIn('data-dirty="1"', body)
+        self.assertIn('value="edit" data-apply disabled', body)
+
+    def test_un_hiding_twice_queues_it_once(self):
+        from sunshine_apps_ui import state as st
+        self.unhide()
+        self.unhide()
+        self.assertEqual([o["op"] for o in st.queue()], ["restore"])
+
+    def test_back_on_the_grid_it_waits_to_come_back(self):
+        self.unhide()
+        _, body = self.get(token=self.token)
+        self.assertIn("WILL UN-HIDE", body)
+        self.assertIn(", 1 waiting</h1>", body)
+
+    def test_an_edit_stacks_its_flag_and_is_its_own_change(self):
+        from sunshine_apps_ui import state as st
+        self.unhide()
+        self.post({"op": "edit", "selector": self.SELECTOR, "orig_name": "TF2",
+                   "name": "Team Fortress 2", "exit-timeout": "5"}, token=self.token, path="/app")
+        ops = st.queue()
+        self.assertEqual([o["op"] for o in ops], ["restore", "edit"])
+        self.assertEqual((ops[1]["source"], ops[1]["id"], ops[1]["name"]), ("steam", "440", "TF2"))
+        self.assertNotIn("index", ops[1])
+        _, body = self.get(token=self.token)
+        self.assertIn('<span class="flags"><span class="flag">WILL UN-HIDE</span>'
+                      '<span class="flag">EDITED</span></span>', body)
+        self.assertIn("Apply 2 changes", body)
+        # And it reopens with the edit in it.
+        _, body = self.get(f"/app?hidden=steam%3A440&token={self.token}")
+        self.assertIn('value="Team Fortress 2"', body)
+
+    def test_editing_again_replaces_the_edit(self):
+        from sunshine_apps_ui import state as st
+        self.unhide()
+        for name in ("One", "Two"):
+            self.post({"op": "edit", "selector": self.SELECTOR, "orig_name": "TF2",
+                       "name": name, "exit-timeout": "5"}, token=self.token, path="/app")
+        self.assertEqual([o["op"] for o in st.queue()], ["restore", "edit"])
+        self.assertEqual(st.queue()[1]["fields"]["name"], "Two")
+
+    def test_cancel_un_hiding_takes_its_edit_with_it(self):
+        from sunshine_apps_ui import state as st
+        self.unhide()
+        self.post({"op": "edit", "selector": self.SELECTOR, "orig_name": "TF2",
+                   "name": "X", "exit-timeout": "5"}, token=self.token, path="/app")
+        self.post({"op": "restore", "selector": self.SELECTOR}, token=self.token, path="/unqueue")
+        self.assertEqual(st.queue(), [])
+
+    def test_a_picker_comes_back_to_this_page(self):
+        self.unhide()
+        status, headers = self.post({"op": "browse:cmd", "selector": self.SELECTOR, "name": "TF2",
+                                     "cmd": "", "exit-timeout": "5"}, token=self.token, path="/app")
+        self.assertEqual(status, 303)
+        from sunshine_apps_ui import state as st
+        self.assertEqual(st.draft(f"hidden:{self.SELECTOR}")["name"], "TF2")
+
+    def test_an_entry_hidden_before_whole_entries_were_kept_says_so(self):
+        """Nothing to edit: the hidden page, saying it is queued, as in 1.x."""
+        self.engine.state = dict(STATE)
+        self.unhide()
+        _, body = self.get(f"/app?hidden=steam%3A440&token={self.token}")
+        self.assertIn("Queued to come back.", body)

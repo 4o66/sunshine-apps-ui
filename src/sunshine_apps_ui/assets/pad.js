@@ -54,9 +54,14 @@
     return style.visibility !== "hidden" && style.display !== "none";
   }
 
+  // While the on-screen keyboard is open, only its keys (osk.js).
+  function keyboard() {
+    return window.OSK && window.OSK.isOpen() ? window.OSK.area() : null;
+  }
+
   function targets() {
     return Array.prototype.filter.call(
-      document.querySelectorAll(FOCUSABLE), shown);
+      (keyboard() || document).querySelectorAll(FOCUSABLE), shown);
   }
 
   // The page scrolls between the bars, not the window.
@@ -64,8 +69,15 @@
     return document.querySelector("main.main") || document.scrollingElement;
   }
 
+  // WebKit selects a text field's whole contents when it is focused from
+  // script; a controller only arrives at a field, so it gets a cursor at the
+  // start, as the design draws it, and A opens the keyboard on it.
   function put(el) {
     el.focus({ preventScroll: true, focusVisible: true });
+    if (el.tagName === "INPUT" && typeof el.setSelectionRange === "function" &&
+        /^(text|search|url|password)$/.test(el.type)) {
+      try { el.setSelectionRange(0, 0); } catch (e) { /* not every input allows it */ }
+    }
     el.scrollIntoView({ block: "nearest", inline: "nearest" });
   }
 
@@ -138,8 +150,7 @@
     var tag = el.tagName;
     if (tag === "TEXTAREA" || tag === "SELECT" ||
         (tag === "INPUT" && !/^(checkbox|radio|submit|button|reset)$/.test(el.type))) {
-      // A text field: the on-screen keyboard's job (phase 3). Until then the
-      // focused field simply keeps focus.
+      // A text field: the on-screen keyboard's job (osk.js).
       document.dispatchEvent(new CustomEvent("pad:type", { detail: el }));
       return;
     }
@@ -197,21 +208,27 @@
     edge("down", pressed(pad, 13) || ay > DEAD, now, true, function () { move(0, 1); });
     edge("left", pressed(pad, 14) || ax < -DEAD, now, true, function () { move(-1, 0); });
     edge("right", pressed(pad, 15) || ax > DEAD, now, true, function () { move(1, 0); });
+    // The keyboard takes B, X, Y, LB, RB and Menu while it is open; A still
+    // presses the focused key. X and the cursor keys repeat when held there.
+    function to(name, fallback) {
+      return function () { if (!(keyboard() && window.OSK.handle(name))) fallback(); };
+    }
+    var typing = !!keyboard();
     edge("a", pressed(pad, 0), now, false, press);
-    edge("b", pressed(pad, 1), now, false, back);
-    edge("x", pressed(pad, 2), now, false, function () { activate(byGlyph("x")); });
-    edge("y", pressed(pad, 3), now, false, function () { activate(byGlyph("y")); });
-    edge("lb", pressed(pad, 4), now, false, function () { activate(byGlyph("lb")); });
-    edge("rb", pressed(pad, 5), now, false, function () { activate(byGlyph("rb")); });
+    edge("b", pressed(pad, 1), now, false, to("b", back));
+    edge("x", pressed(pad, 2), now, typing, to("x", function () { activate(byGlyph("x")); }));
+    edge("y", pressed(pad, 3), now, false, to("y", function () { activate(byGlyph("y")); }));
+    edge("lb", pressed(pad, 4), now, typing, to("lb", function () { activate(byGlyph("lb")); }));
+    edge("rb", pressed(pad, 5), now, typing, to("rb", function () { activate(byGlyph("rb")); }));
 
     if (pressed(pad, 9)) {
       if (menuSince === null) menuSince = now;
     } else if (menuSince !== null) {
-      if (now - menuSince < TAP) menu();
+      if (now - menuSince < TAP) to("menu", menu)();
       menuSince = null;
     }
 
-    if (Math.abs(rx) > 0.2 || Math.abs(ry) > 0.2) scroller().scrollBy(rx * SCROLL, ry * SCROLL);
+    if (!typing && (Math.abs(rx) > 0.2 || Math.abs(ry) > 0.2)) scroller().scrollBy(rx * SCROLL, ry * SCROLL);
   }
 
   // A mouse in use: no controller hints.

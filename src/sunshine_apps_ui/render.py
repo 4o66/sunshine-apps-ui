@@ -12,6 +12,7 @@ from typing import Any, Dict, List, Optional
 
 from . import __version__
 from .core.artwork_sources import SGDB_PAGE
+from . import frame
 from .version import display as version_display
 
 # What this is called, in one place. It is not an importer any more -- importing
@@ -1988,56 +1989,41 @@ def _form_url(key: str, token: str) -> str:
 
 
 def hidden_page(entry: Dict[str, Any], token: str, queued: bool = False) -> str:
-    """A hidden entry, and the way back.
+    """A hidden entry, and the way back (#75).
 
-    Hidden entries are not in apps.json at all -- they are tombstones -- so they
-    have none of the fields the edit screen shows. What they have is a way to
-    stop being hidden.
+    Hidden entries are not in apps.json at all -- they are tombstones. One
+    hidden since the whole entry was kept goes straight to its edit page when
+    un-hidden; this page, queued, is for one hidden before that, which has no
+    fields to show until a scan finds it again.
     """
     name = entry.get("name") or "(unnamed)"
     image = entry.get("image-path") or ""
-    art = (f'<img src="/art?p={_eq(image)}" alt="">'
-           if image else "")
     selector_text = f'{entry.get("source")}:{entry.get("id")}'
-
+    art = (f'<img src="/art?p={_eq(image)}" alt="" style="width:10rem;aspect-ratio:2/3;object-fit:cover;'
+           f'border-radius:var(--radius-lg);filter:grayscale(1);opacity:.45">' if image else "")
+    ids = (f'<input type="hidden" name="op" value="restore">'
+           f'<input type="hidden" name="selector" value="{_e(selector_text)}">')
     if queued:
-        # Every page needs a way out, and a queued change needs a way to undo
-        # the queueing -- otherwise the only route back is the browser button.
-        action = (f'<p class="why">Queued to come back. Apply on the grid to make '
-                  f'it so, then its settings can be edited like any other app.</p>'
-                  f'<form method="post" action="/unqueue">'
-                  f'<input type="hidden" name="op" value="restore">'
-                  f'<input type="hidden" name="selector" value="{_e(selector_text)}">'
-                  f'<div class="actions">'
-                  f'<button class="btn sec" type="submit">Cancel un-hiding</button>'
-                  f'<a class="btn" href="/">Back to the apps</a>'
-                  f'</div></form>')
+        said = ('<p><b>Queued to come back.</b> Apply on the grid to make it so, then its settings can be '
+                'edited like any other app.</p>')
+        form = ""
+        bar = ['<a class="btn sec" href="/" data-back><span class="glyph b">B</span>Back</a>',
+               f'<form method="post" action="/unqueue">{ids}'
+               f'<button class="btn danger" type="submit">Cancel un-hiding</button></form>',
+               '<span class="grow"></span>']
     else:
-        action = (f'<form method="post" action="/queue">'
-                  f'<input type="hidden" name="op" value="restore">'
-                  f'<input type="hidden" name="selector" value="{_e(selector_text)}">'
-                  f'<input type="hidden" name="name" value="{_e(name)}">'
-                  f'<div class="actions">'
-                  f'<button class="btn" type="submit">Un-hide it</button>'
-                  f'<a class="btn sec" href="/" data-back>Back</a></div></form>')
-
-    return f"""<!doctype html>
-{_html()}<head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>{_title(_e(name))}</title><style>{_CSS}{_APP_CSS}{_GRID_CSS}</style></head>
-<body>
-<div class="navbar"><span class="brand">Sunshine</span><span class="sep">/</span>
-<span class="where">App Manager</span>{_version_chip()}</div>
-<div class="wrap">
-<h1>{_e(name)}</h1>
-<div class="preview">{art}<div class="meta">
-<b>Hidden.</b> It is not in your app list, and scanning will not bring it back.
-Un-hiding lets the next scan find it again.<br>
-<span class="sel">{_e(selector_text)}</span></div></div>
-{action}
-</div></body></html>"""
-
-
+        said = ('<p><b>Hidden.</b> It is not in your app list, and scanning will not bring it back. '
+                'Un-hiding lets the next scan find it again.</p>')
+        form = (f'<form id="unhide" method="post" action="/queue">{ids}'
+                f'<input type="hidden" name="name" value="{_e(name)}"></form>\n')
+        bar = ['<a class="btn sec" href="/" data-back><span class="glyph b">B</span>Back</a>',
+               '<span class="grow"></span>',
+               '<button class="btn" type="submit" form="unhide"><span class="glyph y">Y</span>Un-hide it</button>']
+    main = (f'<main class="main">\n<div class="head"><h1>{_e(name)}</h1></div>\n'
+            f'<div style="display:flex;gap:2rem;align-items:flex-start">\n{art}\n'
+            f'<div style="display:flex;flex-direction:column;gap:.8rem;max-width:44rem">\n{said}\n'
+            f'<p class="muted mono small">{_e(selector_text)}</p>\n</div>\n</div>\n{form}</main>')
+    return frame.page(name, main, "\n".join(bar))
 
 _ARTWORK_CSS = """
 form.inline{display:inline}
@@ -2189,6 +2175,7 @@ _ART_SOURCES = [
      "Made by other people, in SteamGridDB's own order. Where to look when a game "
      "has no cover of its own."),
 ]
+
 
 
 def _sheet_url(key: str, token: str, searched: str = "", page: int = 0,
@@ -2420,151 +2407,209 @@ Browse for a file</a></div>
 </div>{modal}{fitter}</body></html>"""
 
 
+KB_SVG = ('<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" '
+          'stroke-linejoin="round" aria-hidden="true"><rect x="2" y="5" width="20" height="14" rx="2"/>'
+          '<path d="M6 9h.01M10 9h.01M14 9h.01M18 9h.01M6 13h.01M18 13h.01M9 13h6M7 16h10"/></svg>')
+
+# Exit timeout, as the values real apps use (#61). 0 is Sunshine's "end it at
+# once"; anything else already in the file shows as Custom and is kept.
+EXIT_PRESETS = [(0, "Immediately"), (5, "5 seconds"), (10, "10 seconds"), (30, "30 seconds"), (60, "1 minute")]
+EXIT_DEFAULT = 5
+EXIT_HINT = "Seconds to wait for a clean exit before forcing it. Immediately ends it at once."
+
+# Where each field sits on the 2.0 edit page, top to bottom. The artwork path
+# is not among them: Find artwork, under the picture, is how it is chosen.
+_EDIT_ORDER = ["name", "cmd", "working-dir", "exit-timeout", "flags", "output"]
+
+
+def exit_timeout_value(fields: Dict[str, List[str]]) -> str:
+    """The posted exit timeout: a preset, or Custom's own number."""
+    chosen = (fields.get("exit-timeout") or [""])[0]
+    if chosen == "custom":
+        return (fields.get("exit-timeout-custom") or [""])[0].strip()
+    return chosen
+
+
+def keyboard_button() -> str:
+    """Shown by app.js while a text field has focus, with a controller."""
+    return (f'<button class="btn sec kb" type="button" style="display:none"><span class="glyph a">A</span>'
+            f'{KB_SVG}<span>Keyboard</span></button>')
+
+
+def _exit_timeout_field(value: Any, locked: bool) -> str:
+    try:
+        seconds = int(str(value).strip()) if str(value if value is not None else "").strip() else EXIT_DEFAULT
+    except ValueError:
+        seconds = EXIT_DEFAULT
+    presets = [v for v, _ in EXIT_PRESETS]
+    custom = seconds not in presets
+    off = " disabled" if locked else ""
+    choices = "".join(
+        f'<label class="choice"><input type="radio"{off} name="exit-timeout" value="{v}"'
+        f'{" checked" if (v == seconds and not custom) else ""}><b>{_e(label)}</b></label>'
+        for v, label in EXIT_PRESETS)
+    choices += (f'<label class="choice"><input type="radio"{off} name="exit-timeout" value="custom"'
+                f'{" checked" if custom else ""}><b>Custom</b></label>')
+    shown = "" if custom else ' style="display:none"'
+    stepper = (f'<div class="stepper"{shown}>'
+               f'<button class="btn sec" type="button" aria-label="One second less" data-step="-1">−</button>'
+               f'<input type="text" inputmode="numeric" name="exit-timeout-custom" value="{seconds}" '
+               f'aria-label="Seconds"{" readonly" if locked else ""}><span>seconds</span>'
+               f'<button class="btn sec" type="button" aria-label="One second more" data-step="1">+</button></div>')
+    return (f'<div class="field"><label>Exit timeout</label>\n<div class="choices three tight">\n'
+            + choices.replace("</label><label", "</label>\n<label") + '\n</div>\n'
+            + stepper + '<span></span>\n'
+            f'<span class="hint">{_e(EXIT_HINT)}</span></div>')
+
+
 def app_page(entry: Dict[str, Any], token: str, *, is_new: bool = False,
              queued: int = 0, warning: str = "", qid: str = "",
              queued_op: str = "", draft_key: str = "",
-             dirty: bool = False) -> str:
-    """One application, with everything about it editable.
+             dirty: bool = False, unhidden: str = "") -> str:
+    """One application, with everything about it editable (#61).
 
     Everything except the tile this manager is launched from, which can only be
-    renamed -- see LOCK_NOTE.
+    renamed -- see LOCK_NOTE. `unhidden` is the selector of a hidden entry that
+    is queued to come back: its page opens as if nothing were edited, and
+    Cancel un-hiding takes the place of Hide and Delete.
     """
     name = entry.get("name") or ""
     index = entry.get("index")
     managed = bool(entry.get("managed"))
     image = entry.get("image-path") or ""
-    locked = is_protected(entry) and not is_new and not qid
+    locked = is_protected(entry) and not is_new and not qid and not unhidden
+    hints = {key: hint for key, _l, _k, hint in _FIELDS}
+    labels = {key: label for key, label, _k, _h in _FIELDS}
+    ids = {"name": "name", "cmd": "cmd", "working-dir": "dir", "output": "log"}
 
-    fields = []
-    for key, label, _kind, hint in _FIELDS:
+    def text_field(key: str) -> str:
         value = entry.get(key)
         value = "" if value is None else str(value)
-        if locked and key != "name":
-            # Shown, so it can be read, but not editable. "readonly" rather than
-            # "disabled" on purpose: a disabled field is not submitted at all,
-            # and this form writes every field back.
-            fields.append(
-                f'<div class="field"><label for="f_{key}">{_e(label)}</label>'
-                f'<input id="f_{key}" name="{key}" type="text" value="{_e(value)}" '
-                f'readonly tabindex="-1">'
-                f'<span class="hint">{_e(hint)}</span></div>')
-            continue
-        browse = ""
         if key in _BROWSABLE:
-            browse = (f'<button class="btn sec browse" type="submit" '
-                      f'name="op" value="browse:{key}" formnovalidate>Browse</button>')
-        if key == "image-path":
-            # Typing a path is the fallback here, not the main way: almost
-            # nobody knows where a cover lives, but everybody knows one when
-            # they see it.
-            browse = (f'<button class="btn sec browse" type="submit" '
-                      f'name="op" value="artwork" formnovalidate>Find artwork'
-                      f'</button>') + browse
-        fields.append(
-            f'<div class="field"><label for="f_{key}">{_e(label)}</label>'
-            f'<div class="withbtn">'
-            f'<input id="f_{key}" name="{key}" type="text" value="{_e(value)}">'
-            f'{browse}</div>'
-            f'<span class="hint">{_e(hint)}</span></div>')
-    flags = "".join(
-        f'<label class="check"><input type="checkbox" name="{key}"'
-        f'{" checked" if entry.get(key) else ""}'
-        f'{" disabled" if locked else ""}> {_e(label)}</label>'
-        for key, label in _FLAGS)
-
-    preview = ""
-    if not is_new or qid:
-        art = (f'<img src="/art?p={_eq(image)}" alt="">'
-               if image else "")
-        if qid:
-            origin = ('<b>Not added yet.</b> This is queued, so these are the values '
-                      'it will be written with. Apply on the grid to create it.')
-        elif managed:
-            origin = (f'Created by the importer (<code>{_e(entry.get("source"))}:'
-                      f'{_e(entry.get("id"))}</code>). Fields you change here are kept '
-                      f'and it stops updating them.')
+            button = ('<span class="btn sec flat">Browse</span>' if locked else
+                      f'<button class="btn sec" type="submit" name="op" value="browse:{key}" '
+                      f'formnovalidate>Browse</button>')
         else:
-            origin = "Yours. The importer never changes it."
-        preview = (f'<div class="preview">{art}<div class="meta">{origin}</div></div>')
+            button = "<span></span>"
+        # "readonly" rather than "disabled": a disabled field is not submitted
+        # at all, and this form writes every field back.
+        ro = " readonly" if (locked and key != "name") else ""
+        return (f'<div class="field"><label for="{ids[key]}">{_e(labels[key])}</label>'
+                f'<input id="{ids[key]}" name="{key}" type="text" value="{_e(value)}"{ro}>{button}\n'
+                f'<span class="hint">{_e(hints[key])}</span></div>')
 
-    warn = (f'<section class="warn"><p>{_e(warning)}</p></section>' if warning else "")
+    flags = "\n".join(
+        f'<label class="switch"><input type="checkbox" name="{key}"'
+        f'{" checked" if entry.get(key) else ""}{" disabled" if locked else ""}>'
+        f'<span class="knob"></span><span class="t"><b>{_e(label)}</b></span></label>'
+        for key, label in _FLAGS)
+    rows = []
+    for key in _EDIT_ORDER:
+        if key == "exit-timeout":
+            rows.append(_exit_timeout_field(entry.get("exit-timeout"), locked))
+        elif key == "flags":
+            rows.append(f'\n<div class="switches">\n{flags}\n</div>')
+        else:
+            rows.append(text_field(key))
+
+    if is_new and not qid:
+        heading, sub = "New application", ""
+    elif unhidden:
+        heading, sub = name, "Coming back when you apply. You can change it now, or leave it as it was."
+    elif locked:
+        heading, sub = name, ""
+    elif qid:
+        heading = name or "New application"
+        sub = ('<b>Not added yet.</b> This is queued, so these are the values it will be written with. '
+               'Apply on the grid to create it.')
+    elif managed:
+        heading = name
+        sub = (f'Created by the importer (<code>{_e(entry.get("source"))}:{_e(entry.get("id"))}</code>). '
+               f'Fields you change here are kept and it stops updating them.')
+    else:
+        heading, sub = name, "Yours. The importer never changes it."
+    head = (f'<div class="head"><h1>{_e(heading)}</h1>'
+            + (f'<span class="sub">{sub}</span>' if sub else "") + '</div>')
+
+    notices = ""
     if locked:
-        warn = f'<section class="warn"><p>{_e(LOCK_NOTE)}</p></section>' + warn
+        notices += notice2("warn", "", _e(LOCK_NOTE)) + "\n"
+    if warning:
+        notices += notice2("warn", "", _e(warning)) + "\n"
+
+    if image:
+        picture = f'<img src="/art?p={_eq(image)}" alt="">'
+    else:
+        picture = ('<div class="fallback" style="aspect-ratio:2/3;display:flex;align-items:center;'
+                   'justify-content:center;border-radius:var(--radius-lg);background:var(--bg-muted);'
+                   'color:var(--text-muted);font-weight:650"></div>')
+    find = ('<span class="btn sec flat">Find artwork</span>' if locked else
+            '<button class="btn sec" type="submit" name="op" value="artwork" formnovalidate>Find artwork</button>')
 
     if qid:
         hidden_id = f'<input type="hidden" name="qid" value="{_e(qid)}">'
+    elif unhidden:
+        hidden_id = (f'<input type="hidden" name="selector" value="{_e(unhidden)}">'
+                     f'<input type="hidden" name="orig_name" value="{_e(name)}">')
     elif not is_new:
         hidden_id = (f'<input type="hidden" name="index" value="{_e(index)}">'
                      f'<input type="hidden" name="orig_name" value="{_e(name)}">')
     else:
         hidden_id = ""
+    hidden_id += f'<input type="hidden" name="image-path" value="{_e(image)}">'
 
+    def main_button(label: str, op: str) -> str:
+        # Off until something changes (app.js), drawn flat when off.
+        return (f'<button class="btn flat" type="submit" form="edit" name="op" value="{op}" data-apply disabled>'
+                f'<span class="glyph y">Y</span>{_e(label)}</button>')
+
+    def unqueue(label: str, fields: str) -> str:
+        return (f'<form method="post" action="/unqueue">{fields}'
+                f'<button class="btn danger" type="submit">{_e(label)}</button></form>')
+
+    back = '<a class="btn sec" href="/" data-back><span class="glyph b">B</span>{}</a>'
+    kb = keyboard_button()
     if qid:
-        # A change that has not happened yet: saving revises it in place, and
-        # the only destructive option is to drop it from the queue.
-        actions = (f'<button class="btn" data-apply type="submit" name="op" '
-                   f'value="revise">Save changes</button>'
-                   f'<a class="btn sec" href="/" data-back>Back</a>')
-        extra = (f'<div class="actions danger">'
-                 f'<form method="post" action="/unqueue">'
-                 f'<input type="hidden" name="qid" value="{_e(qid)}">'
-                 f'<button class="btn" type="submit">'
-                 f'{"Do not add this" if queued_op in ("adopt", "add") else "Cancel this change"}'
-                 f'</button></form></div>')
+        bar = [back.format("Back"),
+               unqueue("Do not add this" if queued_op in ("adopt", "add") else "Cancel this change",
+                       f'<input type="hidden" name="qid" value="{_e(qid)}">'),
+               '<span class="grow"></span>', kb, main_button("Save changes", "revise")]
     elif is_new:
-        actions = (f'<button class="btn" data-apply type="submit" name="op" value="add">'
-                   f'Add to the queue</button>'
-                   f'<a class="btn sec" href="/">Cancel</a>')
-        extra = ""
+        bar = [back.format("Cancel"), '<span class="grow"></span>', kb, main_button("Add to the queue", "add")]
+    elif unhidden:
+        bar = [back.format("Back"),
+               unqueue("Cancel un-hiding", f'<input type="hidden" name="op" value="restore">'
+                                           f'<input type="hidden" name="selector" value="{_e(unhidden)}">'),
+               '<span class="grow"></span>', kb, main_button("Apply", "edit")]
     elif locked:
         # Rename and leave. Every other way out of this page changes something
         # that would cost you the way back in.
-        actions = (f'<button class="btn" data-apply type="submit" name="op" value="edit">'
-                   f'Rename</button>'
-                   f'<a class="btn sec" href="/" data-back>Back</a>')
-        extra = ""
+        bar = [back.format("Back"), '<span class="grow"></span>', kb, main_button("Rename", "edit")]
     else:
-        actions = (f'<button class="btn" data-apply type="submit" name="op" value="edit">'
-                   f'Apply</button>'
-                   f'<button class="btn sec" type="submit" name="op" value="clone">'
-                   f'Save as a copy</button>'
-                   f'<a class="btn sec" href="/" data-back>Back</a>')
-        extra = (f'<div class="actions danger">'
-                 f'<a class="btn" href="/explain?op=hide&index={_e(index)}'
-                 f'&name={_eq(name)}">Hide</a>'
-                 f'<a class="btn" href="/explain?op=delete&index={_e(index)}'
-                 f'&name={_eq(name)}">Delete</a></div>')
+        bar = [back.format("Back"),
+               f'<a class="btn danger" href="/explain?op=hide&index={_e(index)}&name={_eq(name)}">Hide</a>',
+               f'<a class="btn danger" href="/explain?op=delete&index={_e(index)}&name={_eq(name)}">Delete</a>',
+               '<span class="grow"></span>', kb,
+               '<button class="btn sec" type="submit" form="edit" name="op" value="clone">Save as a copy</button>',
+               main_button("Apply", "edit")]
 
-    return f"""<!doctype html>
-{_html()}<head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>{_title(_e(name or "New application"))}</title>
-<style>{_CSS}{_APP_CSS}</style></head>
-<body>
-<div class="navbar"><span class="brand">Sunshine</span><span class="sep">/</span>
-<span class="where">App Manager</span>{_version_chip()}</div>
-<div class="wrap">
-<h1>{_e(name or "New application")}</h1>
-{preview}{warn}
-<form class="edit" method="post" action="/app" data-dirty-guard{' data-dirty="1"' if dirty else ''}>
-{hidden_id}
-{"".join(fields)}
-<div class="row">{flags}</div>
-<div class="actions">{actions}</div>
-</form>
-{extra}
-</div>
-<script src="/app.js"></script>
-</body></html>"""
+    marks = (' data-dirty="1"' if dirty else "") + (" data-needs-name" if is_new and not qid else "")
+    main = (f'<main class="main">\n{head}\n{notices}'
+            f'<form class="form" id="edit" method="post" action="/app" data-dirty-guard'
+            f'{marks}>\n'
+            f'{hidden_id}\n<div class="cover">\n{picture}\n{find}\n</div>\n'
+            f'<div class="fields">\n' + "\n".join(rows) + '\n</div>\n</form>\n</main>')
+    page = frame.page(name or "New application", main, "\n".join(bar))
+    return page.replace("</body>", '<script src="/app.js"></script>\n</body>', 1)
 
 
 _EXPLAIN = {
-    "hide": ("Hide this application?",
-             "It is removed from the list and recorded as hidden, so scanning "
-             "again will not bring it back. Use this for a game you own but "
-             "never want to see here.",
+    "hide": ("Hide {name}?",
+             "It disappears from the list in Moonlight. Here it stays on the grid, faded and "
+             "marked HIDDEN, so you can un-hide it later. Scanning again will not bring it back. "
+             "Use this for a game you own but never want to see in Moonlight.",
              "Hide it"),
-    "delete": ("Delete this application?",
+    "delete": ("Delete {name}?",
                "It is removed from the list, and nothing is recorded. The next "
                "scan will find it again and add it back. Use this to start over "
                "with an entry, not to get rid of one for good.",
@@ -2573,28 +2618,28 @@ _EXPLAIN = {
 
 
 def explain_page(op: str, entry: Dict[str, Any], token: str) -> str:
+    """Before a hide or a delete: what it does, once, until told not to (#74)."""
     title, body, button = _EXPLAIN[op]
     name = entry.get("name") or ""
-    return f"""<!doctype html>
-{_html()}<head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>{_title(_e(title))}</title><style>{_CSS}{_APP_CSS}</style></head>
-<body>
-<div class="navbar"><span class="brand">Sunshine</span><span class="sep">/</span>
-<span class="where">App Manager</span>{_version_chip()}</div>
-<div class="wrap">
-<h1>{_e(title)}</h1>
-<section><p class="why"><b>{_e(name)}</b> &mdash; {_e(body)}</p></section>
-<form method="post" action="/queue">
-<input type="hidden" name="op" value="{_e(op)}">
-<input type="hidden" name="index" value="{_e(entry.get('index'))}">
-<input type="hidden" name="name" value="{_e(name)}">
-<label class="check" style="margin:.5rem 0 1rem">
-<input type="checkbox" name="keep_explaining" checked> Show this explanation every time</label>
-<div class="actions danger">
-<button class="btn" type="submit">{_e(button)}</button>
-<a class="btn sec" style="border-color:var(--primary);color:var(--primary)"
-   href="/app?index={_e(entry.get('index'))}">Cancel</a></div>
-</form>
-</div></body></html>"""
+    title = title.format(name=name)
+    image = entry.get("image-path") or ""
+    art = (f'<img src="/art?p={_eq(image)}" alt="" style="width:10rem;aspect-ratio:2/3;object-fit:cover;'
+           f'border-radius:var(--radius-lg)">' if image else "")
+    main = (f'<main class="main">\n<div class="head"><h1>{_e(title)}</h1></div>\n'
+            f'<div style="display:flex;gap:2rem;align-items:flex-start">\n{art}\n'
+            f'<div style="display:flex;flex-direction:column;gap:1.2rem;max-width:44rem">\n'
+            f'<p>{_e(body)}</p>\n'
+            f'<label class="switch" style="max-width:30rem"><input type="checkbox" form="explain" '
+            f'name="keep_explaining" checked><span class="knob"></span><span class="t"><b>Show this explanation every '
+            f'time</b></span></label>\n</div>\n</div>\n'
+            f'<form id="explain" method="post" action="/queue">'
+            f'<input type="hidden" name="op" value="{_e(op)}">'
+            f'<input type="hidden" name="index" value="{_e(entry.get("index"))}">'
+            f'<input type="hidden" name="name" value="{_e(name)}"></form>\n</main>')
+    bar = [f'<a class="btn sec" href="/app?index={_e(entry.get("index"))}" data-back>'
+           f'<span class="glyph b">B</span>Cancel</a>',
+           '<span class="grow"></span>',
+           f'<button class="btn danger" type="submit" form="explain"><span class="glyph y">Y</span>'
+           f'{_e(button)}</button>']
+    return frame.page(title, main, "\n".join(bar))
 
