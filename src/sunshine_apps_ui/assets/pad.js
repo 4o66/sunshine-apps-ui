@@ -84,12 +84,21 @@
   // The nearest control in the direction pushed. Distance along the push
   // counts from the facing edges; distance across it counts three times, so
   // moving down a column stays in the column. Left and right stay in the row.
+  // Where a control is on screen, as it is drawn. The exit-timeout choices
+  // and the switches are real radios and checkboxes, 1px and hidden inside
+  // the box you see; measuring the 1px dot sent up and down to odd places
+  // (the Legion test, 2026-09-28).
+  function box(el) {
+    var shown = el.tagName === "INPUT" && el.closest && el.closest("label.choice, label.switch");
+    return (shown || el).getBoundingClientRect();
+  }
+
   function nearest(from, dx, dy, all) {
-    var a = from.getBoundingClientRect();
+    var a = box(from);
     var best = null, bestScore = Infinity;
     all.forEach(function (el) {
       if (el === from || el.contains(from) || from.contains(el)) return;
-      var b = el.getBoundingClientRect();
+      var b = box(el);
       var along, across;
       if (dx) {
         along = dx > 0 ? b.left - a.right : a.left - b.right;
@@ -101,7 +110,11 @@
         if ((b.top + b.bottom) * dy <= (a.top + a.bottom) * dy) return;
         across = Math.max(0, Math.max(a.left, b.left) - Math.min(a.right, b.right));
       }
-      var score = Math.max(0, along) + across * 3;
+      // Ties (a row of choices below a field, say) go to the one nearest the
+      // middle of where focus is now.
+      var off = dx ? Math.abs((a.top + a.bottom) - (b.top + b.bottom)) / 2
+                   : Math.abs((a.left + a.right) - (b.left + b.right)) / 2;
+      var score = Math.max(0, along) + across * 3 + off * 0.01;
       if (score < bestScore) { best = el; bestScore = score; }
     });
     return best;
@@ -157,11 +170,14 @@
     el.click();
   }
 
+  // B cancels the screen you are on: its own B button, else its Back or
+  // Cancel link. Never the browser's history, which went wherever you had
+  // last been (from the grid, to a tile's edit page). Where there is nothing
+  // to cancel, the grid, B does nothing. The Legion test, 2026-09-28.
   function back() {
     if (activate(byGlyph("b"))) return;
     var link = document.querySelector("[data-back]");
     if (link && shown(link)) link.click();
-    else if (history.length > 1) history.back();
   }
 
   function menu() {
