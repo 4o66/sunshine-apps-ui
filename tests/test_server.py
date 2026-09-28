@@ -1427,7 +1427,8 @@ class FilePickerTest(ServerTest):
         self.assertIn("games", body)
         self.assertIn("run.sh", body)
         self.assertIn(">folder<", body)
-        self.assertIn(">choose<", body)
+        # Sunshine's listing has no sizes or dates (ruled 2026-09-28).
+        self.assertIn('<span class="meta">file</span>', body)
 
     def test_choosing_a_file_records_it_and_returns_to_the_form(self):
         from sunshine_apps_ui import state as st
@@ -1449,21 +1450,30 @@ class FilePickerTest(ServerTest):
             "entries": [{"name": f"prog{i}", "path": f"/usr/bin/prog{i}",
                          "type": "file"} for i in range(PICKER_LIMIT * 4)]}
         _, body = self.get(f"/browse?key=new&field=cmd&token={self.token}")
-        self.assertEqual(body.count(">choose<"), PICKER_LIMIT)
+        self.assertEqual(body.count('<span class="meta">file</span>'), PICKER_LIMIT)
         self.assertIn(f"showing the first {PICKER_LIMIT}", body)
         self.assertLess(len(body), 200000)
 
     def test_the_filter_narrows_the_listing(self):
-        _, body = self.get(f"/browse?key=new&field=cmd&q=run&token={self.token}")
+        """2.0 (#65): names starting with one letter, digit or anything else."""
+        _, body = self.get(f"/browse?key=new&field=cmd&starts=R&token={self.token}")
         self.assertIn("run.sh", body)
         self.assertNotIn(">games<", body)
-        self.assertIn("match", body)
+        self.assertIn("<b>R</b>", body)
+
+    def test_the_filter_is_a_page_state_with_every_key(self):
+        _, body = self.get(f"/browse?key=new&field=cmd&filter=1&token={self.token}")
+        self.assertIn('<div class="popup" role="dialog" aria-label="Show names starting with">', body)
+        for label in ("All", "A", "Z", "Symbols", "0", "9"):
+            self.assertIn(f">{label}</a>", body)
+        # Nothing here starts with Q: dimmed, still there.
+        self.assertIn('class="none">Q</a>', body)
 
     def test_the_filter_survives_into_the_form(self):
         """Filtering must not lose which form opened the picker."""
-        _, body = self.get(f"/browse?key=new&field=cmd&q=run&token={self.token}")
-        self.assertIn('name="key" value="new"', body)
-        self.assertIn('name="field" value="cmd"', body)
+        _, body = self.get(f"/browse?key=new&field=cmd&filter=1&token={self.token}")
+        self.assertIn("/browse?key=new&amp;field=cmd&amp;path=", body)
+        self.assertIn("&amp;starts=R", body)
 
     def test_a_field_that_cannot_be_browsed_is_refused(self):
         status, _ = self.get(f"/browse?key=new&field=name&token={self.token}")
@@ -1526,11 +1536,12 @@ class ArtworkPickerTest(ServerTest):
         _, body = self.get(f"/artwork?key=index:1&token={self.token}")
         self.assertIn("On this machine", body)
         self.assertIn("From Steam", body)
-        self.assertIn("From SteamGridDB", body)
+        # SteamGridDB is its own page in 2.0 (#64), not a row here.
+        self.assertNotIn("<h2>From SteamGridDB", body)
 
     def test_every_candidate_is_shown_as_a_picture(self):
         _, body = self.get(f"/artwork?key=index:1&token={self.token}")
-        self.assertEqual(body.count('<img src="/art?p='), 3)
+        self.assertEqual(body.count('<img src="/art?p='), 2)
 
     def test_a_steam_entry_is_looked_up_by_its_appid(self):
         self.get(f"/artwork?key=index:1&token={self.token}")
@@ -1554,10 +1565,27 @@ class ArtworkPickerTest(ServerTest):
         self.get(f"/artwork?key=index:1&q=Portal%202&token={self.token}")
         self.assertEqual(self.engine.searched["ident"], "620")
 
-    def test_notes_explain_a_source_that_gave_nothing(self):
+    def test_no_key_is_a_button_not_a_note(self):
+        """2.0 (#63, #66): the picker lists no notes. A missing SteamGridDB key
+        is said by the Y button, which leads to where the key is set up."""
+        self.engine.candidates = dict(self.engine.candidates, offer_sgdb=True, sgdb_ready=False)
         _, body = self.get(f"/artwork?key=index:1&token={self.token}")
-        self.assertIn("SteamGridDB is not configured", body)
+        self.assertNotIn("SteamGridDB is not configured", body)
+        self.assertIn("<span>Set up SteamGridDB</span>", body)
+        self.assertIn('href="/settings?section=art"', body)
 
+    def test_none_answering_is_said_when_nothing_was_found(self):
+        self.engine.candidates = {"ok": True, "candidates": [], "offer_sgdb": False, "sgdb_ready": False,
+                                  "notes": ["None of the artwork sources answered. Check the network, "
+                                            "or browse for a file."]}
+        _, body = self.get(f"/artwork?key=index:1&token={self.token}")
+        self.assertIn("<p>None of the artwork sources answered.", body)
+
+    def test_nothing_found_says_the_one_sentence(self):
+        self.engine.candidates = {"ok": True, "candidates": [], "offer_sgdb": False, "sgdb_ready": False,
+                                  "notes": ["Nothing to suggest for this app. Browse for a file instead."]}
+        _, body = self.get(f"/artwork?key=index:1&token={self.token}")
+        self.assertIn("<p>Nothing was found for this one. Try a different name, or browse for a file.</p>", body)
     def test_choosing_a_cover_records_it_and_returns_to_the_form(self):
         from sunshine_apps_ui import state as st
         st.set_draft("index:1", {"name": "Portal 2", "cmd": "keep me"})
@@ -2760,10 +2788,10 @@ class SteamGridDbSheetTest(ServerTest):
         self.engine.candidates = {"ok": True, "candidates": [], "notes": [],
                                   "offer_sgdb": not ready, "sgdb_ready": ready}
 
-    def _page(self, n=0, count=48, total=689):
+    def _page(self, n=0, count=30, total=689):
         self.engine.sgdb = {
             "ok": True, "note": "", "total": total, "page": n,
-            "pages": (total + 47) // 48,
+            "pages": (total + 29) // 30,
             "candidates": [{"id": f"c{i}", "source": "sgdb", "label": "by nobody",
                             "origin": f"https://g/{n}-{i}.png",
                             "path": f"/cache/{n}-{i}.png"} for i in range(count)]}
@@ -2810,16 +2838,13 @@ class SteamGridDbSheetTest(ServerTest):
         self.assertEqual(len(self.engine.sgdb_calls), 1)
         self.assertEqual(self.engine.sgdb_calls[0]["page"], 0)
 
-    def test_the_sheet_is_a_dialog_that_opens_without_script(self):
-        """A modal that needs JavaScript to open is a modal that does not open
-        -- which is exactly what happened to the settings switches (#28). It is
-        rendered already open, so nothing has to run for it to be there."""
+    def test_it_is_a_page_that_needs_no_script(self):
+        """2.0 (#64): its own page rather than a sheet over the picker, and
+        nothing has to run for it to be there."""
         self._key(); self._page()
         body = self._open(page=0)
-        # The whole opening tag, not just "<dialog": the CSS beside it used to
-        # mention the tag in a comment, so the loose assertion passed on a page
-        # with no sheet on it at all.
-        self.assertIn('<dialog class="sheet" open', body)
+        self.assertIn("<h1>From SteamGridDB</h1>", body)
+        self.assertNotIn("<dialog", body)
         self.assertNotIn("<script>", body)          # nothing inline
 
     def test_every_control_in_the_sheet_is_a_link(self):
@@ -2828,7 +2853,7 @@ class SteamGridDbSheetTest(ServerTest):
         still a sheet you can page, close and choose from with a gamepad."""
         self._key(); self._page(n=1)
         body = self._open(page=1)
-        sheet = body[body.index('<dialog class="sheet" open'):]
+        sheet = body[body.index('<main'):]
         for control in ("sgdb_page=2", "sgdb_page=0", "Close"):
             self.assertIn(control, sheet)
         # No button, no form, no handler -- links and images.
@@ -2847,13 +2872,13 @@ class SteamGridDbSheetTest(ServerTest):
         """The other half of the one above, and the half that can regress:
         a sheet that is always in the markup is a sheet that is always up."""
         self._key(); self._page()
-        self.assertNotIn('<dialog class="sheet" open', self._open())
+        self.assertNotIn("<h1>From SteamGridDB</h1>", self._open())
 
     def test_it_says_how_far_through_you_are(self):
         self._key(); self._page(n=1)
         body = self._open(page=1)
-        self.assertIn("49-96 of 689", body)
-        self.assertIn("Page 2 of 15", body)
+        self.assertIn("31-60 of 689", body)
+        self.assertIn("Page 2 of 23", body)
 
     def test_next_and_back_carry_the_page(self):
         self._key(); self._page(n=1)
@@ -2864,12 +2889,12 @@ class SteamGridDbSheetTest(ServerTest):
     def test_back_is_dead_on_the_first_page(self):
         self._key(); self._page(n=0)
         body = self._open(page=0)
-        self.assertIn('flat">Back', body)
+        self.assertIn('flat"><span class="glyph wide">LB</span>Back', body)
 
     def test_next_is_dead_on_the_last_page(self):
-        self._key(); self._page(n=14)
-        body = self._open(page=14)
-        self.assertIn('flat">Next', body)
+        self._key(); self._page(n=22, count=29)
+        body = self._open(page=22)
+        self.assertIn('flat"><span class="glyph wide">RB</span>Next', body)
 
     def test_a_negative_page_is_read_as_the_first(self):
         self._key(); self._page()
@@ -2893,16 +2918,40 @@ class SteamGridDbSheetTest(ServerTest):
         self._key(); self._page()
         body = self._open(page=0)
         self.assertIn("Close", body)
-        self.assertIn('href="/artwork?key=index%3A0&q=Desktop">Close', body)
+        self.assertIn('href="/artwork?key=index%3A0&amp;q=Desktop" data-back><span class="glyph b">B</span>Close', body)
 
-    def test_a_failure_leaves_the_picker_standing(self):
-        """The sheet is one source among several. It failing is not the page
-        failing -- everything already found is still on it."""
+    def test_a_failure_says_so_and_offers_it_again(self):
+        """Not answering is not the key (#78): its own page, Try again, and
+        Close back to the picker, where everything found is still there."""
         self._key()
         self.engine.fails = {"art_sgdb": "SteamGridDB is not answering"}
         body = self._open(page=0)
-        self.assertIn("SteamGridDB is not answering", body)
-        self.assertIn("Artwork for", body)
+        self.assertIn("SteamGridDB did not answer", body)
+        self.assertIn("Your key is fine.", body)
+        self.assertIn("Try again", body)
+
+    def test_a_refused_key_goes_back_to_the_picker_which_says_so(self):
+        from sunshine_apps_ui import state as st
+        self._key(); self._page(count=0)
+        self.engine.sgdb["status"] = "refused"
+        _, body = self.get(f"/artwork?key=index:0&token={self.token}&sgdb=1&go=1")
+        self.assertEqual(st.sgdb_key_state()["state"], "refused")
+        self.assertNotIn("<h1>From SteamGridDB</h1>", body)
+        self.assertIn("SteamGridDB refused the saved key", body)
+        self.assertIn("Update the SteamGridDB key", body)
+        self.assertNotIn("Show SteamGridDB art", body)
+
+    def test_an_answer_says_the_key_works(self):
+        from sunshine_apps_ui import state as st
+        self._key(); self._page()
+        self._open(page=0)
+        self.assertEqual(st.sgdb_key_state()["state"], "ok")
+
+    def test_nothing_from_steamgriddb_says_so(self):
+        self._key(); self._page(count=0, total=0)
+        self.engine.sgdb["note"] = "SteamGridDB has no artwork for this one."
+        body = self._open(page=0)
+        self.assertIn("<p>SteamGridDB has no artwork for this one.</p>", body)
 
 
 class SteamGridDbWaitingTest(ServerTest):
@@ -2930,20 +2979,13 @@ class SteamGridDbWaitingTest(ServerTest):
     def test_the_sheet_is_already_up(self):
         """Up, and empty. The point is that it appears at once."""
         body = self._wait_page()
-        self.assertIn('<dialog class="sheet" open', body)
-        self.assertIn('class="spinner"', body)
+        self.assertIn('<div class="ring"', body)
+        self.assertIn("Pulling artwork", body)
 
     def test_it_refreshes_into_the_fetch(self):
         body = self._wait_page()
         self.assertIn('http-equiv="refresh"', body)
         self.assertIn("go=1", body)
-
-    def test_the_waiting_sheet_measures_how_many_fit(self):
-        """The empty sheet is the box the pictures will go in, so this is where
-        the count is taken. The spinner itself is CSS."""
-        body = self._wait_page()
-        self.assertIn("/sheet.js", body)
-        self.assertNotIn("<script>", body)          # nothing inline
 
     def test_the_waiting_sheet_works_without_the_script(self):
         """The meta refresh goes to the same address without a count, and the
@@ -2960,8 +3002,8 @@ class SteamGridDbWaitingTest(ServerTest):
 
     def test_paging_is_dead_while_waiting(self):
         body = self._wait_page()
-        self.assertIn('flat">Back', body)
-        self.assertIn('flat">Next', body)
+        self.assertIn('flat"><span class="glyph wide">LB</span>Back', body)
+        self.assertIn('flat"><span class="glyph wide">RB</span>Next', body)
 
     def test_the_button_leads_to_the_spinner_not_the_fetch(self):
         """Otherwise the first thing pressed is the slow thing again."""
@@ -2971,63 +3013,6 @@ class SteamGridDbWaitingTest(ServerTest):
         link = body[max(0, start - 300):start]
         self.assertIn("sgdb=1", link)
         self.assertNotIn("go=1", link)
-
-
-class SheetFitsItsGridTest(ServerTest):
-    """The sheet is drawn to the size of the grid it holds.
-
-    Whole rows in a screen-sized sheet leave up to a row of empty space at the
-    bottom, and empty space is what says "this is the last page" -- so a full
-    page looked like the end. sheet.js measures the size that holds exactly
-    the rows that fit, and every page of the run is drawn at it, the last one
-    included, so a short last page is still the only one with a gap.
-    """
-
-    def setUp(self):
-        super().setUp()
-        self.engine.candidates = {"ok": True, "candidates": [], "notes": [],
-                                  "offer_sgdb": False, "sgdb_ready": True}
-        self.engine.sgdb = {"ok": True, "candidates": [
-            {"id": str(i), "label": "by someone", "origin": "x"}
-            for i in range(30)], "total": 689, "page": 1, "per": 30,
-            "pages": 23, "note": ""}
-
-    def _get(self, extra, go=True):
-        return self.get(f"/artwork?key=index:0&token={self.token}"
-                        f"&sgdb=1&sgdb_page=1&per=30{extra}"
-                        + ("&go=1" if go else ""))[1]
-
-    def _dialog(self, body):
-        at = body.index('<dialog class="sheet"')
-        return body[at:body.index(">", at) + 1]
-
-    def test_the_measured_size_is_the_sheet_size(self):
-        self.assertIn('style="width:1010px;height:900px"',
-                      self._dialog(self._get("&fit=1010x900")))
-
-    def test_the_waiting_sheet_is_already_that_size(self):
-        """Otherwise the sheet jumps when the pictures arrive."""
-        body = self._get("&fit=1010x900", go=False)
-        self.assertIn('style="width:1010px;height:900px"', self._dialog(body))
-        self.assertIn("fit=1010x900", body)          # carried into the fetch
-
-    def test_next_and_back_keep_the_size(self):
-        """The last page must be drawn in the same box as the full ones, or
-        its gap stops meaning anything."""
-        body = self._get("&fit=1010x900")
-        foot = body[body.index('class="sheet-foot"'):]
-        self.assertEqual(foot.count("fit=1010x900"), 2)
-
-    def test_without_a_measurement_the_stylesheet_decides(self):
-        self.assertNotIn("style=", self._dialog(self._get("")))
-
-    def test_nothing_but_two_numbers_reaches_the_style(self):
-        for asked in ("1010x900;background:red", "1010", "x900", "abcxdef",
-                      "10x10", "99999x900", "1010x900x3", "-5x900"):
-            with self.subTest(fit=asked):
-                body = self._get("&fit=" + asked)
-                self.assertNotIn("style=", self._dialog(body))
-                self.assertNotIn("red", self._dialog(body))
 
 
 class SteamGridDbPictureTest(ServerTest):
@@ -3137,7 +3122,7 @@ class TheLastPageLooksLikeTheLastPageTest(ServerTest):
     def _page(self, n, count, total=689):
         self.engine.sgdb = {
             "ok": True, "note": "", "total": total, "page": n,
-            "pages": (total + 47) // 48,
+            "pages": (total + 29) // 30,
             "candidates": [{"id": f"{i:016x}", "source": "sgdb", "label": "by x",
                             "origin": f"https://cdn.example/{n}-{i}.png"}
                            for i in range(count)]}
@@ -3149,24 +3134,24 @@ class TheLastPageLooksLikeTheLastPageTest(ServerTest):
         more: the tile is a fixed size -- the main grid's own 164.67px -- so
         seventeen pictures are seventeen tiles and the rest of the box is
         empty. That empty space is the end-of-list signal."""
-        body = self._page(14, 17)
+        body = self._page(22, 29)
         self.assertNotIn("data-full", body)
-        self.assertEqual(body.count("/sgdb-art?id="), 17)
+        self.assertEqual(body.count("/sgdb-art?id="), 29)
 
     def test_a_full_page_uses_the_same_tile(self):
-        self.assertNotIn("data-full", self._page(0, 48))
+        self.assertNotIn("data-full", self._page(0, 30))
 
     def test_the_count_says_where_the_end_is(self):
-        self.assertIn("673-689 of 689", self._page(14, 17))
+        self.assertIn("661-689 of 689", self._page(22, 29))
 
     def test_next_is_dead_on_the_last_page(self):
-        self.assertIn('flat">Next', self._page(14, 17))
+        self.assertIn('flat"><span class="glyph wide">RB</span>Next', self._page(22, 29))
 
     def test_pages_are_full_sized_throughout(self):
-        """Fourteen pages of 48 and then one of 17 -- not fifteen of 46."""
-        body = self._page(1, 48)
-        self.assertIn("49-96 of 689", body)
-        self.assertIn("Page 2 of 15", body)
+        """Twenty-two pages of 30 and then one of 29 -- not an even spread."""
+        body = self._page(1, 30)
+        self.assertIn("31-60 of 689", body)
+        self.assertIn("Page 2 of 23", body)
 
 
 class ExitTimeoutChoicesTest(ServerTest):
@@ -3296,3 +3281,109 @@ class UnhideGoesToTheEditPageTest(ServerTest):
         self.unhide()
         _, body = self.get(f"/app?hidden=steam%3A440&token={self.token}")
         self.assertIn("Queued to come back.", body)
+
+
+class ArtworkFileBrowserTest(ServerTest):
+    """Choose a file, for artwork (#65): folders and the filter on the left,
+    pictures on the right, ten to a page."""
+
+    def listing(self, pictures=23, extra=()):
+        entries = [{"name": "Old covers", "path": "/p/Old covers", "type": "directory"},
+                   {"name": ".thumbnails", "path": "/p/.thumbnails", "type": "directory"}]
+        entries += [{"name": f"cover-{i:02d}.png", "path": f"/p/cover-{i:02d}.png", "type": "file"}
+                    for i in range(pictures)]
+        entries += list(extra)
+        self.engine.listing = {"ok": True, "path": "/p", "parent": "/", "entries": entries}
+
+    def open(self, extra=""):
+        return self.get(f"/browse?key=index:1&field=image-path{extra}&token={self.token}")[1]
+
+    def test_folders_on_the_left_pictures_on_the_right(self):
+        self.listing()
+        body = self.open()
+        self.assertIn('<div class="split">', body)
+        self.assertIn(">Old covers<", body)
+        self.assertEqual(body.count('<a class="pick"'), 10)
+        self.assertIn("Pictures 1-10 of 23", body)
+        self.assertIn("Page 1 of 3", body)
+
+    def test_hidden_files_are_never_listed(self):
+        self.listing(extra=[{"name": ".secret.png", "path": "/p/.secret.png", "type": "file"}])
+        body = self.open()
+        self.assertNotIn(".thumbnails", body)
+        self.assertNotIn(".secret.png", body)
+
+    def test_only_pictures_sunshine_takes(self):
+        self.listing(pictures=2, extra=[{"name": "notes.txt", "path": "/p/notes.txt", "type": "file"}])
+        body = self.open()
+        self.assertNotIn("notes.txt", body)
+        self.assertIn("1 folder, 2 pictures", body)
+
+    def test_pages_turn_and_end(self):
+        self.listing()
+        last = self.open("&page=2")
+        self.assertEqual(last.count('<a class="pick"'), 3)
+        self.assertIn("Pictures 21-23 of 23", last)
+        self.assertIn('flat"><span class="glyph wide">RB</span>Next', last)
+        first = self.open()
+        self.assertIn('flat"><span class="glyph wide">LB</span>Back', first)
+        self.assertIn("page=1", first)
+
+    def test_digits_and_symbols_filter_too(self):
+        self.listing(pictures=1, extra=[{"name": "2077.png", "path": "/p/2077.png", "type": "file"},
+                                        {"name": "_x.png", "path": "/p/_x.png", "type": "file"}])
+        body = self.open("&starts=2")
+        self.assertIn("2077.png", body)
+        self.assertNotIn("cover-00.png", body)
+        body = self.open("&starts=sym")
+        self.assertIn("_x.png", body)
+        self.assertNotIn("2077.png", body)
+        popup = self.open("&filter=1")
+        self.assertIn(">Symbols</a>", popup)
+        self.assertNotIn('class="none">2</a>', popup)
+        self.assertIn('class="none">3</a>', popup)
+
+    def test_the_filter_narrows_pictures_not_folders(self):
+        self.listing()
+        body = self.open("&starts=Z")
+        self.assertIn(">Old covers<", body)
+        self.assertIn("No pictures here.", body)
+
+
+class ArtworkThumbnailsAreServedTest(ArtworkFileBrowserTest):
+    """The image route shows only referenced pictures, and a picture in your
+    own folder is referenced by nothing until it is chosen. The artwork file
+    browser's thumbnails are the pictures Sunshine just listed (#65)."""
+
+    def picture(self, tmp):
+        path = os.path.join(tmp, "cover.png")
+        with open(path, "wb") as f:
+            f.write(b"\x89PNG\r\n\x1a\n" + b"0" * 64)
+        return path
+
+    def test_a_listed_picture_is_shown(self):
+        tmp = tempfile.mkdtemp()
+        path = self.picture(tmp)
+        self.engine.listing = {"ok": True, "path": tmp, "parent": "/", "entries":
+                               [{"name": "cover.png", "path": path, "type": "file"}]}
+        self.open()
+        from urllib.parse import quote
+        status, _ = self.get(f"/art?p={quote(path, safe='')}&token={self.token}")
+        self.assertEqual(status, 200)
+
+    def test_an_unlisted_one_is_not(self):
+        tmp = tempfile.mkdtemp()
+        path = self.picture(tmp)
+        from urllib.parse import quote
+        status, _ = self.get(f"/art?p={quote(path, safe='')}&token={self.token}")
+        self.assertEqual(status, 404)
+
+    def test_a_command_listing_does_not_open_the_route(self):
+        tmp = tempfile.mkdtemp()
+        path = self.picture(tmp)
+        self.engine.listing = {"ok": True, "path": tmp, "parent": "/", "entries":
+                               [{"name": "cover.png", "path": path, "type": "file"}]}
+        self.get(f"/browse?key=index:1&field=cmd&token={self.token}")
+        from urllib.parse import quote
+        status, _ = self.get(f"/art?p={quote(path, safe='')}&token={self.token}")
+        self.assertEqual(status, 404)

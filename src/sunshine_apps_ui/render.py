@@ -1906,75 +1906,148 @@ padding:.5rem .7rem;font:inherit;font-size:.92rem}
 PICKER_LIMIT = 250
 
 
+FOLDER_SVG = ('<svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7a2 2 0 '
+              '0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>')
+UP_SVG = ('<svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">'
+          '<path d="M12 19V5M5 12l7-7 7 7"/></svg>')
+FILE_SVG = ('<svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 3H7a2 '
+            '2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></svg>')
+PICTURES_PER_PAGE = 10         # five across, two rows (#65)
+PICTURE_TYPES = (".png",)      # what Sunshine takes for a tile
+
+
+def starts_with(name: str) -> str:
+    """The filter key a name falls under: a letter, a digit, or "sym"."""
+    first = (name or " ")[0]
+    if first.isascii() and first.isalpha():
+        return first.upper()
+    if first.isascii() and first.isdigit():
+        return first
+    return "sym"
+
+
+def _filter_popup(heading: str, url, chosen: str, present: set) -> str:
+    """Show ... starting with, over the page: All, A to Z, Symbols, then the
+    digits on their own row (#65). A key with nothing behind it is dimmed."""
+    def key(value: str, label: str, wide: bool = False) -> str:
+        cls = [c for c in ("wide" if wide else "", "on" if value == chosen else "",
+                           "none" if value and value not in present else "") if c]
+        klass = f' class="{" ".join(cls)}"' if cls else ""
+        return f'<a href="{_e(url(starts=value))}"{klass}>{_e(label)}</a>'
+    keys = [key("", "All", True)] + [key(c, c) for c in "ABCDEFGHIJKLMNOPQRSTUVWXYZ"]
+    keys += [key("sym", "Symbols", True)] + [key(d, d) for d in "0123456789"]
+    return (f'<div class="veil"></div>\n<div class="popup" role="dialog" aria-label="{_e(heading)}">\n'
+            f'<h2>{_e(heading)}</h2>\n<nav class="letters">' + "".join(keys) + '</nav>\n'
+            '<p class="muted small" style="margin:0">'
+            + ('Dimmed: no picture here starts with it. Hidden files, starting with a dot, are never listed.'
+               if "pictures" in heading else "Dimmed: nothing here starts with it.")
+            + '</p>\n</div>')
+
+
 def picker_page(listing: Dict[str, Any], token: str, *, key: str, field: str,
-                label: str, error: str = "", filter_text: str = "") -> str:
-    """Choose a path, through Sunshine's own directory listing."""
+                label: str, error: str = "", starts: str = "", filter_open: bool = False,
+                page: int = 0) -> str:
+    """Choose a path, through Sunshine's own directory listing (#65).
+
+    Folders say "folder" and files "file": Sunshine's listing has names, paths
+    and types, and nothing is read here that it did not list. The filter
+    narrows what is shown to names starting with one letter, digit, or
+    anything else. For artwork, folders sit on the left and the pictures on
+    the right as thumbnails, a page at a time.
+    """
     here = str(listing.get("path") or "")
     parent = str(listing.get("parent") or "")
     entries = [e for e in (listing.get("entries") or []) if isinstance(e, dict)]
+    artwork = field == "image-path"
 
-    total = len(entries)
-    needle = filter_text.strip().lower()
-    if needle:
-        entries = [e for e in entries if needle in str(e.get("name", "")).lower()]
-    matched = len(entries)
-    entries = entries[:PICKER_LIMIT]
+    def url(**changes: Any) -> str:
+        args = {"key": key, "field": field, "path": here, "starts": starts, "page": ""}
+        args.update(changes)
+        return "/browse?" + "&".join(f"{k}={_eq(str(v))}" for k, v in args.items() if v not in (None, ""))
 
-    def link(path: str, name: str, is_dir: bool) -> str:
-        what = "go" if is_dir else "pick"
-        return (f'<a class="{"dir" if is_dir else "file"}" '
-                f'href="/browse?key={_eq(key)}&field={_eq(field)}'
-                f'&{"path" if is_dir else "pick"}={_eq(path)}">'
-                f'<span class="k">{"folder" if is_dir else "choose"}</span>'
-                f'<span>{_e(name)}</span></a>')
+    def pick_url(path: str) -> str:
+        return f"/browse?key={_eq(key)}&field={_eq(field)}&pick={_eq(path)}"
 
-    rows = []
-    if parent and parent != here:
-        rows.append(link(parent, "..", True))
-    for item in entries:
-        if not isinstance(item, dict):
-            continue
-        rows.append(link(str(item.get("path") or ""), str(item.get("name") or ""),
-                         item.get("type") == "directory"))
+    def item(href: str, icon: str, name: str, meta: str) -> str:
+        return (f'<a class="item" href="{_e(href)}">{icon}<span class="grow"><span class="name">{_e(name)}</span>'
+                f'<span class="meta">{_e(meta)}</span></span></a>')
 
-    body = ("".join(rows) if rows
-            else '<p class="why">Nothing here to choose.</p>')
-    problem = f'<section class="err"><p class="why">{_e(error)}</p></section>' if error else ""
+    folders = [e for e in entries if e.get("type") == "directory"]
+    files = [e for e in entries if e.get("type") != "directory"]
+    if artwork:
+        folders = [e for e in folders if not str(e.get("name", "")).startswith(".")]
+        files = [e for e in files if not str(e.get("name", "")).startswith(".")
+                 and str(e.get("name", "")).lower().endswith(PICTURE_TYPES)]
+    up = item(url(path=parent, starts="", page=""), UP_SVG, "..", parent) if parent and parent != here else ""
+    problem = notice2("err", "", _e(error)) + "\n" if error else ""
+    word = "pictures" if artwork else "names"
+    chosen_label = "All" if not starts else ("Symbols" if starts == "sym" else starts)
+    filter_button = (f'<a class="btn sec filter" href="{_e(url(filter=1))}"'
+                     + ('' if artwork else ' style="width:auto;margin:0 0 1.1rem;gap:2rem"')
+                     + f'><span>Show {word} starting with</span><b>{_e(chosen_label)}</b></a>')
+    close = (f'<a class="btn sec" href="{_e(_form_url(key, token) if not artwork else "/artwork?key=" + _eq(key))}" '
+             f'data-back><span class="glyph b">B</span>Cancel</a>')
 
-    shown = len(entries)
-    if needle:
-        counted = f"{matched} of {total} match &ldquo;{_e(filter_text)}&rdquo;"
-    else:
+    if not artwork:
+        present = {starts_with(str(e.get("name", ""))) for e in entries}
+        shown = [e for e in entries if not starts or starts_with(str(e.get("name", ""))) == starts]
+        rows = [up] if up else []
+        for e in shown[:PICKER_LIMIT]:
+            is_dir = e.get("type") == "directory"
+            href = url(path=str(e.get("path") or ""), starts="", page="") if is_dir else pick_url(str(e.get("path") or ""))
+            rows.append(item(href, FOLDER_SVG if is_dir else FILE_SVG, str(e.get("name") or ""),
+                             "folder" if is_dir else "file"))
+        total = len(entries)
         counted = f"{total} item{'' if total == 1 else 's'}"
-    if matched > shown:
-        counted += f", showing the first {shown}"
+        if starts:
+            counted = f"{len(shown)} of {total} items"
+        if len(shown) > PICKER_LIMIT:
+            counted += f", showing the first {PICKER_LIMIT}"
+        body = ("<div class=\"list\">\n" + "\n".join(rows) + "\n</div>") if rows else \
+            '<div class="center"><p>Nothing here to choose.</p></div>'
+        main = (f'<main class="main">\n<div class="head"><h1>Choose {_e(label)}</h1>'
+                f'<span class="sub"><code>{_e(here or "/")}</code> · {counted}</span></div>\n'
+                f'{problem}{filter_button}\n{body}\n</main>')
+        bar = [close, '<span class="grow"></span>']
+    else:
+        present = {starts_with(str(e.get("name", ""))) for e in files}
+        pictures = [e for e in files if not starts or starts_with(str(e.get("name", ""))) == starts]
+        pages = max(1, (len(pictures) + PICTURES_PER_PAGE - 1) // PICTURES_PER_PAGE)
+        page = min(max(0, page), pages - 1)
+        on_page = pictures[page * PICTURES_PER_PAGE:(page + 1) * PICTURES_PER_PAGE]
+        folder_rows = ([up] if up else []) + [item(url(path=str(e.get("path") or ""), starts="", page=""),
+                                                   FOLDER_SVG, str(e.get("name") or ""), "folder") for e in folders]
+        picks = "\n".join(
+            f'<a class="pick" href="{_e(pick_url(str(e.get("path") or "")))}"><img src="/art?p={_eq(str(e.get("path") or ""))}" '
+            f'alt=""><span class="fname">{_e(str(e.get("name") or ""))}</span></a>' for e in on_page)
+        if pictures:
+            first = page * PICTURES_PER_PAGE + 1
+            shelf = (f'<div class="shelf"><h2>Pictures {first}-{first + len(on_page) - 1} of {len(pictures)}</h2>'
+                     f'<div class="pages">\n{picks}\n</div></div>')
+        else:
+            shelf = '<div class="shelf"><h2>Pictures</h2><p class="muted">No pictures here.</p></div>'
+        nf, npx = len(folders), len(files)
+        counted = f"{nf} folder{'' if nf == 1 else 's'}, {npx} picture{'' if npx == 1 else 's'}"
+        main = (f'<main class="main">\n<div class="head"><h1>Choose {_e(label)}</h1>'
+                f'<span class="sub"><code>{_e(here or "/")}</code> · {counted}</span></div>\n{problem}'
+                f'<div class="split">\n<div class="side">\n<div><h2>Folders</h2><div class="list">\n'
+                + "\n".join(folder_rows) + f'\n</div></div>\n{filter_button}\n</div>\n{shelf}\n</div>\n</main>')
+        flat_back = '<span class="btn sec flat"><span class="glyph wide">LB</span>Back</span>'
+        flat_next = '<span class="btn sec flat"><span class="glyph wide">RB</span>Next</span>'
+        prev = (f'<a class="btn sec" href="{_e(url(page=page - 1))}"><span class="glyph wide">LB</span>Back</a>'
+                if page > 0 else flat_back)
+        nxt = (f'<a class="btn sec" href="{_e(url(page=page + 1))}"><span class="glyph wide">RB</span>Next</a>'
+               if page + 1 < pages else flat_next)
+        bar = [close, '<span class="grow"></span>', prev, f'<span class="say">Page {page + 1} of {pages}</span>', nxt]
 
-    search = (f'<form class="filter" method="get" action="/browse">'
-              f'<input type="hidden" name="key" value="{_e(key)}">'
-              f'<input type="hidden" name="field" value="{_e(field)}">'
-              f'<input type="hidden" name="path" value="{_e(here)}">'
-              f'<input type="text" name="q" value="{_e(filter_text)}" '
-              f'placeholder="Filter by name" aria-label="Filter by name">'
-              f'<button class="btn sec" type="submit">Filter</button></form>'
-              f'<p class="crumb">{counted}</p>')
-
-    return f"""<!doctype html>
-{_html()}<head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>{_title('Choose ' + _e(label))}</title>
-<style>{_CSS}{_APP_CSS}{_PICKER_CSS}</style></head>
-<body>
-<div class="navbar"><span class="brand">Sunshine</span><span class="sep">/</span>
-<span class="where">App Manager</span>{_version_chip()}</div>
-<div class="wrap">
-<h1>Choose {_e(label)}</h1>
-{problem}
-<p class="crumb">{_e(here or "/")}</p>
-{search}
-<div class="listing">{body}</div>
-<div class="actions">
-<a class="btn sec" href="{_e(_form_url(key, token))}">Cancel</a></div>
-</div></body></html>"""
+    if filter_open:
+        main = main.replace("\n</main>", "\n</main>", 1)
+        popup = _filter_popup(f"Show {word} starting with", url, starts, present)
+        bar = [f'<a class="btn sec" href="{_e(url())}" data-back><span class="glyph b">B</span>Close</a>',
+               '<span class="grow"></span>']
+        html_page = frame.page("Choose " + label, main, "\n".join(bar))
+        return html_page.replace("</body>", popup + "\n</body>", 1)
+    return frame.page("Choose " + label, main, "\n".join(bar))
 
 
 def _form_url(key: str, token: str) -> str:
@@ -2178,233 +2251,159 @@ _ART_SOURCES = [
 
 
 
-def _sheet_url(key: str, token: str, searched: str = "", page: int = 0,
-               go: bool = False, per: int = 0, fit: str = "") -> str:
-    """The picker with the SteamGridDB sheet open at *page*.
-
-    The sheet's state lives in the address, which is what makes every control
-    in it an ordinary link and the browser's Back button do the obvious thing.
-
-    Without *go* this is the empty sheet with a spinner in it, which the browser
-    can draw immediately; the page it refreshes to carries *go* and is the one
-    that actually calls SteamGridDB. Two addresses rather than one so there is
-    something on screen during a wait that is nobody's idea of instant.
-    """
-    bits = [f"key={_eq(key)}", "sgdb=1", f"sgdb_page={int(page)}"]
-    if searched:
-        bits.append(f"q={_eq(searched)}")
-    if go:
-        bits.append("go=1")
-    # How many the screen holds, measured once and then carried, so every page
-    # of the same run is the same size and the grid never changes shape.
-    if per:
-        bits.append(f"per={int(per)}")
-    # And the size of sheet that holds exactly that many, for the same reason:
-    # the last page is drawn in the same box as the full ones, so its empty
-    # space is the only empty space there is.
-    if fit:
-        bits.append(f"fit={_eq(fit)}")
-    return "/artwork?" + "&".join(bits)
+WARN_BTN_SVG = ('<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" '
+                'stroke-linejoin="round" aria-hidden="true"><path d="M12 3 2 21h20z"/><path d="M12 10v5M12 18v.5"/></svg>')
+SGDB_PER = 30          # a page of the SteamGridDB page: three rows of ten (#64)
+SGDB_SETTINGS = "/settings?section=art"
 
 
-def _sgdb_sheet(sheet: Dict[str, Any], token: str, *, key: str, searched: str,
-                label: str, current: str) -> str:
-    """The SteamGridDB results, as a modal over the picker.
-
-    `<dialog open>` rather than a scripted `showModal()`: see the CSS. An open
-    dialog in the markup paints no ::backdrop, so a veil is drawn behind it.
-    """
-    found = list(sheet.get("candidates") or [])
-    page = int(sheet.get("page") or 0)
-    pages = int(sheet.get("pages") or 0)
-    total = int(sheet.get("total") or 0)
-    note = str(sheet.get("note") or "")
-    waiting = bool(sheet.get("loading"))
-    per = int(sheet.get("per") or 0) or SGDB_PAGE
-    fit = str(sheet.get("fit") or "")
-
-    def tile(candidate: Dict[str, Any]) -> str:
-        cid = str(candidate.get("id") or "")
-        # A chosen picture is copied to `chosen/<slug>-<id>.png`, so the id is
-        # what survives into the entry's image-path. Comparing cache paths, the
-        # way the picker does, cannot work here: these candidates have no cached
-        # file yet -- that is the point of fetching them one at a time.
-        is_current = bool(current) and bool(cid) and cid in current
-        # The picture comes from /sgdb-art, which fetches that one when the
-        # browser asks for it. The grid is on screen before any of them exist
-        # and they arrive into it. Issue #31. No `loading="lazy"`: in a sheet
-        # that scrolls inside itself it left whole rows blank until they were
-        # scrolled to, which looks exactly like the thing this was fixing.
-        #
-        # Choosing returns to the picker rather than to the sheet: the choice
-        # is made, and leaving the modal up over the answer asks it again.
-        return (f'<figure class="{"current" if is_current else ""}">'
-                f'<a href="/artwork?key={_eq(key)}&choose={_eq(cid)}'
-                f'&q={_eq(searched)}">'
-                f'<img src="/sgdb-art?id={_eq(cid)}" alt=""></a>'
-                f'<figcaption><b>{_e(str(candidate.get("label") or ""))}</b>'
-                f'{"in use" if is_current else "choose"}</figcaption></figure>')
-
-    if waiting:
-        body = ('<div class="sheet-wait"><div class="spinner" role="img" '
-                'aria-label="Loading"></div>'
-                '<p class="why">Asking SteamGridDB&hellip;</p></div>')
-    elif found:
-        body = f'<div class="arts">{"".join(tile(c) for c in found)}</div>'
-    else:
-        body = (f'<p class="why">{_e(note or "Nothing on this page.")}</p>')
-
-    # Closing goes back to the picker with the sheet shut, which is this same
-    # page without sgdb= in the address.
-    close_url = f"/artwork?key={_eq(key)}"
-    if searched:
-        close_url += f"&q={_eq(searched)}"
-    shut = f'<a class="btn sec shut" href="{close_url}">Close</a>'
-
-    def step(delta: int, text: str) -> str:
-        wanted = page + delta
-        # A dead end is shown flat rather than hidden: a control that vanishes
-        # moves everything beside it, and on a gamepad that means the button
-        # under the cursor is suddenly a different button. While waiting, both
-        # are flat -- there is nothing yet to page away from.
-        if (waiting or wanted < 0 or (pages and wanted >= pages)
-                or (not found and delta > 0)):
-            return f'<span class="btn sec flat">{text}</span>'
-        return (f'<a class="btn sec" href="'
-                f'{_e(_sheet_url(key, token, searched, wanted, per=per, fit=fit))}">'
-                f'{text}</a>')
-
-    first = page * per + 1
-    last = page * per + len(found)
-    where = ("" if waiting else
-             (f"{first}-{last} of {total}" if found and total
-              else (f"{total} in all" if total else "")))
-    counted = (f'<span class="count">{_e(where)}</span>' if where else "")
-    of_pages = (f'<span class="where">Page {page + 1} of {pages}</span>'
-                if pages and not waiting else "")
-
-    # Sized to the grid it holds when sheet.js has measured one (see there);
-    # the stylesheet's size, which is the screen's, when it has not. The
-    # server rebuilt *fit* from two integers, so nothing else reaches here.
-    sized = ""
-    if fit:
-        w, _, h = fit.partition("x")
-        sized = f' style="width:{int(w)}px;height:{int(h)}px"'
-
-    return (f'<div class="sheet-veil"></div>'
-            f'<dialog class="sheet"{sized} open aria-label="SteamGridDB artwork for {_e(label)}">'
-            f'<div class="sheet-head"><h2>From SteamGridDB</h2>{counted}{shut}</div>'
-            f'<div class="sheet-body">{body}</div>'
-            f'<div class="sheet-foot">{step(-1, "Back")}{step(1, "Next")}'
-            f'{of_pages}</div></dialog>')
+def _artwork_url(key: str, **extra: Any) -> str:
+    query = "&".join(f"{k}={_eq(str(v))}" for k, v in [("key", key)] + list(extra.items()) if v not in (None, ""))
+    return "/artwork?" + query
 
 
 def artwork_page(candidates: List[Dict[str, Any]], token: str, *, key: str,
                  label: str, current: str = "", notes: Optional[List[str]] = None,
                  searched: str = "", error: str = "",
                  offer_sgdb: bool = False, sgdb_ready: bool = False,
-                 sheet: Optional[Dict[str, Any]] = None,
-                 refresh_to: str = "") -> str:
-    """Choose cover art from everything that could be found for one app.
+                 key_refused: bool = False) -> str:
+    """Choose cover art from everything that could be found for one app (#63).
 
-    *sheet*, when given, is a page of SteamGridDB results and puts the modal up
-    over this page. It is only ever fetched because somebody pressed for it.
+    One row per source, never scrolling sideways. SteamGridDB is not here: it
+    is its own page, reached by Y, and nothing is asked of it until then.
     """
     by_source: Dict[str, List[Dict[str, Any]]] = {}
     for candidate in candidates:
         by_source.setdefault(str(candidate.get("source")), []).append(candidate)
 
-    def tile(candidate: Dict[str, Any]) -> str:
+    def pick(candidate: Dict[str, Any]) -> str:
         path = str(candidate.get("path") or "")
         # A candidate from a network is used from the cached copy, so that is
         # what the entry points at. One of ours is used from where it already
-        # lies, so the entry points at the origin instead -- and comparing only
-        # the cached copy left the tile actually in use labeled "choose".
+        # lies, so the entry points at the origin instead.
         origin = str(candidate.get("origin") or "")
         is_current = bool(current) and current in (path, origin)
-        return (f'<figure class="{"current" if is_current else ""}">'
-                f'<a href="/artwork?key={_eq(key)}&choose={_eq(str(candidate.get("id")))}'
-                f'&q={_eq(searched)}">'
-                f'<img src="/art?p={_eq(path)}" alt=""></a>'
-                f'<figcaption><b>{_e(str(candidate.get("label") or ""))}</b>'
-                f'{"in use" if is_current else "choose"}</figcaption></figure>')
+        href = _artwork_url(key, choose=str(candidate.get("id")), q=searched)
+        return (f'<a class="pick{" current" if is_current else ""}" href="{_e(href)}">'
+                f'<img src="/art?p={_eq(path)}" alt="">'
+                + ('<span class="under">In use</span>' if is_current else "") + '</a>')
 
     sections = []
     for source, heading, why in _ART_SOURCES:
         found = by_source.get(source) or []
-        if not found:
+        if not found or source == "sgdb":
             continue
         sections.append(
-            f'<h2>{_e(heading)}</h2><p class="why">{_e(why)}</p>'
-            f'<div class="arts">{"".join(tile(c) for c in found)}</div>')
+            f'<section class="source"><h2>{_e(heading)} <span class="n">{len(found)}</span></h2>\n'
+            f'<p class="muted small" style="margin:-.4rem 0 .7rem">{_e(why)}</p>\n'
+            f'<div class="row">\n' + "\n".join(pick(c) for c in found) + '\n</div></section>')
 
-    if not sections:
-        sections.append('<p class="why">Nothing was found for this one. '
-                        'Try a different name, or browse for a file.</p>')
+    notices = ""
+    if error:
+        notices += notice2("err", "", _e(error)) + "\n"
+    if key_refused:
+        notices += notice2("warn", "SteamGridDB refused the saved key",
+                           "It worked when it was saved, but SteamGridDB no longer accepts it. It may have been "
+                           "changed or removed on your SteamGridDB account. The pictures below are unaffected.") + "\n"
 
-    note_items = "".join(f"<li>{_e(n)}</li>" for n in (notes or []))
-    note_list = f'<ul class="notes">{note_items}</ul>' if note_items else ""
-    # The note says a key can be added in Settings; this is how you get there
-    # without a keyboard. Issue #22 -- the wording used to name a command, and
-    # on a television there is nowhere to type one.
-    if offer_sgdb:
-        note_list += (f'<div class="actions" style="margin:-.5rem 0 1.25rem">'
-                      f'<a class="btn sec" href="/settings">'
-                      f'Settings</a></div>')
-    # With a key, community artwork is a button rather than something that has
-    # already happened. Nothing is fetched until this is pressed: hundreds of
-    # pictures from a third party are not what opening this page should cost.
-    if sgdb_ready and not sheet:
-        note_list += (
-            f'<div class="actions" style="margin:-.5rem 0 1.25rem">'
-            f'<a class="btn sec" href="{_e(_sheet_url(key, token, searched, 0))}">'
-            f'Show SteamGridDB art</a></div>')
+    if sections:
+        body = "\n".join(sections)
+    else:
+        # None of the sources answered is a different thing from nothing to
+        # suggest, and 1.x said so; everything else gets the one sentence.
+        said = next((n for n in (notes or []) if n.startswith("None of the artwork sources answered")),
+                    "Nothing was found for this one. Try a different name, or browse for a file.")
+        body = f'<div class="center"><p>{_e(said)}</p></div>'
 
-    problem = (f'<section class="err"><p class="why">{_e(error)}</p></section>'
-               if error else "")
-
-    # Searching by a different name is the way out of a title that does not
-    # match what SteamGridDB calls it -- an edition, a subtitle, a re-release.
+    # With a mouse or keyboard, the field; with a controller, X and the
+    # on-screen keyboard (osk.js opens it on the same field).
     find = (f'<form class="find" method="get" action="/artwork">'
             f'<input type="hidden" name="key" value="{_e(key)}">'
-            f'<input type="text" name="q" value="{_e(searched)}" '
-            f'placeholder="Search by another name" aria-label="Search by another name">'
+            f'<input type="text" id="q" name="q" value="{_e(searched or label)}" aria-label="Search by another name" data-osk-submit>'
             f'<button class="btn sec" type="submit">Search</button></form>')
 
-    modal = _sgdb_sheet(sheet, token, key=key, searched=searched,
-                        label=label, current=current) if sheet else ""
-    # How the spinner becomes results, with no script: the browser draws this
-    # page, then follows the refresh to the address that does the fetching.
-    # Issue #31.
-    onward = (f'<meta http-equiv="refresh" content="0;url={_e(refresh_to)}">'
-              if refresh_to else "")
-    # Sizing only, and only when there is a sheet to size. The grid is already
-    # laid out and every control in it is already a link; this picks the column
-    # count that fits the screen best. See the comment at the top of sheet.js
-    # for why that is the only thing it is allowed to do.
-    # On the *waiting* page, not the results one: it measures the empty sheet
-    # to decide how many pictures the screen holds, then goes on to fetch that
-    # many. The results page needs no script at all. Issue #31.
-    fitter = (f'<script src="/sheet.js"></script>'
-              if sheet and sheet.get("loading") and refresh_to else "")
+    if key_refused:
+        y = (f'<a class="btn warn" href="{SGDB_SETTINGS}"><span class="glyph y">Y</span>{WARN_BTN_SVG}'
+             f'<span>Update the SteamGridDB key</span></a>')
+    elif offer_sgdb:
+        y = (f'<a class="btn warn" href="{SGDB_SETTINGS}"><span class="glyph y">Y</span>{WARN_BTN_SVG}'
+             f'<span>Set up SteamGridDB</span></a>')
+    elif sgdb_ready:
+        y = (f'<a class="btn" href="{_e(_artwork_url(key, q=searched, sgdb=1))}">'
+             f'<span class="glyph y">Y</span>Show SteamGridDB art</a>')
+    else:
+        y = ""
+    bar = [f'<a class="btn sec" href="{_e(_form_url(key, token))}" data-back><span class="glyph b">B</span>Back</a>',
+           f'<a class="btn sec" href="/browse?key={_eq(key)}&field=image-path">Browse for a file</a>',
+           '<span class="grow"></span>',
+           '<button class="btn sec padonly" type="button" data-osk-for="q"><span class="glyph x">X</span>'
+           'Search by another name</button>']
+    if y:
+        bar.append(y)
+    main = (f'<main class="main">\n<div class="head"><h1>Artwork for {_e(label)}</h1></div>\n{find}\n'
+            f'{notices}{body}\n</main>')
+    return frame.page("Artwork for " + label, main, "\n".join(bar))
 
-    return f"""<!doctype html>
-{_html()}<head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>{_title('Artwork for ' + _e(label))}</title>{onward}
-<style>{_CSS}{_APP_CSS}{_ARTWORK_CSS}</style></head>
-<body>
-<div class="navbar"><span class="brand">Sunshine</span><span class="sep">/</span>
-<span class="where">App Manager</span>{_version_chip()}</div>
-<div class="wrap">
-<h1>Artwork for {_e(label)}</h1>
-{problem}{note_list}{find}
-{"".join(sections)}
-<div class="actions">
-<a class="btn sec" href="{_e(_form_url(key, token))}" data-back>Back</a>
-<a class="btn sec" href="/browse?key={_eq(key)}&field=image-path">
-Browse for a file</a></div>
-</div>{modal}{fitter}</body></html>"""
+
+def sgdb_artwork_page(result: Optional[Dict[str, Any]], token: str, *, key: str, searched: str,
+                      label: str, current: str = "", refresh_to: str = "") -> str:
+    """SteamGridDB's pictures, a page at a time (#64). It replaces 1.x's sheet.
+
+    Drawn first with nothing in it and a spinner (result None), and the
+    refresh in its head leads to the address that does the asking, so the
+    wait happens on screen with no script. Then one of: the pictures, 30 to a
+    page; SteamGridDB not answering, with Try again; or nothing for this one.
+    A refused key never gets here: it goes back to the picker, which says so.
+    """
+    back = _artwork_url(key, q=searched)
+    close = f'<a class="btn sec" href="{_e(back)}" data-back><span class="glyph b">B</span>Close</a>'
+    flat_back = '<span class="btn sec flat"><span class="glyph wide">LB</span>Back</span>'
+    flat_next = '<span class="btn sec flat"><span class="glyph wide">RB</span>Next</span>'
+    head = '<div class="head"><h1>From SteamGridDB</h1>{}</div>'
+    if result is None:
+        main = ('<main class="main">\n' + head.format("") + '\n'
+                '<div class="center"><div class="ring" aria-hidden="true"></div><p>Pulling artwork</p></div>\n</main>')
+        bar = [close, '<span class="grow"></span>', flat_back, flat_next]
+    elif result.get("status") == "unreachable":
+        again = _artwork_url(key, q=searched, sgdb=1, sgdb_page=result.get("page") or "")
+        main = ('<main class="main">\n' + head.format("") + '\n'
+                '<div class="center"><svg style="width:3.4rem;height:3.4rem;color:var(--warning)" viewBox="0 0 24 24" '
+                'fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3 2 21h20z"/><path d="M12 10v5M12 18v.5"/>'
+                '</svg><h1>SteamGridDB did not answer</h1><p>It may be down, or this machine may be offline. '
+                'Your key is fine.</p></div>\n</main>')
+        bar = [close, '<span class="grow"></span>',
+               f'<a class="btn" href="{_e(again)}"><span class="glyph y">Y</span>Try again</a>', flat_back, flat_next]
+    elif not result.get("candidates"):
+        said = str(result.get("note") or "SteamGridDB has no artwork for this one.")
+        main = ('<main class="main">\n' + head.format("") + f'\n<div class="center"><p>{_e(said)}</p></div>\n</main>')
+        page = int(result.get("page") or 0)
+        prev = (f'<a class="btn sec" href="{_e(_artwork_url(key, q=searched, sgdb=1, sgdb_page=page - 1))}">'
+                f'<span class="glyph wide">LB</span>Back</a>' if page > 0 else flat_back)
+        bar = [close, '<span class="grow"></span>', prev, flat_next]
+    else:
+        page = int(result.get("page") or 0)
+        pages = int(result.get("pages") or 1)
+        total = int(result.get("total") or 0)
+        found = result.get("candidates") or []
+        first = page * SGDB_PER + 1
+        last = first + len(found) - 1
+        sub = f'<span class="sub">{first}-{last} of {total}</span>' if total else ""
+        picks = "\n".join(
+            f'<a class="pick" href="{_e(_artwork_url(key, choose=str(c.get("id")), q=searched))}">'
+            f'<img src="/sgdb-art?id={_eq(str(c.get("id")))}" alt=""></a>' for c in found)
+        main = ('<main class="main">\n' + head.format(sub) + '\n'
+                '<p class="muted small" style="margin:-.6rem 0 1rem">Made by other people, in SteamGridDB\'s own order. '
+                'Where to look when a game has no cover of its own.</p>\n'
+                f'<div class="pages">\n{picks}\n</div>\n</main>')
+        prev = (f'<a class="btn sec" href="{_e(_artwork_url(key, q=searched, sgdb=1, sgdb_page=page - 1))}">'
+                f'<span class="glyph wide">LB</span>Back</a>' if page > 0 else flat_back)
+        nxt = (f'<a class="btn sec" href="{_e(_artwork_url(key, q=searched, sgdb=1, sgdb_page=page + 1))}">'
+               f'<span class="glyph wide">RB</span>Next</a>' if page + 1 < pages else flat_next)
+        bar = [close, '<span class="grow"></span>', prev, f'<span class="say">Page {page + 1} of {max(pages, 1)}</span>', nxt]
+    page_html = frame.page("From SteamGridDB", main, "\n".join(bar))
+    if refresh_to:
+        page_html = page_html.replace("</title>", f'</title>\n<meta http-equiv="refresh" content="0;url={_e(refresh_to)}">', 1)
+    return page_html
 
 
 KB_SVG = ('<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" '

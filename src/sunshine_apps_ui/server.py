@@ -13,7 +13,7 @@ import logging
 import os
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from typing import Any, Dict, List, Optional
+from typing import Set, Any, Dict, List, Optional
 from urllib.parse import parse_qs, urlencode, urlsplit
 
 from . import __version__, security
@@ -24,14 +24,14 @@ from .engine import (EngineError, art_choose, art_search, art_sgdb,
                      get_state, list_backups, mutate, run_plan,
                      save_auth)
 from . import scanjob, updates
-from .render import _sheet_url as render_sheet_url
+from .render import _artwork_url as render_artwork_url
 from .render import (LOCK_NOTE, app_page, applied_page, artwork_page,
                      closing_page, leaving_with_changes_page,
                      render_elevating,
                      backups_page, confirm_page, connect_page, error_page,
                      exit_timeout_value, explain_page, grid_page, hidden_page, is_protected, page,
                      picker_page, render_browsable, render_fields, render_flags,
-                     report_page, scanning_page, settings_page)
+                     report_page, scanning_page, settings_page, sgdb_artwork_page, SGDB_PER)
 
 log = logging.getLogger("sunshine-apps-ui")
 
@@ -203,8 +203,11 @@ class PlanHandler(BaseHTTPRequestHandler):
             except EngineError:
                 self._send(404, error_page("Not found.", token=self.token))
                 return
-            found = artwork.read(wanted,
-                                 artwork.allowed_paths(current, state.queue()))
+            allowed = artwork.allowed_paths(current, state.queue())
+            # And the pictures Sunshine has just listed for the artwork file
+            # browser (#65): shown as thumbnails before anything refers to them.
+            allowed |= _LISTED.get(self.token, set())
+            found = artwork.read(wanted, allowed)
             if not found:
                 log.warning("artwork not served: %r", wanted)
                 self._send(404, error_page("Not found.", token=self.token))
@@ -360,10 +363,6 @@ class PlanHandler(BaseHTTPRequestHandler):
             self._send_asset("scanning.js", "text/javascript; charset=utf-8")
             return
 
-        if parts.path == "/sheet.js":
-            self._send_asset("sheet.js", "text/javascript; charset=utf-8")
-            return
-
         if parts.path == "/pad.js":
             self._send_asset("pad.js", "text/javascript; charset=utf-8")
             return
@@ -493,9 +492,24 @@ class PlanHandler(BaseHTTPRequestHandler):
                 listing = browse(self.conf_dir, where, browsable[field])
             except EngineError as e:
                 error, listing = str(e), {"path": where, "parent": "", "entries": []}
+            if field == "image-path":
+                # Only what Sunshine listed, only pictures, only this session's
+                # latest folder: the image route reads nothing else (#65).
+                from .render import PICTURE_TYPES
+                _LISTED[self.token] = {
+                    str(e.get("path") or "") for e in (listing.get("entries") or [])
+                    if isinstance(e, dict) and e.get("type") != "directory"
+                    and str(e.get("name") or "").lower().endswith(PICTURE_TYPES)
+                    and not str(e.get("name") or "").startswith(".")}
+            try:
+                at_page = int((query.get("page") or ["0"])[0])
+            except ValueError:
+                at_page = 0
             self._send(200, picker_page(listing, self.token, key=key, field=field,
                                         label=label, error=error,
-                                        filter_text=(query.get("q") or [""])[0]))
+                                        starts=(query.get("starts") or [""])[0][:3],
+                                        filter_open=(query.get("filter") or [""])[0] == "1",
+                                        page=at_page))
             return
 
         if parts.path == "/backups":
@@ -559,52 +573,51 @@ class PlanHandler(BaseHTTPRequestHandler):
             except EngineError as e:
                 error = str(e)
 
-            # The SteamGridDB sheet, only when the address asks for it. This is
-            # the one fetch on this page that reaches a third party, so it
-            # happens because somebody pressed for it and not before. Issue #30.
-            sheet, refresh_to = None, ""
+            # The SteamGridDB page, only when the address asks for it. This is
+            # the one fetch here that reaches a third party, so it happens
+            # because somebody pressed for it and not before. Issue #30.
+            label = name or "this app"
             if (query.get("sgdb") or [""])[0] == "1" and doc.get("sgdb_ready"):
-                asked = (query.get("sgdb_page") or ["0"])[0]
                 try:
-                    wanted = max(0, int(asked))
+                    wanted = max(0, int((query.get("sgdb_page") or ["0"])[0]))
                 except ValueError:
                     wanted = 0
-                try:
-                    per = max(0, int((query.get("per") or ["0"])[0]))
-                except ValueError:
-                    per = 0
-                fit = _sheet_fit((query.get("fit") or [""])[0])
                 if (query.get("go") or [""])[0] != "1":
-                    # The sheet, empty, with a spinner in it -- drawn at once,
-                    # before anything is asked of SteamGridDB. The refresh in
-                    # its head leads to the address that does the asking, so
-                    # the wait happens on screen instead of behind a button
-                    # that looked like it had not been pressed. Issue #31.
-                    sheet = {"loading": True, "candidates": [], "note": "",
-                             "total": 0, "page": wanted, "pages": 0,
-                             "per": per, "fit": fit}
-                    refresh_to = render_sheet_url(key, self.token, searched,
-                                                  wanted, go=True, per=per,
-                                                  fit=fit)
-                else:
-                    try:
-                        sheet = art_sgdb(self.conf_dir, name=searched,
-                                         source=source, ident=ident,
-                                         page=wanted, per=per)
-                    except EngineError as e:
-                        sheet = {"candidates": [], "note": str(e), "total": 0,
-                                 "page": wanted, "pages": 0}
-                    sheet["fit"] = fit
-                    self._remember_sgdb(sheet.get("candidates") or [])
+                    # Drawn at once with a spinner, before anything is asked;
+                    # its refresh leads to the address that does the asking.
+                    onward = render_artwork_url(key, q=searched, sgdb=1, sgdb_page=wanted or "", go=1)
+                    self._send(200, sgdb_artwork_page(None, self.token, key=key, searched=searched,
+                                                      label=label, refresh_to=onward))
+                    return
+                try:
+                    result = art_sgdb(self.conf_dir, name=searched, source=source, ident=ident,
+                                      page=wanted, per=SGDB_PER)
+                except EngineError as e:
+                    log.warning("SteamGridDB page failed: %s", e)
+                    result = {"candidates": [], "note": str(e), "total": 0, "page": wanted,
+                              "pages": 0, "status": "unreachable"}
+                status = str(result.get("status") or "")
+                if status == "refused":
+                    # The key, not the network: say so where the key is
+                    # offered, on the picker (#78).
+                    state.record_sgdb_key("refused")
+                    self._redirect_raw(render_artwork_url(key, q=searched if searched != name else ""))
+                    return
+                if status != "unreachable":
+                    state.record_sgdb_key("ok")
+                self._remember_sgdb(result.get("candidates") or [])
+                self._send(200, sgdb_artwork_page(result, self.token, key=key, searched=searched,
+                                                  label=label))
+                return
 
+            refused = (bool(doc.get("sgdb_ready"))
+                       and state.sgdb_key_state().get("state") == "refused")
             self._send(200, artwork_page(
-                doc.get("candidates") or [], self.token, key=key,
-                label=name or "this app",
+                doc.get("candidates") or [], self.token, key=key, label=label,
                 current=str(state.draft(key).get("image-path") or ""),
                 notes=doc.get("notes") or [], searched=searched, error=error,
                 offer_sgdb=bool(doc.get("offer_sgdb")),
-                sgdb_ready=bool(doc.get("sgdb_ready")), sheet=sheet,
-                refresh_to=refresh_to))
+                sgdb_ready=bool(doc.get("sgdb_ready")), key_refused=refused))
             return
 
         if parts.path == "/connect":
@@ -1355,24 +1368,12 @@ _SGDB: Dict[str, Dict[str, Any]] = {}
 # handed is a server that can be aimed at anything it can reach, including
 # whatever else is listening on this machine. Issue #31.
 _SGDB_SEEN: Dict[str, Dict[str, str]] = {}
+# The picture files Sunshine last listed for this session's artwork file
+# browser, which the image route may therefore show as thumbnails. Per token,
+# replaced by each listing, so it is never more than one folder.
+_LISTED: Dict[str, Set[str]] = {}
 # Two pages' worth, so paging back does not orphan the pictures behind you.
 _SGDB_SEEN_MAX = 2 * 48
-
-
-def _sheet_fit(asked: str) -> str:
-    """The sheet's size as sheet.js measured it, "WxH" in pixels, or "".
-
-    It goes back out inside a style attribute, so it is rebuilt from two
-    integers rather than passed through, and anything implausible is dropped:
-    the sheet then falls back to its stylesheet size, which is only less snug.
-    """
-    w, sep, h = asked.partition("x")
-    if not sep or not w.isdigit() or not h.isdigit():
-        return ""
-    w_px, h_px = int(w), int(h)
-    if not (200 <= w_px <= 8000 and 200 <= h_px <= 8000):
-        return ""
-    return f"{w_px}x{h_px}"
 
 
 def _tile_language() -> str:

@@ -264,6 +264,142 @@ def _edit_osk_symbols(engine):
     engine.state = edit_state()
 
 
+# --- artwork (#63, #64, #65) --------------------------------------------------
+
+DESIGN = os.path.join(REPO, "design", "2.0")
+
+
+def board_sources(board):
+    """The pictures a picker board shows, by source, in its order."""
+    import re
+    html = open(os.path.join(DESIGN, board)).read()
+    heads = {"On this machine": "steam-local", "From Steam": "steam-cdn"}
+    found = []
+    for m in re.finditer(r'<section class="source"><h2>([^<]+?) <span class="n">.*?</section>', html, re.S):
+        source = heads[m.group(1).strip()]
+        for src in re.findall(r'<img src="img/([^"]+)"', m.group(0)):
+            found.append((source, os.path.join(IMG, src)))
+    return found
+
+
+def picker(engine, board, *, key_state="ready"):
+    engine.state = edit_state()
+    cands = [{"id": f"{i:016x}", "source": source, "label": "Portrait", "path": path, "origin": path}
+             for i, (source, path) in enumerate(board_sources(board))]
+    engine.candidates = {"ok": True, "candidates": cands, "notes": [],
+                         "offer_sgdb": key_state == "none", "sgdb_ready": key_state != "none"}
+    if key_state == "refused":
+        state.record_sgdb_key("refused")
+    # serve() clears drafts as it starts, so run() sets these after it.
+    engine.drafts = {"index:2": {"image-path": os.path.join(IMG, "1091500.png")}}
+
+
+ART = "/artwork?key=index%3A2"
+
+
+@scenario("artwork", [(ART, "artwork.html")])
+def _artwork(engine):
+    picker(engine, "artwork.html")
+
+
+@scenario("artwork-search", [(ART, "artwork-search.html")])
+def _artwork_search(engine):
+    picker(engine, "artwork-search.html")
+
+
+@scenario("artwork-nokey", [(ART, "artwork-nokey.html")])
+def _artwork_nokey(engine):
+    picker(engine, "artwork-nokey.html", key_state="none")
+
+
+@scenario("artwork-keyrefused", [(ART, "artwork-keyrefused.html")])
+def _artwork_keyrefused(engine):
+    picker(engine, "artwork-keyrefused.html", key_state="refused")
+
+
+@scenario("artwork-empty", [(ART, "artwork-empty.html")])
+def _artwork_empty(engine):
+    picker(engine, "artwork-empty.html")
+    engine.candidates["candidates"] = []
+    engine.candidates["notes"] = ["Nothing to suggest for this app. Browse for a file instead."]
+
+
+def sgdb(engine, *, page=1, count=30, total=689, status="", note=""):
+    import re
+    picker(engine, "artwork.html")
+    html = open(os.path.join(DESIGN, "artwork-sgdb.html")).read()
+    srcs = re.findall(r'<a class="pick"[^>]*><img src="img/([^"]+)"', html)[:count]
+    engine.sgdb = {"ok": True, "note": note, "total": total, "page": page, "pages": (total + 29) // 30,
+                   "status": status,
+                   "candidates": [{"id": f"{i:016x}", "source": "sgdb", "label": "by someone",
+                                   "origin": os.path.join(IMG, src)} for i, src in enumerate(srcs)]}
+    # A picture of this page is fetched by id; here the "origin" is the file.
+    mock.patch.object(srv, "art_sgdb_one", lambda conf_dir, origin: origin).start()
+
+
+@scenario("artwork-sgdb", [(ART + "&sgdb=1&sgdb_page=1&go=1", "artwork-sgdb.html")])
+def _artwork_sgdb(engine):
+    sgdb(engine)
+
+
+@scenario("artwork-sgdb-loading", [(ART + "&sgdb=1", "artwork-sgdb-loading.html")])
+def _artwork_sgdb_loading(engine):
+    sgdb(engine)
+    # The spinner is only on screen until its refresh fires; for a capture,
+    # the page is sent without it. (Blocking the fetch instead stalled the
+    # window for every capture after this one.)
+    real_page = srv.sgdb_artwork_page
+    mock.patch.object(srv, "sgdb_artwork_page",
+                      lambda *a, **k: real_page(*a, **dict(k, refresh_to=""))).start()
+
+
+@scenario("artwork-sgdb-unreachable", [(ART + "&sgdb=1&go=1", "artwork-sgdb-unreachable.html")])
+def _artwork_sgdb_unreachable(engine):
+    sgdb(engine, page=0, count=0, total=0, status="unreachable", note="SteamGridDB did not answer.")
+
+
+@scenario("artwork-sgdb-empty", [(ART + "&sgdb=1&go=1", "artwork-sgdb-empty.html")])
+def _artwork_sgdb_empty(engine):
+    sgdb(engine, page=0, count=0, total=0, note="SteamGridDB has no artwork for this one.")
+
+
+@scenario("browse", [("/browse?key=index%3A2&field=cmd&path=%2Fhome%2Fuser%2FGames", "browse.html")])
+def _browse(engine):
+    engine.state = edit_state()
+    g = "/home/user/Games"
+    engine.listing = {"ok": True, "path": g, "parent": "/home/user", "entries":
+                      [{"name": n, "path": f"{g}/{n}", "type": "directory"}
+                       for n in ("Cyberpunk 2077", "Enshrouded", "Hades II", "Heroic", "NIMRODS", "Satisfactory")]
+                      + [{"name": n, "path": f"{g}/{n}", "type": "file"} for n in ("launch-cyberpunk.sh", "README.txt")]}
+
+
+def covers(engine):
+    import re
+    engine.state = edit_state()
+    html = open(os.path.join(DESIGN, "browse-art.html")).read()
+    shown = re.findall(r'<a class="pick"[^>]*><img src="img/([^"]+)" alt=""><span class="fname">([^<]+)</span>', html)
+    here = "/home/user/Pictures/covers"
+    entries = [{"name": n, "path": f"{here}/{n}", "type": "directory"}
+               for n in ("Old covers", "Wallpapers", "Box art", "Fan art", "Heroes", "Logos", "Screenshots", "Steam grid")]
+    entries += [{"name": name, "path": os.path.join(IMG, src), "type": "file"} for src, name in shown]
+    spare = sorted(os.listdir(os.path.join(IMG, "cand")))[10:]
+    entries += [{"name": f"cyberpunk-more-{i:02d}.png", "path": os.path.join(IMG, "cand", spare[i]), "type": "file"}
+                for i in range(12)]
+    entries.append({"name": "2077-cover.png", "path": os.path.join(IMG, "cand", spare[12]), "type": "file"})
+    engine.listing = {"ok": True, "path": here, "parent": "/home/user/Pictures", "entries": entries}
+
+
+@scenario("browse-art", [("/browse?key=index%3A2&field=image-path&path=%2Fhome%2Fuser%2FPictures%2Fcovers", "browse-art.html")])
+def _browse_art(engine):
+    covers(engine)
+
+
+@scenario("browse-art-filter", [("/browse?key=index%3A2&field=image-path&path=%2Fhome%2Fuser%2FPictures%2Fcovers&filter=1",
+                                 "browse-art-filter.html")])
+def _browse_art_filter(engine):
+    covers(engine)
+
+
 # What the address asks for, for a capture: ?theme=, ?scale=couch|desk (couch
 # is streamed and in controller use, as the boards are drawn) and ?focus=, the
 # control the board shows focused ("text:Keep this one", or a CSS selector).
@@ -303,6 +439,13 @@ def run(name, port, streamed, pad, drive_dir=None):
                "art_choose", "list_backups", "backup_diff", "check_auth", "save_auth"):
         mock.patch.object(srv, fn, getattr(engine, fn)).start()
     mock.patch.object(security, "check", lambda *a, **k: (True, "")).start()
+    # The boards' pictures live in design/2.0/img, where the real app's
+    # candidates would be in the config's own cache; let the image route show
+    # them. Nothing outside that folder is added.
+    from sunshine_apps_ui import artwork as art_mod
+    real_allowed = art_mod.allowed_paths
+    mock.patch.object(art_mod, "allowed_paths", lambda *a, **k: real_allowed(*a, **k) | {
+        os.path.join(root, f) for root, _, files in os.walk(IMG) for f in files}).start()
     mock.patch.object(security, "token_matches", lambda *a, **k: False).start()
     real_open = frame.html_open
 
@@ -355,6 +498,8 @@ def run(name, port, streamed, pad, drive_dir=None):
         "</head>", '<script src="/_drive.js" defer></script></head>', 1)).start()
 
     httpd = srv.serve("design-states", tempfile.mkdtemp(), {}, port=port)
+    for draft_key, values in (getattr(engine, "drafts", None) or {}).items():
+        state.set_draft(draft_key, values)
     print(json.dumps({"scenario": name, "port": httpd.server_address[1], "state": tmp,
                       "pages": pages}), flush=True)
     httpd.serve_forever()

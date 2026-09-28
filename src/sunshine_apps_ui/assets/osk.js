@@ -178,11 +178,14 @@
   function close(keep) {
     if (!root) return;
     var f = field;
-    if (keep && f.value !== text) {
+    var changed = keep && f.value !== text;
+    if (changed) {
       f.value = text;
       f.dispatchEvent(new Event("input", { bubbles: true }));
       f.dispatchEvent(new Event("change", { bubbles: true }));
     }
+    // A field that is a search (the artwork picker's) goes on Done.
+    if (keep && f.hasAttribute("data-osk-submit") && f.form) { f.form.submit(); return; }
     root.remove();
     root = null;
     var veil = document.querySelector(".veil");
@@ -205,6 +208,12 @@
   }
 
   document.addEventListener("pad:type", function (e) { open(e.detail); });
+  // A button that types into a field it names, which may be hidden while a
+  // controller is in use (the artwork picker's Search by another name).
+  document.addEventListener("click", function (e) {
+    var b = e.target.closest && e.target.closest("[data-osk-for]");
+    if (b) open(document.getElementById(b.getAttribute("data-osk-for")));
+  });
   window.OSK = { open: open, handle: handle, isOpen: function () { return !!root; },
                  area: function () { return root; } };
 })();

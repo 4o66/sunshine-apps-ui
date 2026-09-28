@@ -201,13 +201,13 @@ class OurTileInUseTest(unittest.TestCase):
             token="t", key="index:0", label="Zz Steam", current=current)
 
     def test_the_origin_counts_as_in_use(self):
-        self.assertIn("in use", self._page("/opt/app/assets/tiles/en/steam.png"))
+        self.assertIn('<span class="under">In use</span>', self._page("/opt/app/assets/tiles/en/steam.png"))
 
     def test_the_cached_copy_still_counts_as_in_use(self):
-        self.assertIn("in use", self._page("/conf/.candidates/a1.png"))
+        self.assertIn('<span class="under">In use</span>', self._page("/conf/.candidates/a1.png"))
 
     def test_anything_else_does_not(self):
-        self.assertNotIn("in use", self._page("/home/u/my-own.png"))
+        self.assertNotIn('<span class="under">In use</span>', self._page("/home/u/my-own.png"))
 
 
 class TheSettingsOfferOnThePickerTest(unittest.TestCase):
@@ -226,10 +226,10 @@ class TheSettingsOfferOnThePickerTest(unittest.TestCase):
 
     def test_the_link_is_there_when_a_key_could_be_added(self):
         body = self._page(True)
-        self.assertIn('href="/settings"', body)
+        self.assertIn('href="/settings?section=art"', body)
 
     def test_it_is_absent_when_a_key_is_already_stored(self):
-        self.assertNotIn('href="/settings"', self._page(False))
+        self.assertNotIn('href="/settings?section=art"', self._page(False))
 
     def test_the_picker_never_names_a_command(self):
         """Every command this ever named was one somebody could not run."""
