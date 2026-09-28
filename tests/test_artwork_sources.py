@@ -587,3 +587,52 @@ class SgdbPageAsksForOneFullPageTest(_Fixture):
                           key="key", timeout=1, page=7)
         self.assertEqual(len(seen), 1)
         self.assertIn("page=7", seen[0])
+
+
+class SgdbTroubleTest(_Fixture):
+    """A refused key, no answer and no results are three different things (#78).
+
+    1.x caught every failure the same way, so a key SteamGridDB had stopped
+    accepting looked exactly like a game it had no artwork for.
+    """
+
+    def _failing(self, error):
+        return mock.patch.object(art, "_sgdb_json", side_effect=error)
+
+    def _http(self, code):
+        import urllib.error
+        return urllib.error.HTTPError("https://www.steamgriddb.com/api/v2/x", code, "no", {}, None)
+
+    def test_401_and_403_are_the_key(self):
+        for code in (401, 403):
+            with self.subTest(code=code), self._failing(self._http(code)):
+                found, note, total, status = art._sgdb_status("Satisfactory", "526870", "key", 1)
+                self.assertEqual((found, status), ([], "refused"))
+                self.assertEqual(note, "SteamGridDB refused the saved key.")
+
+    def test_no_connection_is_not_the_key(self):
+        import urllib.error
+        with self._failing(urllib.error.URLError("no route to host")):
+            _, note, _, status = art._sgdb_status("Satisfactory", "526870", "key", 1)
+        self.assertEqual(status, "unreachable")
+        self.assertEqual(note, "SteamGridDB did not answer.")
+
+    def test_a_server_error_is_not_the_key(self):
+        with self._failing(self._http(502)):
+            self.assertEqual(art._sgdb_status("Satisfactory", "526870", "key", 1)[3], "unreachable")
+
+    def test_a_404_is_an_answer(self):
+        """Nothing under that id: SteamGridDB answered, and the key is fine."""
+        with self._failing(self._http(404)):
+            _, note, _, status = art._sgdb_status("Satisfactory", "526870", "key", 1)
+        self.assertEqual(status, "")
+        self.assertEqual(note, "SteamGridDB has no artwork for this one.")
+
+    def test_the_page_carries_it(self):
+        with self._failing(self._http(401)):
+            page = art.sgdb_page(self.conf, name="Satisfactory", source="steam", ident="526870", key="k")
+        self.assertEqual(page["status"], "refused")
+
+    def test_the_old_shape_still_holds(self):
+        with self._failing(self._http(401)):
+            self.assertEqual(len(art._sgdb("Satisfactory", "526870", "key", 1)), 3)

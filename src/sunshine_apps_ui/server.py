@@ -981,6 +981,8 @@ class PlanHandler(BaseHTTPRequestHandler):
                     from .core import api
 
                     ok, why = api.save_sgdb(self.conf_dir, typed)
+                    if ok:
+                        state.record_sgdb_key("ok")
                     _SGDB[self.token] = {
                         "state": "available" if ok else "unreachable",
                         # save_sgdb reports the path it wrote, which is not

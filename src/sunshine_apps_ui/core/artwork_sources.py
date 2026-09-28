@@ -25,6 +25,7 @@ import re
 import shutil
 import sys
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
@@ -406,9 +407,33 @@ def _sgdb_json(path: str, key: str, timeout: int) -> Any:
         return json.load(response)
 
 
+def _trouble(e: Exception) -> str:
+    """What a failed SteamGridDB request says about the key (#78).
+
+    "refused" is 401 or 403: the key itself. A 404 is SteamGridDB having
+    nothing under that id, which is an answer, not trouble. Anything else --
+    no connection, a timeout, a 5xx, a reply that is not JSON -- is
+    "unreachable", and says nothing about the key.
+    """
+    if isinstance(e, urllib.error.HTTPError):
+        if e.code in (401, 403):
+            return "refused"
+        if e.code == 404:
+            return ""
+    return "unreachable"
+
+
 def _sgdb(name: str, appid: str, key: str, timeout: int,
           limit: int = SGDB_PAGE, page: int = 0) -> Tuple[List[Dict[str, Any]], str, int]:
-    """One page of community artwork: (candidates, note, how many there are).
+    """(candidates, note, total): _sgdb_status without the status."""
+    found, note, total, _status = _sgdb_status(name, appid, key, timeout, limit=limit, page=page)
+    return found, note, total
+
+
+def _sgdb_status(name: str, appid: str, key: str, timeout: int,
+                 limit: int = SGDB_PAGE, page: int = 0) -> Tuple[List[Dict[str, Any]], str, int, str]:
+    """One page of community artwork: (candidates, note, how many there are,
+    and "refused" or "unreachable" when nothing came back for that reason).
 
     **There is no ranking here, and there cannot be.** This used to sort by the
     `score` field and keep the best dozen. Measured against the live API on
@@ -420,7 +445,14 @@ def _sgdb(name: str, appid: str, key: str, timeout: int,
     #30. What is left is honest: the API's own order, a page at a time.
     """
     if not key:
-        return [], SGDB_NO_KEY_NOTE, 0
+        return [], SGDB_NO_KEY_NOTE, 0, ""
+    trouble = {"status": ""}
+
+    def note_trouble(e: Exception) -> None:
+        said = _trouble(e)
+        # A refusal outranks a failure to connect: it is the one to act on.
+        if said == "refused" or (said and not trouble["status"]):
+            trouble["status"] = said
 
     def grids(path: str) -> Tuple[List[Dict[str, Any]], int]:
         """A page of results, and the total the API says exist.
@@ -436,6 +468,7 @@ def _sgdb(name: str, appid: str, key: str, timeout: int,
             doc = _sgdb_json(f"{path}{window}", key, timeout)
         except Exception as e:
             log(f"Artwork: SteamGridDB {path} failed ({e})")
+            note_trouble(e)
             return [], 0
         if not isinstance(doc, dict):
             return [], 0
@@ -466,6 +499,7 @@ def _sgdb(name: str, appid: str, key: str, timeout: int,
             found_games = found_games if isinstance(found_games, list) else []
         except Exception as e:
             log(f"Artwork: SteamGridDB autocomplete failed ({e})")
+            note_trouble(e)
             found_games = []
         if found_games:
             game_id = found_games[0].get("id")
@@ -474,12 +508,16 @@ def _sgdb(name: str, appid: str, key: str, timeout: int,
                 if not items:
                     items, total = grids(f"/grids/game/{game_id}")
 
+    if not items and trouble["status"] == "refused":
+        return [], "SteamGridDB refused the saved key.", 0, "refused"
+    if not items and trouble["status"] == "unreachable":
+        return [], "SteamGridDB did not answer.", 0, "unreachable"
     if not items:
         if page:
             # Walked off the end. Not "nothing for this game" -- that would be
             # a lie told by a page turn.
-            return [], "There is no more artwork for this one.", total
-        return [], "SteamGridDB has no artwork for this one.", total
+            return [], "There is no more artwork for this one.", total, ""
+        return [], "SteamGridDB has no artwork for this one.", total, ""
 
     found = []
     for item in items[:limit]:
@@ -491,7 +529,7 @@ def _sgdb(name: str, appid: str, key: str, timeout: int,
         found.append({"id": candidate_id(origin), "source": "sgdb",
                       "label": f"by {author}" if author else "SteamGridDB",
                       "origin": origin})
-    return found, "", total
+    return found, "", total, ""
 
 
 def sgdb_page(conf_dir: str, *, name: str = "", source: str = "",
@@ -518,8 +556,8 @@ def sgdb_page(conf_dir: str, *, name: str = "", source: str = "",
     # the address -- so it is whatever somebody could have typed there.
     per = per if 1 <= per <= SGDB_PAGE else SGDB_PAGE
 
-    wanted, note, total = _sgdb(name, appid, key, timeout, limit=per, page=page)
-    return {"candidates": wanted, "note": note, "total": total,
+    wanted, note, total, status = _sgdb_status(name, appid, key, timeout, limit=per, page=page)
+    return {"candidates": wanted, "note": note, "total": total, "status": status,
             "page": page, "per": per, "pages": _pages(total, per)}
 
 

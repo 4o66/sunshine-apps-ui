@@ -239,6 +239,24 @@ def set_pref(name: str, value: Any) -> None:
     _write(PREFS_FILE, current)
 
 
+def record_sgdb_key(said: str) -> None:
+    """What SteamGridDB last said about the saved key: "ok" or "refused" (#78).
+
+    Kept with its date, because "refused" is only news if it is known when:
+    a key that worked yesterday and is refused today was changed or removed
+    on the account. A failure to connect says nothing about the key and is
+    not recorded.
+    """
+    if said in ("ok", "refused"):
+        import time
+        set_pref("sgdb_key_state", {"state": said, "at": time.strftime("%Y-%m-%d")})
+
+
+def sgdb_key_state() -> Dict[str, Any]:
+    value = prefs().get("sgdb_key_state")
+    return value if isinstance(value, dict) else {}
+
+
 def should_explain(op: str) -> bool:
     """Explain by default; only silence for an operation once asked to."""
     if op not in EXPLAINED:
