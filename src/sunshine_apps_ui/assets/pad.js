@@ -211,6 +211,33 @@
   // uinput pad sending inputtino's codes. WebView2 reads XInput and gets
   // them right, so this is only for WebKit on Linux.
   var SWAPPED_XY = /Linux/.test(navigator.userAgent) && !/Chrom/.test(navigator.userAgent);
+  // Scrolling, by how far a trigger is pulled: LT up, RT down, on every pad.
+  // Sunshine's newer virtual pad ("Sunshine (libvirtualhid) X-Box Series
+  // Controller") is laid out by WebKitGTK as it guesses: LT on axis 2,
+  // resting at -1; RT on button 6; the right stick's left and right on axis
+  // 3, its up on button 7 as on or off, and its down lost altogether.
+  // Measured from the Legion Go S over Moonlight, 2026-09-28. So on that pad
+  // the right stick does nothing, and the triggers are read from where they
+  // are; elsewhere they are buttons 6 and 7 of the standard layout, and the
+  // right stick scrolls as well.
+  function guessedLayout(pad) { return /libvirtualhid/i.test(pad.id); }
+  // That axis reads 0 until LT is first touched and -1 at rest after, so 0
+  // means "not yet known", not half pulled: until it has moved, LT is off.
+  var ltMoved = false;
+  function trigger(pad, which) {
+    if (guessedLayout(pad)) {
+      if (which === "lt") {
+        var v = pad.axes[2] || 0;
+        if (v !== 0) ltMoved = true;
+        return ltMoved ? Math.max(0, (v + 1) / 2) : 0;
+      }
+      var rt = pad.buttons[6];
+      return rt ? rt.value || (rt.pressed ? 1 : 0) : 0;
+    }
+    var b = pad.buttons[which === "lt" ? 6 : 7];
+    return b ? b.value || (b.pressed ? 1 : 0) : 0;
+  }
+
   function faceX(pad) { return SWAPPED_XY && /x-?box|xinput/i.test(pad.id) ? 3 : 2; }
   function faceY(pad) { return SWAPPED_XY && /x-?box|xinput/i.test(pad.id) ? 2 : 3; }
 
@@ -228,7 +255,9 @@
     var any = false;
     for (var b = 0; b < pad.buttons.length; b++) if (pressed(pad, b)) { any = true; break; }
     var ax = pad.axes[0] || 0, ay = pad.axes[1] || 0;
-    var rx = pad.axes[2] || 0, ry = pad.axes[3] || 0;
+    var rx = guessedLayout(pad) ? 0 : pad.axes[2] || 0;
+    var ry = guessedLayout(pad) ? 0 : pad.axes[3] || 0;
+    var lt = trigger(pad, "lt"), rt = trigger(pad, "rt");
     if (any || Math.abs(ax) > DEAD || Math.abs(ay) > DEAD) usingPad();
 
     edge("up", pressed(pad, 12) || ay < -DEAD, now, true, function () { move(0, -1); });
@@ -256,6 +285,7 @@
     }
 
     if (!typing && (Math.abs(rx) > 0.2 || Math.abs(ry) > 0.2)) scroller().scrollBy(rx * SCROLL, ry * SCROLL);
+    if (!typing && (lt > 0.1 || rt > 0.1)) scroller().scrollBy(0, (rt - lt) * SCROLL);
   }
 
   // A mouse in use: no controller hints.
