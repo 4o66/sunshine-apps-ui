@@ -51,6 +51,7 @@
   }
 
   function labelOf(f) {
+    if (f.getAttribute("data-osk-label")) return f.getAttribute("data-osk-label");
     var id = f.getAttribute("id");
     var l = id && document.querySelector('label[for="' + id + '"]');
     return (l && l.textContent.trim()) || f.getAttribute("aria-label") || "Text";

@@ -1158,7 +1158,7 @@ def settings_page(token: str, *, prefs: Dict[str, Any],
                 f'<div class="qr">{qr.svg(SGDB_KEY_URL)}</div>\n'
                 f'<form style="display:flex;flex-direction:column;gap:1rem;flex:1" method="post" action="/settings/sgdb-key">\n'
                 f'<input type="password" id="sgdb-key" name="sgdb-key" placeholder="API key" aria-label="SteamGridDB API key" '
-                f'autocomplete="off" spellcheck="false" data-osk="hex">\n'
+                f'autocomplete="off" spellcheck="false" data-osk="hex" data-osk-label="Key">\n'
                 f'<div><button class="btn sec" type="submit">Save the key</button></div>\n</form>\n</div>')
     elif section == "sunshine":
         pane = "<h2>Which Sunshine</h2>\n" + _which_sunshine(config or {})
