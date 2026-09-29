@@ -3,11 +3,14 @@
 //   - Apply stays off until a field actually changes, so it cannot queue a
 //     no-op change; off is drawn flat. A new application needs a name first.
 //   - Custom's stepper: shown only while Custom is chosen, and its - and +.
-//   - The Keyboard button in the bar, shown while a text field has focus.
+//   - The Keyboard button in the bar, shown while a text field has focus,
+//     on the edit page and on Settings (the SteamGridDB key, a password field).
 (function () {
   "use strict";
   var form = document.querySelector("form[data-dirty-guard]");
-  if (!form) return;
+  if (form) guard(form);
+
+  function guard(form) {
   var submit = document.querySelector("[data-apply]");
 
   function inputs() {
@@ -68,13 +71,14 @@
   });
   syncStepper();
   sync();
+  }
 
   // The Keyboard button: A on a text field opens the keyboard, and this says
   // so in the bar. The stylesheet shows it only while a controller is in use.
   var kb = document.querySelector(".btn.kb");
   var typing = null;
   function isText(el) {
-    return !!el && el.tagName === "INPUT" && el.type === "text" && !el.readOnly;
+    return !!el && el.tagName === "INPUT" && (el.type === "text" || el.type === "password") && !el.readOnly;
   }
   if (kb) {
     document.addEventListener("focusin", function (e) {

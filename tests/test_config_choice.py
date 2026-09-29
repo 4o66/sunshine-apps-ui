@@ -267,8 +267,8 @@ class SwitchTest(test_server.ServerTest):
         flatpak = self.homes.tree(FLATPAK, used_at=1000)
         self.homes.tree(NATIVE, used_at=2000)
         self.restart()
-        _, body = self.get(f"/settings?token={self.token}")
-        self.assertIn("<h3>Which Sunshine</h3>", body)
+        _, body = self.get(f"/settings?section=sunshine&token={self.token}")
+        self.assertIn("<h2>Which Sunshine</h2>", body)
         self.assertIn("Flatpak (dev.lizardbyte.app.Sunshine)", body)
         status, headers = self.switch(flatpak, back="settings")
         self.assertTrue(headers["Location"].startswith("/settings"))
@@ -280,7 +280,7 @@ class SwitchTest(test_server.ServerTest):
                       "stale": False})
         self.switch(flatpak)
         self.assertEqual(self.in_use(), native)
-        _, body = self.get(f"/settings?token={self.token}")
+        _, body = self.get(f"/settings?section=sunshine&token={self.token}")
         self.assertIn("Set by <code>--conf-dir</code>", body)
 
     def test_a_lapsed_choice_is_said_rather_than_silently_dropped(self):

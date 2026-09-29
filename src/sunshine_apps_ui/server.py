@@ -261,13 +261,24 @@ class PlanHandler(BaseHTTPRequestHandler):
 
         if parts.path == "/settings":
             answer = _LAST_CHECK.pop(self.token, None)
+            section = (query.get("section") or ["appearance"])[0]
+            # A check's answer, or a notice, belongs to its own section.
+            if answer is not None and "section" not in query:
+                section = "updates"
+            from .updates import running
+            current = running()
             self._send(200, settings_page(self.token, prefs=state.prefs(),
                                           answer=answer,
                                           notice=_NOTICE.pop(self.token, ""),
                                           language=_language_panel(self.token),
                                           via_sunshine=self.via_sunshine,
                                           sgdb=self._sgdb_panel(),
-                                          config=self._config_panel()))
+                                          config=self._config_panel(),
+                                          section=section,
+                                          device=self.client_name if self.via_sunshine else "",
+                                          text_size=text_size_for(self.client_name),
+                                          defaults=self._defaults_preview() if section == "defaults" else None,
+                                          current_version=str(current) if current is not None else ""))
             return
 
         if parts.path == "/report":
@@ -798,6 +809,32 @@ class PlanHandler(BaseHTTPRequestHandler):
                     break
         return name, source, ident
 
+    def _defaults_preview(self) -> Dict[str, Any]:
+        """What Put the default tiles back would do, worked out without a scan:
+        the same matching the scan's restore does (core.run), by name, and by
+        our marker for a default we have taken over and renamed (#66)."""
+        from .core.system_apps import find_system_apps_json, load_system_apps
+        from .core.sources.launchers import FACTORY_TILES
+        where = find_system_apps_json(str(self.importer_opts.get("SYSTEM_APPS_JSON", "")).strip())
+        if not where:
+            return {"unavailable": "Sunshine's own apps.json is not where we look for it, so there is nothing to "
+                                   "copy the default tiles from."}
+        try:
+            shipped = load_system_apps(where)
+            current = get_state(self.conf_dir, use_cache=True)
+        except (OSError, ValueError, EngineError) as e:
+            return {"unavailable": f"Could not read the default tiles: {e}"}
+        apps = current.get("apps") or []
+        tiles = []
+        for default in shipped:
+            name = str(default.get("name") or "")
+            marker, ours, _art = FACTORY_TILES.get(name, (None, None, None))
+            have = next((str(a.get("name")) for a in apps
+                         if marker and a.get("source") == "launcher" and a.get("id") == marker), "")
+            have = have or next((str(a.get("name")) for a in apps if a.get("name") == name), "")
+            tiles.append({"name": name, "have": have, "becomes": ours or name})
+        return {"tiles": tiles}
+
     def _hidden_entry(self, wanted: str):
         """The hidden entry with this selector, or None."""
         try:
@@ -905,13 +942,26 @@ class PlanHandler(BaseHTTPRequestHandler):
             if why:
                 _CONFIG_NOTICE[self.token] = why
             back = (fields.get("back") or [""])[0]
-            self._redirect("/settings" if back == "settings" else "/")
+            if back == "settings":
+                self._redirect("/settings", section="sunshine")
+            else:
+                self._redirect("/")
             return
 
         if parts.path.startswith("/settings/"):
             fields = self._form()
             what = parts.path.split("/", 2)[2]
 
+            if what == "size":
+                chosen = (fields.get("size") or [""])[0]
+                if chosen in frame.TEXT_SIZES:
+                    sizes = state.prefs().get("text_size")
+                    sizes = dict(sizes) if isinstance(sizes, dict) else {}
+                    sizes[self.client_name or ""] = chosen
+                    state.set_pref("text_size", sizes)
+                    frame.set_context(text_size=chosen)
+                self._redirect("/settings", section="appearance")
+                return
             if what == "theme":
                 choice = (fields.get("theme") or ["system"])[0]
                 if choice in ("system", "light", "dark"):
@@ -1012,7 +1062,10 @@ class PlanHandler(BaseHTTPRequestHandler):
             else:
                 self._send(404, error_page("Not found.", token=self.token))
                 return
-            self._redirect("/settings")
+            self._redirect("/settings", section={
+                "theme": "appearance", "language": "language", "art-check": "language", "art-fetch": "language",
+                "sgdb-key": "art", "check": "updates", "channel": "updates", "defaults": "defaults",
+            }.get(what, "appearance"))
             return
 
         if parts.path == "/app":
@@ -1342,6 +1395,7 @@ class PlanHandler(BaseHTTPRequestHandler):
         from .core.artwork_sources import load_sgdb_key
 
         panel: Dict[str, Any] = dict(_SGDB.pop(self.token, {}))
+        panel["key_state"] = state.sgdb_key_state()
         try:
             panel["have"] = bool(load_sgdb_key(self.conf_dir))
         except OSError:
@@ -1393,8 +1447,14 @@ def _language_panel(token: str) -> Dict[str, Any]:
     from . import i18n
 
     system = i18n.system_language()
-    suffix = f" ({system})" if system else ""
-    return {"languages": i18n.languages(), "system_suffix": suffix,
+    shipped = i18n.languages()
+    # By its name when it is one we ship, as the Language board says it
+    # (#66): "Follow the system (English)", not "(en-US)".
+    base = str(system or "").replace("_", "-").split("-")[0].lower()
+    named = next((str(l.get("name") or "") for l in shipped
+                  if str(l.get("code") or "").lower() in (str(system or "").lower(), base)), "")
+    suffix = f" ({named or system})" if system else ""
+    return {"languages": shipped, "system_suffix": suffix,
             "showing": _tile_language(), "art": _ART.pop(token, None),
             "queued": _TILES_QUEUED.pop(token, None)}
 

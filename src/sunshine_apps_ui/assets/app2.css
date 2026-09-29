@@ -51,6 +51,12 @@ color-scheme:dark;
 html{font-size:16px}
 html.couch{font-size:clamp(16px,2.2vh,48px)}
 html.desk{font-size:clamp(15px,1.25vw,20px)}
+/* Text size, remembered per device you stream to (Settings): Smaller and
+   Larger are 85% and 115% of Standard. Chosen 2026-09-29. */
+html.couch.size-smaller{font-size:clamp(calc(16px * .85),calc(2.2vh * .85),calc(48px * .85))}
+html.couch.size-larger{font-size:clamp(calc(16px * 1.15),calc(2.2vh * 1.15),calc(48px * 1.15))}
+html.desk.size-smaller{font-size:clamp(calc(15px * .85),calc(1.25vw * .85),calc(20px * .85))}
+html.desk.size-larger{font-size:clamp(calc(15px * 1.15),calc(1.25vw * 1.15),calc(20px * 1.15))}
 
 *{box-sizing:border-box}
 /* Three rows: the title bar, the page, the action bar. Only the page
@@ -331,7 +337,7 @@ animation:spin 1s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
 @media(prefers-reduced-motion:reduce){.ring{animation:none}}
 .qr{background:#fff;padding:1rem;border-radius:var(--radius-lg);width:13rem;height:13rem}
-.qr img{width:100%;height:100%;image-rendering:pixelated;display:block}
+.qr img,.qr svg{width:100%;height:100%;image-rendering:pixelated;display:block}
 .facts{display:grid;grid-template-columns:auto 1fr;gap:.4rem 1.4rem;text-align:left;font-size:.95rem}
 .facts dt{color:var(--text-muted)}
 .facts dd{margin:0;font-family:var(--mono);font-size:.9rem}

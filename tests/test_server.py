@@ -2262,9 +2262,17 @@ class RestoreDefaultTilesTest(ServerTest):
         self.assertFalse(scanjob.job.running(), "the restore never finished")
 
     def test_the_button_is_offered(self):
-        _, body = self.get(f"/settings?token={self.token}")
+        """2.0 (#66): it says what pressing it would do, before it is pressed."""
+        self._found()
+        from sunshine_apps_ui.core import system_apps
+        shipped = [{"name": "Desktop"}, {"name": "Steam Big Picture"}]
+        patched = mock.patch.object(system_apps, "load_system_apps", lambda path: shipped)
+        patched.start(); self.addCleanup(patched.stop)
+        _, body = self.get(f"/settings?section=defaults&token={self.token}")
         self.assertIn("/settings/defaults", body)
-        self.assertIn("Put the default tiles back", body)
+        self.assertIn("You have it, as Desktop. Left as it is.", body)
+        self.assertIn("Deleted. It would come back, as Zz Steam Big Picture.", body)
+        self.assertIn(">Put 1 tile back</button>", body)
 
     def test_it_asks_for_a_restore(self):
         self._found()
@@ -2296,15 +2304,17 @@ class RestoreDefaultTilesTest(ServerTest):
                                     path="/settings/defaults")
         self.assertIn("/settings", headers.get("Location", ""))
         self.assertEqual(seen, {})
-        _, body = self.get(f"/settings?token={self.token}")
+        _, body = self.get(f"/settings?section=defaults&token={self.token}")
         self.assertIn("nothing to copy the default tiles from", body)
 
     def test_and_says_it_only_once(self):
         self._found(path="")
         self.post({}, token=self.token, path="/settings/defaults")
-        self.get(f"/settings?token={self.token}")
-        _, body = self.get(f"/settings?token={self.token}")
-        self.assertNotIn("nothing to copy the default tiles from", body)
+        self.get(f"/settings?section=defaults&token={self.token}")
+        _, body = self.get(f"/settings?section=defaults&token={self.token}")
+        # The preview states it as a standing fact; the button's notice is not
+        # repeated on top of it.
+        self.assertEqual(body.count("nothing to copy the default tiles from"), 1)
 
     def test_it_needs_the_token(self):
         self._found()
@@ -2412,7 +2422,7 @@ class LanguageSettingTest(ServerTest):
         self._remote({})
         self._plan_with(self._art_update("desktop"), self._art_update("steam"))
         self._set("en")
-        _, body = self.get(f"/settings?token={self.token}")
+        _, body = self.get(f"/settings?section=language&token={self.token}")
         self.assertIn("2 of your tiles will change to match", body)
         self.assertIn('href="/apply"', body)
         self.assertIn("Apply 2 changes", body)
@@ -2421,12 +2431,12 @@ class LanguageSettingTest(ServerTest):
         self._remote({})
         self._plan_with()
         self._set("en")
-        _, body = self.get(f"/settings?token={self.token}")
+        _, body = self.get(f"/settings?section=language&token={self.token}")
         self.assertIn("Your tiles already match", body)
 
     def test_the_languages_we_ship_are_offered(self):
-        _, body = self.get(f"/settings?token={self.token}")
-        self.assertIn('<option value="en"', body)
+        _, body = self.get(f"/settings?section=language&token={self.token}")
+        self.assertIn('name="language" value="en"', body)
         self.assertIn("Follow the system", body)
 
     def test_choosing_one_is_remembered(self):
@@ -2446,7 +2456,7 @@ class LanguageSettingTest(ServerTest):
         from sunshine_apps_ui import state
         self._set("../../etc/passwd")
         self.assertIsNone(state.prefs().get("language"))
-        _, body = self.get(f"/settings?token={self.token}")
+        _, body = self.get(f"/settings?section=language&token={self.token}")
         self.assertIn("not a language we ship", body)
 
     def test_changing_language_downloads_nothing(self):
@@ -2465,7 +2475,7 @@ class LanguageSettingTest(ServerTest):
     def test_the_check_reports_when_everything_matches(self):
         self._remote({})
         self.post({}, token=self.token, path="/settings/art-check")
-        _, body = self.get(f"/settings?token={self.token}")
+        _, body = self.get(f"/settings?section=language&token={self.token}")
         self.assertIn("the published one", body)
 
     def test_the_check_offers_an_update_when_a_set_differs(self):
@@ -2475,14 +2485,14 @@ class LanguageSettingTest(ServerTest):
         patched.start()
         self.addCleanup(patched.stop)
         self.post({}, token=self.token, path="/settings/art-check")
-        _, body = self.get(f"/settings?token={self.token}")
+        _, body = self.get(f"/settings?section=language&token={self.token}")
         self.assertIn("3 tiles in the _wordless set differ from", body)
         self.assertIn("/settings/art-fetch", body)
 
     def test_the_check_says_so_when_it_cannot_reach_us(self):
         self._remote({}, why="the artwork list could not be reached (offline)")
         self.post({}, token=self.token, path="/settings/art-check")
-        _, body = self.get(f"/settings?token={self.token}")
+        _, body = self.get(f"/settings?section=language&token={self.token}")
         self.assertIn("could not be reached", body)
 
     def test_a_download_reports_what_it_saved(self):
@@ -2492,7 +2502,7 @@ class LanguageSettingTest(ServerTest):
         self.addCleanup(patched.stop)
         # The code travels in the link behind the button, as the offer builds it.
         self.post({}, path=f"/settings/art-fetch?code=fr&token={self.token}")
-        _, body = self.get(f"/settings?token={self.token}")
+        _, body = self.get(f"/settings?section=language&token={self.token}")
         self.assertIn("23 tiles saved for fr", body)
         self.assertIn("Scan now", body)
 
@@ -2503,14 +2513,14 @@ class LanguageSettingTest(ServerTest):
         patched.start()
         self.addCleanup(patched.stop)
         self.post({}, path=f"/settings/art-fetch?code=fr&token={self.token}")
-        _, body = self.get(f"/settings?token={self.token}")
+        _, body = self.get(f"/settings?section=language&token={self.token}")
         self.assertIn("did not match", body)
 
     def test_the_notice_is_shown_once(self):
         self._remote({})
         self.post({}, token=self.token, path="/settings/art-check")
-        self.get(f"/settings?token={self.token}")
-        _, body = self.get(f"/settings?token={self.token}")
+        self.get(f"/settings?section=language&token={self.token}")
+        _, body = self.get(f"/settings?section=language&token={self.token}")
         self.assertNotIn("the published one", body)
 
     def test_it_needs_the_token(self):
@@ -2643,27 +2653,28 @@ class WhichBuildsTest(ServerTest):
 
     def test_each_switch_is_a_button_that_submits_on_its_own(self):
         """Not a checkbox: applying has to need nothing but HTML."""
-        _, body = self.get(f"/settings?token={self.token}")
+        _, body = self.get(f"/settings?section=updates&token={self.token}")
         self.assertIn('name="setting" value="dev_builds"', body)
         self.assertIn('name="setting" value="stable_if_no_newer_dev"', body)
         self.assertNotIn('type="checkbox"', body)
 
     def test_a_switch_posts_the_value_it_would_set(self):
-        _, off = self.get(f"/settings?token={self.token}")
+        _, off = self.get(f"/settings?section=updates&token={self.token}")
         self.assertIn('name="value" value="1"', off)      # currently off
         self._press("dev_builds", "1")
-        _, on = self.get(f"/settings?token={self.token}")
+        _, on = self.get(f"/settings?section=updates&token={self.token}")
         self.assertIn('name="value" value="0"', on)       # now offers to turn it off
 
     def test_the_child_is_disabled_until_the_parent_is_on(self):
-        _, body = self.get(f"/settings?token={self.token}")
-        self.assertRegex(body, r'value="stable_if_no_newer_dev".*?disabled')
+        _, body = self.get(f"/settings?section=updates&token={self.token}")
+        self.assertRegex(body, r'value="stable_if_no_newer_dev">\s*<button[^>]* disabled')
         self._press("dev_builds", "1")
-        _, body = self.get(f"/settings?token={self.token}")
-        self.assertNotRegex(body, r'value="stable_if_no_newer_dev".*?disabled')
+        _, body = self.get(f"/settings?section=updates&token={self.token}")
+        self.assertRegex(body, r'value="stable_if_no_newer_dev">\s*<button')
+        self.assertNotRegex(body, r'value="stable_if_no_newer_dev">\s*<button[^>]* disabled')
 
     def test_there_is_no_save_button_to_forget(self):
-        _, body = self.get(f"/settings?token={self.token}")
+        _, body = self.get(f"/settings?section=updates&token={self.token}")
         self.assertNotIn("noscript", body)
 
 
@@ -2701,24 +2712,24 @@ class CommunityArtworkKeyTest(ServerTest):
         self.addCleanup(patched.stop)
 
     def test_the_field_is_offered(self):
-        _, body = self.get(f"/settings?token={self.token}")
+        _, body = self.get(f"/settings?section=art&token={self.token}")
         self.assertIn("/settings/sgdb-key", body)
         self.assertIn("Community artwork", body)
 
-    def test_it_says_when_no_key_is_stored(self):
-        self._stored("")
-        _, body = self.get(f"/settings?token={self.token}")
-        self.assertIn("No key stored", body)
-
-    def test_it_says_when_a_key_is_stored(self):
-        self._stored()
-        _, body = self.get(f"/settings?token={self.token}")
-        self.assertIn("A key is stored", body)
+    def test_the_field_is_the_keypad_s_either_way(self):
+        """2.0 (#66, the approved board): no stored-or-not line; the field,
+        which a controller types into with the key keypad (#62)."""
+        for stored in ("", "0123456789abcdef0123456789abcdef"):
+            with self.subTest(stored=bool(stored)):
+                self._stored(stored)
+                _, body = self.get(f"/settings?section=art&token={self.token}")
+                self.assertIn('name="sgdb-key"', body)
+                self.assertIn('data-osk="hex"', body)
 
     def test_the_stored_key_is_never_rendered(self):
         """It is a secret. The page says whether there is one, not what it is."""
         self._stored("sekrit-value-0123")
-        _, body = self.get(f"/settings?token={self.token}")
+        _, body = self.get(f"/settings?section=art&token={self.token}")
         self.assertNotIn("sekrit-value-0123", body)
 
     def test_a_typed_key_reaches_save_sgdb(self):
@@ -2735,7 +2746,7 @@ class CommunityArtworkKeyTest(ServerTest):
         self._stored("")
         self.post({"sgdb-key": "good"}, token=self.token,
                   path="/settings/sgdb-key")
-        _, body = self.get(f"/settings?token={self.token}")
+        _, body = self.get(f"/settings?section=art&token={self.token}")
         self.assertIn("That key works", body)
         self.assertNotIn(".bsm-sgdb-key", body)
 
@@ -2744,7 +2755,7 @@ class CommunityArtworkKeyTest(ServerTest):
         self._stored("")
         self.post({"sgdb-key": "bad"}, token=self.token,
                   path="/settings/sgdb-key")
-        _, body = self.get(f"/settings?token={self.token}")
+        _, body = self.get(f"/settings?section=art&token={self.token}")
         self.assertIn("did not accept that key", body)
 
     def test_an_empty_field_does_not_reach_the_network(self):
@@ -2752,7 +2763,7 @@ class CommunityArtworkKeyTest(ServerTest):
         self.post({"sgdb-key": "   "}, token=self.token,
                   path="/settings/sgdb-key")
         self.assertEqual(seen, {})
-        _, body = self.get(f"/settings?token={self.token}")
+        _, body = self.get(f"/settings?section=art&token={self.token}")
         self.assertIn("No key was typed", body)
 
     def test_the_result_is_shown_once(self):
@@ -2762,8 +2773,8 @@ class CommunityArtworkKeyTest(ServerTest):
         self._stored("")
         self.post({"sgdb-key": "good"}, token=self.token,
                   path="/settings/sgdb-key")
-        self.get(f"/settings?token={self.token}")
-        _, body = self.get(f"/settings?token={self.token}")
+        self.get(f"/settings?section=art&token={self.token}")
+        _, body = self.get(f"/settings?section=art&token={self.token}")
         self.assertNotIn("That key works", body)
 
     def test_it_needs_the_token(self):
@@ -3387,3 +3398,37 @@ class ArtworkThumbnailsAreServedTest(ArtworkFileBrowserTest):
         from urllib.parse import quote
         status, _ = self.get(f"/art?p={quote(path, safe='')}&token={self.token}")
         self.assertEqual(status, 404)
+
+
+class TextSizeTest(ServerTest):
+    """Text size, remembered for each device streamed to (#66)."""
+
+    def tearDown(self):
+        from sunshine_apps_ui import frame
+        frame.set_context(text_size="standard")
+        super().tearDown()
+
+    def test_it_is_remembered_and_applied(self):
+        from sunshine_apps_ui import state as st
+        status, headers = self.post({"size": "larger"}, token=self.token, path="/settings/size")
+        self.assertEqual(status, 303)
+        self.assertIn("section=appearance", headers["Location"])
+        self.assertEqual(st.prefs()["text_size"], {"": "larger"})
+        _, body = self.get(f"/settings?token={self.token}")
+        self.assertIn(" size-larger", body.split("<head>")[0])
+        self.assertIn('<button class="choice here" name="size" value="larger">', body)
+
+    def test_at_the_machine_it_says_so(self):
+        _, body = self.get(f"/settings?token={self.token}")
+        self.assertIn("This one is this machine.", body)
+
+    def test_nothing_else_is_accepted(self):
+        from sunshine_apps_ui import state as st
+        self.post({"size": "huge"}, token=self.token, path="/settings/size")
+        self.assertNotIn("text_size", st.prefs())
+
+    def test_each_action_comes_back_to_its_section(self):
+        _, headers = self.post({"theme": "dark"}, token=self.token, path="/settings/theme")
+        self.assertIn("section=appearance", headers["Location"])
+        _, headers = self.post({"setting": "dev_builds", "value": "1"}, token=self.token, path="/settings/channel")
+        self.assertIn("section=updates", headers["Location"])

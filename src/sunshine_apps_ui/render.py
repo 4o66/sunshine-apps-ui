@@ -1054,267 +1054,233 @@ def config_setting(config: Optional[Dict[str, Any]], token: str) -> str:
 
 
 
+SETTINGS_SECTIONS = [("appearance", "Appearance"), ("language", "Language"), ("art", "Community artwork"),
+                     ("sunshine", "Which Sunshine"), ("defaults", "Default tiles"), ("updates", "Updates")]
+
+
+def _choice(name: str, value: str, label: str, chosen: bool) -> str:
+    return (f'<button class="choice{" here" if chosen else ""}" name="{_e(name)}" value="{_e(value)}">'
+            f'<b>{_e(label)}</b></button>')
+
+
 def settings_page(token: str, *, prefs: Dict[str, Any],
                   answer: Optional[Any] = None,
                   notice: str = "",
                   language: Optional[Dict[str, Any]] = None,
                   via_sunshine: bool = False,
                   sgdb: Optional[Dict[str, Any]] = None,
-                  config: Optional[Dict[str, Any]] = None) -> str:
-    """Everything that is a preference rather than a change to the app list.
+                  config: Optional[Dict[str, Any]] = None,
+                  section: str = "appearance",
+                  device: str = "",
+                  text_size: str = "standard",
+                  defaults: Optional[Dict[str, Any]] = None,
+                  current_version: str = "") -> str:
+    """Everything that is a preference rather than a change to the app list (#66).
 
     Kept off the grid deliberately -- the maintainer's instruction, 2026-09-19, "set apart
-    from the grid". The grid is a list of things that will happen to apps.json;
-    none of this touches it, and mixing the two invites somebody to press
-    Apply expecting their theme to be saved.
+    from the grid". Two panes: the sections on the left, one section on the
+    right, each at its own address so B and the browser both come back to it.
     """
-    docs = _e(DOCS_URL)
-    chosen = str(prefs.get("theme", "system")).lower()
+    section = section if section in dict(SETTINGS_SECTIONS) else "appearance"
+    here = ' class="here"'
+    nav = "\n".join(f'<a href="/settings?section={key}"{here if key == section else ""}>{_e(label)}</a>'
+                    for key, label in SETTINGS_SECTIONS)
+    said = notice2("warn", "", _e(notice)) + "\n" if notice else ""
+
+    if section == "appearance":
+        chosen = str(prefs.get("theme", "system")).lower()
+        themes = "\n".join(_choice("theme", k, l, chosen == k)
+                           for k, l in (("system", "Follow the system"), ("light", "Light"), ("dark", "Dark")))
+        sizes = "\n".join(_choice("size", k, l, text_size == k)
+                          for k, l in (("smaller", "Smaller"), ("standard", "Standard"), ("larger", "Larger")))
+        which = f"<b>{_e(device)}</b>" if device else "this machine"
+        pane = (f'<h2>Appearance</h2>\n<p>Following the system is the default. On a television, where there is no '
+                f'system to follow, pick the one that suits the room.</p>\n'
+                f'<form class="choices" method="post" action="/settings/theme">\n{themes}\n</form>\n'
+                f'<h2 style="margin-top:.8rem">Text size</h2>\n'
+                f'<p>Remembered for each device you stream to. This one is {which}.</p>\n'
+                f'<form class="choices" method="post" action="/settings/size">\n{sizes}\n</form>')
+    elif section == "language":
+        info = language or {}
+        picked = str(prefs.get("language", "") or "")
+        options = [_choice("language", "", "Follow the system" + str(info.get("system_suffix", "")), not picked)]
+        for item in info.get("languages", []):
+            code = str(item.get("code", ""))
+            label = item.get("name", code)
+            if item.get("name_in_english") and item["name_in_english"] != label:
+                label = f'{label} ({item["name_in_english"]})'
+            options.append(_choice("language", code, label, picked == code))
+        extra = ""
+        art = info.get("art") or {}
+        if art.get("message"):
+            if art.get("action") and art.get("method") == "get":
+                button = f'<a class="btn" href="{_e(art["action"])}">{_e(art.get("label", "Go"))}</a>'
+            elif art.get("action"):
+                button = (f'<form method="post" action="{_e(art["action"])}"><button class="btn" type="submit">'
+                          f'{_e(art.get("label", "Download"))}</button></form>')
+            else:
+                button = ""
+            extra += notice2("", "", _e(art["message"]), button) + "\n"
+        queued = info.get("queued")
+        if queued:
+            extra += notice2("", "", f'{queued} of your {"tile" if queued == 1 else "tiles"} will change to match. '
+                             f'Nothing is written until you apply it.',
+                             f'<a class="btn" href="/apply">Apply {queued} change{"" if queued == 1 else "s"}</a>') + "\n"
+        elif queued == 0:
+            extra += notice2("", "", "Your tiles already match; there is nothing to apply.") + "\n"
+        pane = (f'<h2>Language</h2>\n<p>Which language the words on the tiles are in. The interface itself is '
+                f'English for now; the strings are ready to be translated and a language is a file and a pull '
+                f'request &mdash; <a href="{_e(DOCS_URL)}/i18n.md" style="color:var(--primary)" target="_blank" '
+                f'rel="noopener noreferrer">how to add one</a>.</p>\n'
+                f'<form class="choices" method="post" action="/settings/language">\n' + "\n".join(options) + '\n</form>\n'
+                f'<p>{_e(info.get("showing", ""))}</p>\n'
+                f'<form method="post" action="/settings/art-check"><button class="btn sec" type="submit">Check for '
+                f'new tile artwork</button></form>\n'
+                f'<p>Looks only at the sets on this machine &mdash; the wordless tiles and any language you have asked '
+                f'for &mdash; and never downloads the others.</p>\n{extra}')
+    elif section == "art":
+        from . import qr
+        panel = sgdb or {}
+        told = ""
+        known = panel.get("key_state") or {}
+        if known.get("state") == "refused":
+            told = notice2("warn", f'The saved key was refused on {_e(_day(str(known.get("at") or "")))}',
+                           "SteamGridDB no longer accepts it. Open the key page on your phone with the code below, "
+                           "copy the key shown there, and save it here.") + "\n"
+        if panel.get("message"):
+            told += notice2("" if panel.get("state") == "available" else "warn", "", _e(panel["message"])) + "\n"
+        pane = (f'<h2>Community artwork</h2>\n<p>SteamGridDB is a community library of game artwork, and the place '
+                f'to look when a game has no cover of its own &mdash; which is most often a GOG or Epic game, since '
+                f'Steam ships its own. It is optional, and everything else here works without it. With a key, the '
+                f'artwork picker grows a <b>Show SteamGridDB art</b> button &mdash; nothing is fetched from them '
+                f'until you press it.</p>\n{told}'
+                f'<div style="display:flex;gap:2rem;align-items:center">\n'
+                f'<div class="qr">{qr.svg(SGDB_KEY_URL)}</div>\n'
+                f'<form style="display:flex;flex-direction:column;gap:1rem;flex:1" method="post" action="/settings/sgdb-key">\n'
+                f'<input type="password" id="sgdb-key" name="sgdb-key" placeholder="API key" aria-label="SteamGridDB API key" '
+                f'autocomplete="off" spellcheck="false" data-osk="hex">\n'
+                f'<div><button class="btn sec" type="submit">Save the key</button></div>\n</form>\n</div>')
+    elif section == "sunshine":
+        pane = "<h2>Which Sunshine</h2>\n" + _which_sunshine(config or {})
+    elif section == "defaults":
+        pane = _default_tiles_pane(defaults or {})
+    else:
+        pane = _updates_pane(prefs, answer, current_version)
+
+    main = (f'<main class="main">\n<div class="head"><h1>Settings</h1><span class="sub">None of this touches your '
+            f'app list.</span></div>\n<div class="panes">\n<nav class="nav" aria-label="Settings">\n{nav}\n</nav>\n'
+            f'<div class="pane">\n{said}{pane}\n</div>\n</div>\n</main>')
+    bar = ['<a class="btn sec" href="/" data-back><span class="glyph b">B</span>Back to the apps</a>',
+           '<span class="grow"></span>']
+    if section in ("art",):
+        bar.append(keyboard_button())
+    page_html = frame.page("Settings", main, "\n".join(bar), settings_here=True)
+    return page_html.replace("</body>", '<script src="/app.js"></script>\n</body>', 1) if section == "art" else page_html
+
+
+def _day(stamp: str) -> str:
+    """"2026-09-27" as "27 Sep 2026"."""
+    import time
+    try:
+        return time.strftime("%-d %b %Y", time.strptime(stamp[:10], "%Y-%m-%d"))
+    except ValueError:
+        return stamp
+
+
+def _which_sunshine(config: Dict[str, Any]) -> str:
+    """Every config tree found: the one in use marked, a button on each of the rest."""
+    how = config.get("how")
+    chosen = str(config.get("chosen") or "")
+    candidates = config.get("candidates") or []
+    if how == "override":
+        return (f'<p>Set by <code>SUNSHINE_CONF_DIR</code>: <code>{_e(chosen)}</code>. '
+                f'Unset it to choose here.</p>')
+    if how == "argument":
+        return f'<p>Set by <code>--conf-dir</code>: <code>{_e(chosen)}</code>.</p>'
+    if not candidates:
+        return (f'<p>No Sunshine config was found, so this uses the usual place: <code>{_e(chosen)}</code>.</p>')
+    queued = int(config.get("queued") or 0)
+    rows = []
+    for c in candidates:
+        path = str(c.get("path") or "")
+        apps = c.get("apps")
+        count = "apps.json unreadable" if apps is None else f"{apps} app{'' if apps == 1 else 's'}"
+        facts = f"{_last_used_text(float(c.get('last_used') or 0))} · {count}"
+        if path == chosen:
+            side = '<span class="what" style="background:var(--success);color:#fff">In use</span>'
+        else:
+            side = (f'<form method="post" action="/config-dir"><input type="hidden" name="path" value="{_e(path)}">'
+                    f'<input type="hidden" name="back" value="settings"><button class="btn sec" type="submit"'
+                    f'{" disabled" if queued else ""}>Use this one</button></form>')
+        rows.append(f'<div class="item"><span class="grow"><span class="name">{_e(_tree_kind(path))}</span>'
+                    f'<span class="meta"><code>{_e(path)}</code></span><span class="meta">{facts}</span></span>{side}</div>')
+    out = '<div class="list">\n' + "\n".join(rows) + '\n</div>'
+    if queued and len(rows) > 1:
+        out += (f'\n<p>{queued} change{"" if queued == 1 else "s"} {"is" if queued == 1 else "are"} waiting to be '
+                f'applied to the one in use, so switching waits until {"it is" if queued == 1 else "they are"} '
+                f'applied or discarded.</p>')
+    if config.get("notice"):
+        out += "\n" + notice2("warn", "", _e(str(config["notice"])))
+    return out
+
+
+def _default_tiles_pane(defaults: Dict[str, Any]) -> str:
+    """What putting the default tiles back would do, before it is pressed (#66)."""
+    rows, adding = [], 0
+    for item in defaults.get("tiles") or []:
+        if item.get("have"):
+            meta = f'You have it, as {_e(item["have"])}. Left as it is.'
+            flag = ""
+        else:
+            adding += 1
+            meta = f'Deleted. It would come back, as {_e(item.get("becomes") or item["name"])}.'
+            flag = '<span class="what">WOULD ADD</span>'
+        rows.append(f'<div class="item"><span class="grow"><span class="name">{_e(item["name"])}</span>'
+                    f'<span class="meta">{meta}</span></span>{flag}</div>')
+    intro = ("<h2>The default tiles</h2>\n<p>Sunshine ships a Desktop, a low resolution Desktop and Steam Big "
+             "Picture, and this puts back any of them you have deleted &mdash; in our artwork and doing exactly what "
+             "Sunshine's did. Nothing you still have is touched, and nothing is written until you press Apply.</p>\n")
+    if defaults.get("unavailable"):
+        return intro + notice2("warn", "", _e(defaults["unavailable"]))
+    listing = '<div class="list">\n' + "\n".join(rows) + '\n</div>\n'
+    if adding:
+        tiles = f'{adding} tile{"" if adding == 1 else "s"}'
+        return (intro + listing + f'<p>Pressing it queues <b>{tiles}</b> to add. Nothing is written to Sunshine '
+                f'until you apply.</p>\n<form method="post" action="/settings/defaults"><button class="btn" '
+                f'type="submit">Put {tiles} back</button></form>')
+    return intro + listing + "<p>All of them are here; there is nothing to put back.</p>"
+
+
+def _updates_pane(prefs: Dict[str, Any], answer: Any, current_version: str) -> str:
+    """Check for updates, and which builds (#66). Installing waits for after 2.0."""
+    found = ""
+    if answer is not None:
+        if answer.state == "available" and answer.release is not None:
+            ver = str(getattr(answer.release, "version", "") or "")
+            found = notice2("", f"{_e(ver)} is available" if ver else _e(answer.message),
+                            f"You have {_e(current_version)}." if current_version else "",
+                            f'<a class="btn sec" href="{_e(answer.release.url)}" target="_blank" '
+                            f'rel="noopener noreferrer">What changed</a>') + "\n"
+        else:
+            found = notice2("warn" if answer.state == "unreachable" else "", "", _e(answer.message)) + "\n"
     dev = bool(prefs.get("dev_builds", False))
     fall_back = bool(prefs.get("stable_if_no_newer_dev", True))
 
-    themes = "".join(
-        f'<button type="submit" name="theme" value="{key}" '
-        f'class="{"on" if chosen == key else ""}">{label}</button>'
-        for key, label in (("system", "Follow the system"),
-                           ("light", "Light"), ("dark", "Dark")))
-
-    found = ""
-    if answer is not None:
-        extra = ""
-        if answer.state == "available" and answer.release is not None:
-            extra = (f'<div class="actions" style="margin:.7rem 0 0">'
-                     f'<a class="btn" href="{_e(answer.release.url)}" '
-                     f'target="_blank" rel="noopener noreferrer">'
-                     f'What changed</a></div>'
-                     f'<p class="why" style="margin:.6rem 0 0">Installing it '
-                     f'from here is not built yet: there is no package to '
-                     f'install. <a href="{_e(DOCS_URL)}/packaging.md" '
-                     f'target="_blank" rel="noopener noreferrer">Why, and what '
-                     f'updating means today</a>.</p>')
-        found = (f'<div class="result {_e(answer.state)}">{_e(answer.message)}'
-                 f'{extra}</div>')
-
-    # Only ever said when the button could not do its job, so it is styled as
-    # the warning it is.
-    notice_html = (f'<div class="result unreachable">{_e(notice)}</div>'
-                   if notice else "")
-
-    # Buttons, not checkboxes. A checkbox needs script to apply on the spot,
-    # and every page here is served with `script-src \'self\'` and no
-    # `unsafe-inline`, so the onchange attribute these used to carry was never
-    # compiled into a handler: clicking did nothing, and the <noscript> fallback
-    # never rendered because scripting was enabled. Issue #28. A submit button
-    # carrying the value it would set needs nothing but HTML, which is also
-    # what the appearance buttons beside them have always been.
-    def toggle(name: str, on: bool, label: str, why: str,
-               nested: bool = False, enabled: bool = True) -> str:
-        classes = "toggle" + (" nested" if nested else "") + ("" if enabled else " off")
-        return (f'<form method="post" action="/settings/channel" '
-                f'class="{classes}">'
-                f'<input type="hidden" name="setting" value="{_e(name)}">'
-                f'<button type="submit" name="value" value="{"0" if on else "1"}"'
-                f'{"" if enabled else " disabled"} role="switch" '
-                f'aria-checked="{"true" if on else "false"}" class="switch">'
-                f'<span class="box{" on" if on else ""}" aria-hidden="true">'
-                f'{"&#10003;" if on else ""}</span>'
-                f'<span class="body"><span class="lab">{label}</span>'
-                f'<span class="why">{why}</span></span></button></form>')
-
-    dev_toggle = toggle(
-        "dev_builds", dev, "Offer development builds",
-        "Newer, and sometimes broken. Off means only finished releases.")
-    fallback_toggle = toggle(
-        "stable_if_no_newer_dev", fall_back,
-        "Move to the finished release when it is newer",
-        "A release is where a development build was heading, so this leaves you "
-        "on the finished one rather than stranded on an older preview. Only "
-        "applies while development builds are on.",
-        nested=True, enabled=dev)
-
-    picked = str(prefs.get("language", "") or "")
-    info = language or {}
-    options = [
-        f'<option value=""{" selected" if not picked else ""}>'
-        f'Follow the system{_e(info.get("system_suffix", ""))}</option>']
-    for item in info.get("languages", []):
-        code = str(item.get("code", ""))
-        label = item.get("name", code)
-        if item.get("name_in_english") and item["name_in_english"] != label:
-            label = f'{label} ({item["name_in_english"]})'
-        options.append(
-            f'<option value="{_e(code)}"'
-            f'{" selected" if picked == code else ""}>{_e(label)}</option>')
-    options = "".join(options)
-    showing = _e(info.get("showing", ""))
-
-    # An offer rather than an announcement: a download is a download, and the
-    # only button here that reaches the network says what it will fetch first.
-    art = info.get("art") or {}
-    art_notice = ""
-    if art.get("message"):
-        action = ""
-        if art.get("action") and art.get("method") == "get":
-            action = (f'<div class="actions" style="margin:.7rem 0 0">'
-                      f'<a class="btn" href="{_e(art["action"])}">'
-                      f'{_e(art.get("label", "Go"))}</a></div>')
-        elif art.get("action"):
-            action = (f'<div class="actions" style="margin:.7rem 0 0">'
-                      f'<form method="post" action="{_e(art["action"])}">'
-                      f'<button class="btn" type="submit">'
-                      f'{_e(art.get("label", "Download"))}</button></form></div>')
-        art_notice = (f'<div class="result {_e(art.get("state", "none"))}">'
-                      f'{_e(art["message"])}{action}</div>')
-    # What the change does to Sunshine's tiles, which is queued rather than
-    # done: the page used to say "Showing English tiles" while Sunshine went on
-    # showing the others until a Rescan nobody was told about. #48.
-    queued = info.get("queued")
-    if queued:
-        tiles = "tile" if queued == 1 else "tiles"
-        art_notice += (
-            f'<div class="result available">{queued} of your {tiles} will change '
-            f'to match. Nothing is written until you apply it.'
-            f'<div class="actions" style="margin:.7rem 0 0">'
-            f'<a class="btn" href="/apply">'
-            f'Apply {queued} change{"" if queued == 1 else "s"}</a></div></div>')
-    elif queued == 0:
-        art_notice += ('<div class="result">Your tiles already match; '
-                       'there is nothing to apply.</div>')
-
-    # Issue #22. The key used to be storable only by running a command, which
-    # is no use at a television -- and the picker's offer named a command that
-    # on Windows is not even on PATH. A field here is the whole of what that
-    # offer now points at. The key itself is never rendered back: the page says
-    # whether one is stored, not what it is.
-    art_key = sgdb or {}
-    sgdb_state = ("A key is stored. Replacing it checks the new one first."
-                  if art_key.get("have") else
-                  "No key stored. Community artwork is skipped.")
-
-    # How to get one. Through Moonlight there is no address bar and no
-    # keyboard, so the way off the screen is the phone already in your hand --
-    # the same reasoning as the bug-report page. At the machine a link is
-    # enough, and a QR code would be clutter, so it is only drawn when we are
-    # being streamed to.
-    from . import qr
-
-    sgdb_where = (
-        f'<p class="why">An account is free, and the key is on one page: sign '
-        f'in, open <b>Preferences</b> from the menu under your name at the top '
-        f'right, then <b>API</b>.</p>'
-        f'<div class="actions" style="margin:.2rem 0 .7rem">'
-        f'<a class="btn sec" href="{_e(SGDB_KEY_URL)}" target="_blank" '
-        f'rel="noopener noreferrer">Open SteamGridDB</a></div>')
-    if via_sunshine:
-        sgdb_where = (
-            f'<p class="why">An account is free, and the key is on one page: '
-            f'sign in, open <b>Preferences</b> from the menu under your name at '
-            f'the top right, then <b>API</b>. Scan this and that page opens on '
-            f'your phone, which has a keyboard to sign in with &mdash; then '
-            f'type the key here.</p>'
-            f'<div class="qr">{qr.svg(SGDB_KEY_URL)}</div>'
-            f'<p class="why"><code>{_e(SGDB_KEY_URL)}</code></p>'
-            f'<div class="actions" style="margin:.2rem 0 .7rem">'
-            f'<a class="btn sec" href="{_e(SGDB_KEY_URL)}" target="_blank" '
-            f'rel="noopener noreferrer">Or open it here</a></div>')
-    sgdb_result = (f'<div class="result {_e(art_key.get("state", "none"))}">'
-                   f'{_e(art_key["message"])}</div>'
-                   if art_key.get("message") else "")
-
-    return f"""<!doctype html>
-{_html()}<head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>{_title("Settings")}</title><style>{_CSS}{SETTINGS_CSS}{_QR_CSS}{CONFIG_CSS}</style></head>
-<body>
-<div class="navbar"><span class="brand">Sunshine</span><span class="sep">/</span>
-<span class="where">App Manager</span>{_version_chip()}</div>
-<div class="wrap">
-<h1>Settings</h1>
-<p class="sub">None of this touches your app list.</p>
-
-<section>
-  <div class="setting">
-    <h3>Appearance</h3>
-    <p class="why">Following the system is the default. On a television, where
-    there is no system to follow, pick the one that suits the room.</p>
-    <form method="post" action="/settings/theme">
-      <div class="choices">{themes}</div>
-    </form>
-  </div>
-
-  <div class="setting">
-    <h3>Updates</h3>
-    <p class="why">Checked only when you ask. Nothing is downloaded or
-    installed without you saying so.</p>
-    <form method="post" action="/settings/check">
-      <button class="btn" type="submit">Check for updates</button>
-    </form>
-    {found}
-  </div>
-
-  <div class="setting">
-    <h3>Language</h3>
-    <p class="why">Which language the words on the tiles are in. The interface
-    itself is English for now; the strings are ready to be translated and a
-    language is a file and a pull request &mdash;
-    <a href="{docs}/i18n.md" target="_blank" rel="noopener noreferrer">how to
-    add one</a>.</p>
-    <form method="post" action="/settings/language" class="pick">
-      <select name="language">{options}</select>
-      <button class="btn sec" type="submit">Use this one</button>
-    </form>
-    <p class="why">{showing}</p>
-    <form method="post" action="/settings/art-check">
-      <button class="btn sec" type="submit">Check for new tile artwork</button>
-    </form>
-    <p class="why">Looks only at the sets on this machine &mdash; the wordless
-    tiles and any language you have asked for &mdash; and never downloads the
-    others.</p>
-    {art_notice}
-  </div>
-
-  <div class="setting">
-    <h3>The default tiles</h3>
-    <p class="why">Sunshine ships a Desktop, a low resolution Desktop and
-    Steam Big Picture, and this puts back any of them you have deleted &mdash;
-    in our artwork and doing exactly what Sunshine's did. Nothing you still
-    have is touched, and nothing is written until you press Apply.</p>
-    <form method="post" action="/settings/defaults">
-      <button class="btn" type="submit">Put the default tiles back</button>
-    </form>
-    {notice_html}
-  </div>
-
-  <div class="setting">
-    <h3>Community artwork</h3>
-    <p class="why">SteamGridDB is a community library of game artwork, and the
-    place to look when a game has no cover of its own &mdash; which is most
-    often a GOG or Epic game, since Steam ships its own. It is optional, and
-    everything else here works without it. With a key, the artwork picker
-    grows a <b>Show SteamGridDB art</b> button &mdash; nothing is fetched from
-    them until you press it.</p>
-    {sgdb_where}
-    <p class="why">{sgdb_state}</p>
-    <form method="post" action="/settings/sgdb-key" class="pick">
-      <input type="password" name="sgdb-key" autocomplete="off"
-             spellcheck="false" placeholder="API key"
-             aria-label="SteamGridDB API key">
-      <button class="btn sec" type="submit">Save the key</button>
-    </form>
-    {sgdb_result}
-  </div>
-
-  {config_setting(config, token)}
-
-  <div class="setting">
-    <h3>Which builds</h3>
-    {dev_toggle}
-    {fallback_toggle}
-  </div>
-</section>
-
-<div class="actions"><a class="btn sec" href="/">Back to the apps</a></div>
-</div></body></html>"""
+    def switch(setting: str, on: bool, label: str, why: str, enabled: bool = True) -> str:
+        cls = "switch" + (" on" if on else "") + ("" if enabled else " flat")
+        return (f'<form method="post" action="/settings/channel"><input type="hidden" name="setting" value="{setting}">\n'
+                f'<button class="{cls}" type="submit" name="value" value="{"0" if on else "1"}" role="switch" '
+                f'aria-checked="{"true" if on else "false"}"{"" if enabled else " disabled"}><span class="knob"></span>'
+                f'<span class="t"><b>{label}</b><span>{why}</span></span></button></form>')
+    return ('<h2>Updates</h2>\n<p>Checked only when you ask. Nothing is downloaded or installed without you saying '
+            f'so.</p>\n{found}<form method="post" action="/settings/check"><button class="btn sec" type="submit">'
+            'Check for updates</button></form>\n<h2 style="margin-top:.8rem">Which builds</h2>\n'
+            + switch("dev_builds", dev, "Offer development builds",
+                     "Newer, and sometimes broken. Off means only finished releases.") + "\n"
+            + switch("stable_if_no_newer_dev", fall_back, "Move to the finished release when it is newer",
+                     "A release is where a development build was heading, so this leaves you on the finished one "
+                     "rather than stranded on an older preview. Only applies while development builds are on.",
+                     enabled=dev))
 
 
 def report_page(token: str, via_sunshine: bool = False,

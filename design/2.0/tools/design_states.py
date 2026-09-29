@@ -400,6 +400,82 @@ def _browse_art_filter(engine):
     covers(engine)
 
 
+# --- settings (#66) --------------------------------------------------------------
+
+def settings_base(engine):
+    """Streamed from the Legion, as every settings board is drawn."""
+    engine.state = edit_state()
+    os.environ["BSM_UI_VIA_SUNSHINE"] = "1"
+    os.environ["SUNSHINE_CLIENT_NAME"] = "Legion Go S"
+
+
+@scenario("settings", [("/settings?section=appearance", "settings.html")])
+def _settings(engine):
+    settings_base(engine)
+
+
+@scenario("settings-language", [("/settings?section=language", "settings-language.html")])
+def _settings_language(engine):
+    settings_base(engine)
+
+
+@scenario("settings-art", [("/settings?section=art", "settings-art.html")])
+def _settings_art(engine):
+    settings_base(engine)
+
+
+@scenario("settings-art-osk", [("/settings?section=art&osk=%23sgdb-key&type=3f9a0c7e41b2", "settings-art-osk.html")])
+def _settings_art_osk(engine):
+    settings_base(engine)
+
+
+@scenario("settings-art-refused", [("/settings?section=art", "settings-art-refused.html")])
+def _settings_art_refused(engine):
+    settings_base(engine)
+    state.set_pref("sgdb_key_state", {"state": "refused", "at": "2026-09-27"})
+
+
+@scenario("settings-sunshine", [("/settings?section=sunshine", "settings-sunshine.html")])
+def _settings_sunshine(engine):
+    import time
+    settings_base(engine)
+    stamp = lambda text: time.mktime(time.strptime(text, "%Y-%m-%d %H:%M"))
+    config = {"how": "newest", "chosen": NATIVE, "queued": 0,
+              "candidates": [{"path": NATIVE, "apps": 12, "last_used": stamp("2026-09-27 16:13")},
+                             {"path": FLATPAK, "apps": 1, "last_used": stamp("2026-09-26 07:38")}]}
+    mock.patch.object(srv.PlanHandler, "_config_panel", lambda self: dict(config)).start()
+
+
+@scenario("settings-defaults", [("/settings?section=defaults", "settings-defaults.html")])
+def _settings_defaults(engine):
+    settings_base(engine)
+    engine.state["apps"] = [a for a in engine.state["apps"] if a["name"] != "Zz Steam Big Picture"]
+    from sunshine_apps_ui.core import system_apps
+    shipped = [{"name": "Desktop"}, {"name": "Low Res Desktop"}, {"name": "Steam Big Picture"}]
+    mock.patch.object(system_apps, "find_system_apps_json", lambda override="": "/usr/share/sunshine/apps.json").start()
+    mock.patch.object(system_apps, "load_system_apps", lambda path: shipped).start()
+
+
+class _Always(dict):
+    """A check's answer that every capture of the page sees, not just the first."""
+    def __init__(self, value):
+        super().__init__()
+        self.value = value
+
+    def pop(self, *a, **k):
+        return self.value
+
+
+@scenario("settings-updates", [("/settings?section=updates", "settings-updates.html")])
+def _settings_updates(engine):
+    from sunshine_apps_ui import updates
+    settings_base(engine)
+    release = updates.Release(updates.Version(2, 0, 1, None), "https://github.com/4o66/sunshine-apps-ui/releases", {})
+    answer = updates.Answer("available", "2.0.1 is available.", release)
+    mock.patch.object(srv, "_LAST_CHECK", _Always(answer)).start()
+    mock.patch.object(updates, "running", lambda: updates.Version(2, 0, 0, None)).start()
+
+
 # What the address asks for, for a capture: ?theme=, ?scale=couch|desk (couch
 # is streamed and in controller use, as the boards are drawn) and ?focus=, the
 # control the board shows focused ("text:Keep this one", or a CSS selector).
