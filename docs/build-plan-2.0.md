@@ -50,6 +50,8 @@ From the code: `server.log` is in the state folder, overwritten at each launch, 
 7. **Commit and push:** one commit per phase, explicit paths, no personal names or home paths in anything staged, pushed to `redesign-2.0`, then the issues are updated.
 8. **Moonlight check with you:** on the Legion Go S, after phases 2, 4 and 8.
 
+**Controller mapping, as settled 2026-09-28/29:** A chooses. B cancels the screen you're on (its Back or Cancel, never the browser's history), and does nothing on the grid. X is the second action, Y the main one. LB and RB turn pages. Menu (a tap) opens Settings. LT scrolls up and RT scrolls down. The right stick also scrolls, except on Sunshine's libvirtualhid pad, whose right stick WebKitGTK can't read (LizardByte/libvirtualhid#84). Text size: Smaller is 85% and Larger 115% of Standard.
+
 ## Phases
 
 **0. Foundations.**
@@ -96,6 +98,13 @@ From the code: `server.log` is in the state folder, overwritten at each launch, 
 **7. Report and Share the log:**
 - **Redraw first:** the share board gets the "What this log contains" section and needs your approval before it's built.
 - **Then build:** the sanitizer as its own module with tests, the preview, dpaste.com upload through the API, and the QR code.
+- **Controller diagnostics (decided 2026-09-29, after the Legion test):**
+  - **A controller summary in the log**, once per session, sent by `pad.js` when a pad first appears: its name, layout, button and axis counts, any axis resting off center, and which layout rules were applied. Small, and written so a device name cannot break the log. Invisible, so no board.
+  - **Host facts at startup:** which window opened, and the WebKitGTK or WebView2 version. On Linux, also the pads in `/proc/bus/input/devices` (names and IDs), and Sunshine's gamepad setting and version. Invisible, so no board.
+  - **Sanitizer rules and a row:** a pad's Bluetooth address is removed like any other address, and "What this log contains" gets a row for controller names. This goes into the redrawn share board.
+  - **An opt-in controller test**, started from Report a bug. It asks for each button and stick direction in turn, records what arrived, and says whether it matches. It's drawn for approval with the share board before it's built.
+  - **The report page** says the log only covers the current session.
+- **"Running on"** is to show what the board draws (for example "Bazzite 44 · KDE Plasma · Wayland"), not just the kernel.
 
 **8. Windows:** **#79**, `core.Settings.IsStatusBarEnabled = false` in `AppWindow.cs`'s `Initialized()`. Also on `dev` for 1.x. Then a WebView2 design-vs-build pass over every page.
 
