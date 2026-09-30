@@ -543,17 +543,6 @@ def _elevate(engine):
     streamed(engine)
 
 
-@scenario("error-code", [("/_page/error-code", "error.html")])
-def _error_code(engine):
-    streamed(engine)
-
-
-def addresses_as_code(text):
-    """Option shown for a ruling: a web address in an error message set as code."""
-    import html as _h, re
-    return re.sub(r"(https?://[^\s<]+?)([.,;:]?(?:\s|$))", r"<code>\1</code>\2", _h.escape(text))
-
-
 def flow_page(handler, name):
     """Pages that only follow a POST or a failure, rendered for a capture."""
     from sunshine_apps_ui import render
@@ -565,10 +554,6 @@ def flow_page(handler, name):
         return render.render_elevating(handler.token)
     if name == "error":
         return render.error_page("Sunshine did not answer at https://localhost:47990. It may still be starting.")
-    if name == "error-code":
-        page = render.error_page("Sunshine did not answer at https://localhost:47990. It may still be starting.")
-        plain = "Sunshine did not answer at https://localhost:47990. It may still be starting."
-        return page.replace("<p>" + plain + "</p>", "<p>" + addresses_as_code(plain) + "</p>", 1)
     return None
 
 
