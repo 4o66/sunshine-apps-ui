@@ -12,14 +12,28 @@
 <span class="ver">2.0.0</span>
 </header>
 <main class="main">
-<div class="head"><h1>Share the log</h1><span class="sub">This is everything that would be sent.</span></div>
-<div class="notice"><div class="text"><b>Taken out before sending</b><span>The session token, your user name and home folder (shown as ~), this machine's name and addresses, and your SteamGridDB key. Nothing else is changed.</span></div></div>
+<div class="head"><h1>Share the log</h1><span class="sub">Check what it holds, then send it.</span></div>
+<h2 style="margin:0 0 .8rem">What this log contains</h2>
+<div class="list contains">
+<div class="item"><span class="grow"><span class="name">The session token</span><span class="meta">Opens this manager without asking. Found once.</span></span><span class="what gone">REMOVED</span></div>
+<div class="item"><span class="grow"><span class="name">Your home folder</span><span class="meta"><code>/home/deck</code> appears 14 times. It is shown as ~.</span></span><span class="what gone">SHOWN AS ~</span></div>
+<div class="item"><span class="grow"><span class="name">This machine's name</span><span class="meta"><code>living-room-pc</code> appears 3 times.</span></span><span class="what gone">REMOVED</span></div>
+<div class="item"><span class="grow"><span class="name">Addresses</span><span class="meta">2 network addresses, and 1 controller's Bluetooth address.</span></span><span class="what gone">REMOVED</span></div>
+<label class="item switch"><input type="checkbox"><span class="grow"><span class="name">Controller names</span><span class="meta"><code>Sunshine (libvirtualhid) X-Box Series Controller</code>. Often what a controller bug is about.</span></span><span class="sw">Remove</span><span class="knob"></span></label>
+<label class="item switch"><input type="checkbox"><span class="grow"><span class="name">Game names</span><span class="meta">The log names 7 games from your library.</span></span><span class="sw">Remove</span><span class="knob"></span></label>
+<label class="item switch"><input type="checkbox"><span class="grow"><span class="name">Folders outside your home</span><span class="meta"><code>/mnt/games/SteamLibrary</code></span></span><span class="sw">Remove</span><span class="knob"></span></label>
+</div>
+<p class="muted small" style="margin:.7rem 0 1.6rem">Anything that looks like a key or a password is always removed. None was found. A switch that is on removes those from the log.</p>
+<h2 style="margin:0 0 .8rem">The log as it will be sent</h2>
 <pre class="log">20:31:02 WARNING Sunshine config: <i>~</i>/.config/sunshine
-20:31:02 WARNING launcher: window started (WebKitGTK 2.54)
+20:31:02 WARNING launcher: window started (WebKitGTK 2.54) on <i>[machine]</i>
 20:31:07 WARNING http://127.0.0.1:47999/?token=<i>[removed]</i>
-20:32:14 WARNING scan: steam: 7 found
+20:31:09 WARNING pad: Sunshine (libvirtualhid) X-Box Series Controller, 17 buttons, 4 axes, X and Y swapped
+20:31:09 WARNING host: pad 045e:0b13 at <i>[address]</i>
+20:32:14 WARNING scan: steam: 7 found in /mnt/games/SteamLibrary
+20:32:14 WARNING scan: steam: Satisfactory has no cover in the library cache
 20:32:15 WARNING scan: heroic: library not found at <i>~</i>/.config/heroic
-20:33:40 ERROR apply: Sunshine did not answer at https://localhost:47990: connection refused</pre>
+20:33:40 ERROR apply: Sunshine did not answer at https://<i>[address]</i>:47990: connection refused</pre>
 <p class="muted" style="margin-top:1rem;max-width:56rem">It goes to <b>dpaste.com</b>, a public paste service: anyone with the link can read it, and it is deleted after 7 days. Once sent it cannot be taken back. Nothing is sent until you choose Send.</p>
 </main>
 <footer class="bar">

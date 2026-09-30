@@ -346,6 +346,31 @@ animation:spin 1s linear infinite}
 .log{margin:0;padding:1rem 1.2rem;background:var(--bg-subtle);border:1px solid var(--border);border-radius:var(--radius-md);
 font-family:var(--mono);font-size:.85rem;line-height:1.55;white-space:pre-wrap;overflow-wrap:anywhere}
 .log i{font-style:normal;background:rgba(255,193,7,.22);border-radius:.2rem;padding:0 .15rem}
+/* What a log holds, row by row: removed ones say so, the rest are switches
+   that remove them. The value itself is shown, so there is no guessing. */
+.contains .item code{font-family:var(--mono);font-size:.85rem;color:var(--text)}
+.contains .item .what.gone{background:var(--bg-subtle);color:var(--text-muted);border:1px solid var(--border)}
+.contains .switch{padding:.55rem 1.1rem;background:var(--surface);border-width:1px}
+.contains .item .name{white-space:normal}
+.contains .switch .sw{color:var(--text-muted);font-size:.85rem;font-weight:620}
+
+/* The controller test: what is asked for now, and every input's result. */
+.ask{display:flex;flex-direction:column;gap:.3rem;margin:0 0 1.4rem}
+.ask .n{color:var(--text-muted);font-size:.9rem;font-weight:620}
+.ask > b{font-size:1.6rem;font-weight:700}
+.ask .big{display:inline-flex;align-items:center;justify-content:center;min-width:3.4rem;height:2.6rem;
+padding:0 .7rem;margin-left:.3rem;border-radius:.6rem;background:var(--primary);color:#fff;font-size:1.3rem}
+.chips{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:.6rem}
+.chip{display:flex;flex-direction:column;gap:.15rem;padding:.55rem .8rem;border-radius:var(--radius-md);
+background:var(--bg-subtle);border:1px solid var(--border);min-height:3.6rem}
+.chip b{font-weight:620;font-size:.95rem}
+.chip span{font-size:.8rem;color:var(--text-muted)}
+.chip.ok{background:var(--surface);border-color:var(--success)}
+.chip.ok span{color:var(--success)}
+.chip.bad{background:var(--surface);border:2px solid var(--warning)}
+.chip.bad span{color:var(--text)}
+.chip.now{background:var(--surface);box-shadow:0 0 0 .18rem var(--focus-halo),0 0 0 .45rem var(--focus)}
+.chip.now span{color:var(--text)}
 
 /* Searching by another name: a field with a mouse or keyboard, the X button
    (and the on-screen keyboard) with a controller. Approved 2026-09-28. */
