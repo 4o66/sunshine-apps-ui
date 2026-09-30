@@ -627,8 +627,10 @@ def path_of(url):
 
 class PathOfTest(unittest.TestCase):
     def test_both_spellings_name_the_same_file(self):
-        self.assertEqual(path_of("file:/tmp/a%20b.html"), "/tmp/a b.html")
-        self.assertEqual(path_of("file:///tmp/a%20b.html"), "/tmp/a b.html")
+        # In this platform's spelling: backslashes on Windows (#82).
+        want = os.path.normpath("/tmp/a b.html")
+        self.assertEqual(path_of("file:/tmp/a%20b.html"), want)
+        self.assertEqual(path_of("file:///tmp/a%20b.html"), want)
 
     def test_and_so_does_whatever_as_url_gives_here(self):
         path = os.path.abspath(os.path.join("somewhere", "a b.html"))
@@ -922,6 +924,12 @@ class LaunchLoopHarness(unittest.TestCase):
                                         else (lambda s: None))
             patched.start()
             self.addCleanup(patched.stop)
+        # Popen is replaced for the whole process, and on Windows the session
+        # token's lock-down runs icacls through it (#82).
+        from sunshine_apps_ui.core import filemode
+        patched = mock.patch.object(filemode, "_lock_down_windows", lambda path: None)
+        patched.start()
+        self.addCleanup(patched.stop)
 
     def run_with(self, windows, up, shown=False):
         """*windows*: what open_browser returns, in turn. *up*: browser_is_up, in turn."""
