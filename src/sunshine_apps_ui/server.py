@@ -9,6 +9,7 @@ reconciler, and one implementation of them is enough.
 
 import html
 import json
+import re
 import logging
 import os
 import threading
@@ -17,7 +18,7 @@ from typing import Set, Any, Dict, List, Optional
 from urllib.parse import parse_qs, urlencode, urlsplit
 
 from . import __version__, security
-from . import artwork, frame, privilege, state
+from . import artwork, diagnostics, frame, privilege, state
 from .engine import (EngineError, art_choose, art_search, art_sgdb,
                      art_sgdb_one, backup_diff, browse,
                      check_auth, choose_config, config_choice, forget_state,
@@ -191,6 +192,10 @@ class PlanHandler(BaseHTTPRequestHandler):
             self._send(404, error_page("Not found."))
             return
         self._note_shown()
+        if not _PAD_LOGGED.get("engine"):
+            # Once: the page engine's version, for a bug report (phase 7).
+            _PAD_LOGGED["engine"] = "1"
+            log.warning("%s", diagnostics.engine_line(self.headers.get("User-Agent", "")))
         if (security.token_matches(self.token, supplied)
                 and security.is_navigation(self.headers)):
             self._trade_for_cookie(parts, query)
@@ -939,6 +944,18 @@ class PlanHandler(BaseHTTPRequestHandler):
             self._send(200, closing_page(self.via_sunshine))
             return
 
+        if parts.path == "/log/pad":
+            # pad.js says what the controller is, for a bug report. Written
+            # only when it differs from the last, so once a session.
+            line = pad_line(self._form() or {})
+            if line and line != _PAD_LOGGED.get("last"):
+                _PAD_LOGGED["last"] = line
+                log.warning("%s", line)
+            self.send_response(204)
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return
+
         if parts.path == "/config-dir":
             fields = self._form()
             wanted = (fields.get("path") or [""])[0]
@@ -1414,6 +1431,32 @@ _LAST_CHECK: Dict[str, Any] = {}
 _NOTICE: Dict[str, str] = {}
 # Why a switch of config directory was refused, for whichever page it came from.
 _CONFIG_NOTICE: Dict[str, str] = {}
+_PAD_LOGGED: Dict[str, str] = {}
+
+
+def _one_line(value: str, limit: int = 100) -> str:
+    """A value a device chose, made safe for one log line: no control
+    characters, no commas (the log's own separator), and not too long."""
+    value = re.sub(r"[\x00-\x1f\x7f,]+", " ", value or "")
+    return re.sub(r"\s+", " ", value).strip()[:limit]
+
+
+def pad_line(fields: Dict[str, List[str]]) -> str:
+    """The controller summary pad.js sends, as one log line."""
+    def one(key: str, limit: int = 100) -> str:
+        return _one_line((fields.get(key) or [""])[0], limit)
+    name = one("name")
+    if not name:
+        return ""
+    numbers = [n if n.isdigit() else "?" for n in (one("buttons", 4), one("axes", 4))]
+    words = [f"pad: {name}", f"{numbers[0]} buttons", f"{numbers[1]} axes",
+             f"mapping {one('mapping', 20) or 'none'}"]
+    resting = re.sub(r"[^0-9=. -]", "", one("resting", 80)).strip()
+    if resting:
+        words.append(f"resting {resting}")
+    rules = one("rules", 160)
+    words.append(rules or "no layout rules")
+    return ", ".join(words)
 # What the language section should say next time it is drawn: the result of a
 # check, or an offer to download a set. One per token, cleared when shown.
 _ART: Dict[str, Dict[str, Any]] = {}
@@ -1584,13 +1627,47 @@ def _count_apps(conf_dir: str) -> Optional[int]:
     return len(apps) if isinstance(apps, list) else None
 
 
-def _describe_platform() -> str:
-    """Enough for a bug report, and nothing that identifies the machine."""
+def _describe_platform(environ: Optional[Dict[str, str]] = None,
+                       os_release: str = "/etc/os-release") -> str:
+    """Enough for a bug report, and nothing that identifies the machine.
+
+    As the Report board draws it: the system and its version, then on Linux
+    the desktop and the display server -- "Bazzite 44 · KDE Plasma · Wayland".
+    """
     import platform
 
+    environ = os.environ if environ is None else environ
     system = platform.system() or "unknown"
-    release = platform.release() or ""
-    return f"{system} {release}".strip()
+    if system == "Windows":
+        release, build = platform.release(), platform.version().rsplit(".", 1)[-1]
+        # Windows 11 still says release 10; its builds start at 22000.
+        if release == "10" and build.isdigit() and int(build) >= 22000:
+            release = "11"
+        return f"Windows {release} (build {build})" if build.isdigit() else f"Windows {release}"
+    if system != "Linux":
+        return f"{system} {platform.release() or ''}".strip()
+
+    name, version = "Linux", ""
+    try:
+        with open(os_release, encoding="utf-8", errors="replace") as f:
+            fields = dict(line.rstrip("\n").split("=", 1) for line in f if "=" in line)
+        name = fields.get("NAME", "").strip('"') or name
+        version = fields.get("VERSION_ID", "").strip('"')
+    except OSError:
+        pass
+    parts = [f"{name} {version}".strip()]
+    # A list, most specific first; Ubuntu's is "ubuntu:GNOME", which is GNOME.
+    names = {"KDE": "KDE Plasma", "GNOME": "GNOME", "X-Cinnamon": "Cinnamon", "XFCE": "Xfce"}
+    desktops = [d for d in (environ.get("XDG_CURRENT_DESKTOP") or environ.get("DESKTOP_SESSION") or "").split(":") if d]
+    known = [names[d] for d in desktops if d in names]
+    if known or desktops:
+        parts.append(known[0] if known else desktops[0])
+    session = (environ.get("XDG_SESSION_TYPE") or "").lower()
+    if session not in ("wayland", "x11"):
+        session = "wayland" if environ.get("WAYLAND_DISPLAY") else "x11" if environ.get("DISPLAY") else ""
+    if session:
+        parts.append("Wayland" if session == "wayland" else "X11")
+    return " · ".join(parts)
 
 
 def text_size_for(client_name: str) -> str:
@@ -1612,6 +1689,8 @@ def serve(token: str, conf_dir: str,
     # that changes what the program can do for you.
     (log.info if rights.can_write else log.warning)(
         "%s", privilege.startup_line(rights, conf_dir))
+    for line in diagnostics.host_lines(conf_dir):
+        log.warning("%s", line)
     handler = type("BoundPlanHandler", (PlanHandler,), {
         "token": token,
         "conf_dir": conf_dir,

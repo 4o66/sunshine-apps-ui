@@ -836,6 +836,8 @@ def launch(argv: Optional[List[str]] = None) -> int:
         page = write_starting_page(url)
         browser, how = open_browser(page, profile, as_file=True)
         environment = server_environment()
+        # Which window this is, for the log's host facts (diagnostics).
+        environment["BSM_UI_WINDOW"] = str(how)
         with filemode.open_private(log_file) as handle:
             server = subprocess.Popen(
                 server_command(str(port), token_file), stdout=handle,

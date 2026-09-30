@@ -488,6 +488,18 @@ class CredentialsEndpointTest(ServerTest):
                                        "Sec-Fetch-Dest": "document"})
         self.assertEqual(status, 404)
 
+    def test_the_controller_summary_is_logged_once(self):
+        from sunshine_apps_ui import server as srv
+        srv._PAD_LOGGED.pop("last", None)
+        pad = {"name": "Test Pad", "buttons": "17", "axes": "4", "mapping": "standard"}
+        with self.assertLogs("sunshine-apps-ui", "WARNING") as seen:
+            for _ in range(2):
+                status, _ = self.post(pad, token=self.token, path="/log/pad")
+                self.assertEqual(status, 204)
+            srv.log.warning("end")
+        lines = [r.getMessage() for r in seen.records if r.getMessage().startswith("pad:")]
+        self.assertEqual(lines, ["pad: Test Pad, 17 buttons, 4 axes, mapping standard, no layout rules"])
+
     def test_an_unknown_post_path_is_refused(self):
         status, _ = self.post({"a": "b"}, token=self.token, path="/anything")
         self.assertEqual(status, 404)

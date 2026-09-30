@@ -318,6 +318,15 @@ def main(argv: Optional[List[str]] = None) -> int:
                 session = None
         view = (WebKit.WebView(network_session=session) if session is not None
                 else WebKit.WebView())
+        # Named in the User-Agent, with WebKitGTK's own version, so the log
+        # can say which engine drew the page (diagnostics.engine_line).
+        try:
+            view.get_settings().set_user_agent_with_application_details(
+                "sunshine-apps-ui-window", "%d.%d.%d" % (
+                    WebKit.get_major_version(), WebKit.get_minor_version(),
+                    WebKit.get_micro_version()))
+        except Exception:                         # noqa: BLE001 - a fact, not a need
+            pass
 
         colour = Gdk.RGBA()
         colour.red, colour.green, colour.blue, colour.alpha = BACKGROUND

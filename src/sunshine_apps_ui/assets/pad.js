@@ -241,6 +241,28 @@
   function faceX(pad) { return SWAPPED_XY && /x-?box|xinput/i.test(pad.id) ? 3 : 2; }
   function faceY(pad) { return SWAPPED_XY && /x-?box|xinput/i.test(pad.id) ? 2 : 3; }
 
+  // What this pad is, for the log (phase 7): once per page, a second after it
+  // is first seen so that its axes have settled. The server writes a line
+  // only when it differs from the last, so the log has it once a session.
+  var reported = false;
+  function report(pad) {
+    reported = true;
+    setTimeout(function () {
+      var now = navigator.getGamepads()[pad.index] || pad;
+      var resting = [];
+      for (var i = 0; i < now.axes.length; i++) {
+        if (Math.abs(now.axes[i]) > 0.5) resting.push(i + "=" + now.axes[i].toFixed(2));
+      }
+      var rules = [];
+      if (faceX(now) === 3) rules.push("X and Y swapped");
+      if (guessedLayout(now)) rules.push("triggers read from axis 2 and button 6; right stick off");
+      var body = new URLSearchParams({ name: now.id, buttons: now.buttons.length, axes: now.axes.length,
+                                       mapping: now.mapping || "none", resting: resting.join(" "),
+                                       rules: rules.join("; ") });
+      fetch("/log/pad", { method: "POST", body: body, cache: "no-store" }).catch(function () {});
+    }, 1000);
+  }
+
   function frame(now) {
     requestAnimationFrame(frame);
     // A pad is shared by everything on the machine; only the window in front
@@ -252,6 +274,7 @@
       if (pads[i] && pads[i].connected) { pad = pads[i]; break; }
     }
     if (!pad) return;
+    if (!reported) report(pad);
     var any = false;
     for (var b = 0; b < pad.buttons.length; b++) if (pressed(pad, b)) { any = true; break; }
     var ax = pad.axes[0] || 0, ay = pad.axes[1] || 0;
