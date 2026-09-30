@@ -543,6 +543,66 @@ def _elevate(engine):
     streamed(engine)
 
 
+# Report a bug and Share the log, with the log and machine the Share board shows.
+SHARE_LOG = """\
+20:31:02 WARNING Sunshine config: /home/deck/.config/sunshine
+20:31:02 WARNING launcher: window started (WebKitGTK 2.54) on living-room-pc
+20:31:07 WARNING http://127.0.0.1:47999/?token=Zq81XbVn0pLr
+20:31:09 WARNING pad: Sunshine (libvirtualhid) X-Box Series Controller, 17 buttons, 4 axes, X and Y swapped
+20:31:09 WARNING host: pad 045e:0b13 v0513 bus 0005: Sunshine (libvirtualhid) X-Box Series Controller, at 7e:a1:02:33:44:55
+20:32:14 WARNING scan: steam: 7 found in /mnt/games/SteamLibrary
+20:32:14 WARNING scan: steam: Satisfactory has no cover in the library cache
+20:32:15 WARNING scan: heroic: library not found at /home/deck/.config/heroic
+20:33:40 ERROR apply: Sunshine did not answer at https://192.168.1.20:47990: connection refused
+"""
+SHARE_LOG += "".join(f"20:34:0{i} WARNING backups: kept /home/deck/.config/sunshine/backups/apps-{i}.json\n"
+                     for i in range(10))
+SHARE_LOG += "20:35:00 WARNING scan: heroic: /home/deck/Games/Heroic, /home/deck/Games/Heroic/Prefixes\n"
+SHARE_LOG += "20:35:01 WARNING host: living-room-pc.local at 192.168.1.44, and living-room-pc\n"
+SHARE_LOG += "20:35:02 WARNING scan: steam: found Hades, Celeste, Balatro, Hollow Knight, Portal 2, Stardew Valley\n"
+SHARE_GAMES = ["Satisfactory", "Hades", "Celeste", "Balatro", "Hollow Knight", "Portal 2", "Stardew Valley"]
+
+
+def reporting(engine):
+    streamed(engine)
+    from sunshine_apps_ui import logshare
+    mock.patch.object(srv, "_describe_platform", lambda *a, **k: "Bazzite 44 · KDE Plasma · Wayland").start()
+    mock.patch.object(srv, "_read_log", lambda: SHARE_LOG).start()
+    mock.patch.object(logshare, "machine_facts", lambda **k: logshare.Facts(
+        home="/home/deck", user="deck", hostname="living-room-pc", games=SHARE_GAMES)).start()
+    srv._PAD_LOGGED["name"] = "Sunshine (libvirtualhid) X-Box Series Controller"
+
+
+@scenario("report", [("/report", "report.html")])
+def _report(engine):
+    reporting(engine)
+
+
+@scenario("report-share", [("/report/share", "report-share.html")])
+def _report_share(engine):
+    reporting(engine)
+
+
+@scenario("report-shared", [("/_page/shared", "report-shared.html")])
+def _report_shared(engine):
+    reporting(engine)
+
+
+@scenario("controller-test-start", [("/report/controller", "controller-test-start.html")])
+def _pad_start(engine):
+    reporting(engine)
+
+
+@scenario("controller-test", [("/report/controller?padtest=22%3Brup%3Dbutton%3A7%3Bleft%3D5", "controller-test.html")])
+def _pad_running(engine):
+    reporting(engine)
+
+
+@scenario("controller-test-done", [("/_page/controller-done", "controller-test-done.html")])
+def _pad_done(engine):
+    reporting(engine)
+
+
 def flow_page(handler, name):
     """Pages that only follow a POST or a failure, rendered for a capture."""
     from sunshine_apps_ui import render
@@ -552,6 +612,12 @@ def flow_page(handler, name):
         return render.closing_page(True)
     if name == "elevate":
         return render.render_elevating(handler.token)
+    if name == "shared":
+        return render.shared_page("https://dpaste.com/7QXGJ4K2M")
+    if name == "controller-done":
+        results = {p: "ok" for p in render.PAD_TEST_ORDER}
+        results.update(rup="button:7", rdown="missed")
+        return render.controller_test_page("Sunshine (libvirtualhid) X-Box Series Controller", results)
     if name == "error":
         return render.error_page("Sunshine did not answer at https://localhost:47990. It may still be starting.")
     return None
@@ -583,6 +649,14 @@ function put(){
  if(!f)return;var el=find(f,osk&&window.OSK?window.OSK.area():document);
  if(el){el.focus({preventScroll:true,focusVisible:true});
   if(el.tagName==="INPUT"&&el.type==="text"){try{el.setSelectionRange(0,0)}catch(e){}}}}
+var pt=q.get("padtest");
+function padtest(){if(!pt||!window.PADTEST)return;var bits=pt.split(";"),at=+bits[0],left=8,res={};
+ var order=["a","b","x","y","lb","rb","lt","rt","view","menu","l3","r3","dup","ddown","dleft","dright","lup","ldown","lleft","lright","rup","rdown","rleft","rright"];
+ order.slice(0,at-1).forEach(function(k){res[k]={kind:"ok"};});
+ bits.slice(1).forEach(function(b){var i=b.indexOf("="),k=b.slice(0,i),v=b.slice(i+1);
+  if(k==="left"){left=+v;return;}var j=v.indexOf(":");res[k]=j<0?{kind:v}:{kind:v.slice(0,j),value:v.slice(j+1)};});
+ window.PADTEST.show(at,res,left);}
+addEventListener("DOMContentLoaded",padtest);
 if(document.readyState==="complete")put();else addEventListener("DOMContentLoaded",put);
 setInterval(function(){fetch('/_target',{cache:'no-store'}).then(function(r){return r.text()}).then(function(t){
 t=t.trim();if(t&&t!==me){location.replace(t)}}).catch(function(){})},300)})();"""

@@ -73,6 +73,19 @@
   sync();
   }
 
+  // A form that asks for its page again when a switch changes (Share the
+  // log's Remove switches), saying which one so focus comes back to it.
+  Array.prototype.forEach.call(document.querySelectorAll("form[data-submit-on-change]"), function (f) {
+    f.addEventListener("change", function (e) {
+      var at = document.createElement("input");
+      at.type = "hidden";
+      at.name = "at";
+      at.value = e.target.value || "";
+      f.appendChild(at);
+      f.submit();
+    });
+  });
+
   // Show password (#70): the eye in the field and X in the bar both turn the
   // password field between hidden and shown.
   Array.prototype.forEach.call(document.querySelectorAll("[data-show-password]"), function (b) {

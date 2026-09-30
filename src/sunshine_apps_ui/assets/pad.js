@@ -217,9 +217,9 @@
   // resting at -1; RT on button 6; the right stick's left and right on axis
   // 3, its up on button 7 as on or off, and its down lost altogether.
   // Measured from the Legion Go S over Moonlight, 2026-09-28. So on that pad
-  // the right stick does nothing, and the triggers are read from where they
-  // are; elsewhere they are buttons 6 and 7 of the standard layout, and the
-  // right stick scrolls as well.
+  // the right stick only goes left and right (axis 3), and the triggers are
+  // read from where they are; elsewhere they are buttons 6 and 7 of the
+  // standard layout, and the right stick scrolls both ways.
   function guessedLayout(pad) { return /libvirtualhid/i.test(pad.id); }
   // That axis reads 0 until LT is first touched and -1 at rest after, so 0
   // means "not yet known", not half pulled: until it has moved, LT is off.
@@ -240,6 +240,28 @@
 
   function faceX(pad) { return SWAPPED_XY && /x-?box|xinput/i.test(pad.id) ? 3 : 2; }
   function faceY(pad) { return SWAPPED_XY && /x-?box|xinput/i.test(pad.id) ? 2 : 3; }
+
+  // The right stick, as it can be read. On the guessed layout its left and
+  // right are still axis 3; only its up and down are lost.
+  function rightStick(pad) {
+    return { x: pad.axes[guessedLayout(pad) ? 3 : 2] || 0, y: guessedLayout(pad) ? 0 : pad.axes[3] || 0 };
+  }
+
+  // Every input as this script reads it, by name, for the controller test
+  // (padtest.js), which asks for each in turn and pauses everything here
+  // while it runs.
+  function logical(pad) {
+    var ax = pad.axes[0] || 0, ay = pad.axes[1] || 0, r = rightStick(pad);
+    return {
+      a: pressed(pad, 0), b: pressed(pad, 1), x: pressed(pad, faceX(pad)), y: pressed(pad, faceY(pad)),
+      lb: pressed(pad, 4), rb: pressed(pad, 5), lt: trigger(pad, "lt") > 0.5, rt: trigger(pad, "rt") > 0.5,
+      view: pressed(pad, 8), menu: pressed(pad, 9), l3: pressed(pad, 10), r3: pressed(pad, 11),
+      dup: pressed(pad, 12), ddown: pressed(pad, 13), dleft: pressed(pad, 14), dright: pressed(pad, 15),
+      lup: ay < -DEAD, ldown: ay > DEAD, lleft: ax < -DEAD, lright: ax > DEAD,
+      rup: r.y < -DEAD, rdown: r.y > DEAD, rleft: r.x < -DEAD, rright: r.x > DEAD
+    };
+  }
+  var PAD = window.PAD = { logical: logical, pressed: pressed, paused: false };
 
   // What this pad is, for the log (phase 7): once per page, a second after it
   // is first seen so that its axes have settled. The server writes a line
@@ -278,10 +300,10 @@
     var any = false;
     for (var b = 0; b < pad.buttons.length; b++) if (pressed(pad, b)) { any = true; break; }
     var ax = pad.axes[0] || 0, ay = pad.axes[1] || 0;
-    var rx = guessedLayout(pad) ? 0 : pad.axes[2] || 0;
-    var ry = guessedLayout(pad) ? 0 : pad.axes[3] || 0;
+    var rs = rightStick(pad), rx = rs.x, ry = rs.y;
     var lt = trigger(pad, "lt"), rt = trigger(pad, "rt");
     if (any || Math.abs(ax) > DEAD || Math.abs(ay) > DEAD) usingPad();
+    if (PAD.paused) { held = {}; menuSince = null; return; }
 
     edge("up", pressed(pad, 12) || ay < -DEAD, now, true, function () { move(0, -1); });
     edge("down", pressed(pad, 13) || ay > DEAD, now, true, function () { move(0, 1); });

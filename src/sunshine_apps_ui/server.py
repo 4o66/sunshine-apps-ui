@@ -32,7 +32,10 @@ from .render import (LOCK_NOTE, app_page, applied_page, artwork_page,
                      backups_page, confirm_page, connect_page, error_page,
                      exit_timeout_value, explain_page, grid_page, hidden_page, is_protected, page,
                      picker_page, render_browsable, render_fields, render_flags,
-                     report_page, scanning_page, settings_page, sgdb_artwork_page, SGDB_PER)
+                     report_page, scanning_page, settings_page, sgdb_artwork_page, SGDB_PER,
+                     controller_test_page, pad_result_words, share_page, shared_page,
+                     PAD_TEST_NAMES, PAD_TEST_ORDER)
+from . import logshare
 
 log = logging.getLogger("sunshine-apps-ui")
 
@@ -289,6 +292,21 @@ class PlanHandler(BaseHTTPRequestHandler):
         if parts.path == "/report":
             self._send(200, report_page(self.token, self.via_sunshine,
                                         _describe_platform()))
+            return
+
+        if parts.path == "/report/share":
+            remove = [k for k in query.get("remove", []) if k in logshare.OPTIONAL]
+            at = (query.get("at") or [""])[0]
+            self._send(200, share_page(self._examine_log(remove), remove,
+                                       at if at in logshare.OPTIONAL else ""))
+            return
+
+        if parts.path == "/report/controller":
+            self._send(200, controller_test_page(_PAD_LOGGED.get("name", "")))
+            return
+
+        if parts.path == "/padtest.js":
+            self._send_asset("padtest.js", "text/javascript; charset=utf-8")
             return
 
         if parts.path == "/scan/status":
@@ -902,6 +920,21 @@ class PlanHandler(BaseHTTPRequestHandler):
         body = self.rfile.read(length).decode("utf-8", "replace") if length else ""
         return parse_qs(body, keep_blank_values=True)
 
+    def _examine_log(self, remove):
+        """This session's log, with what is never sent taken out (#71)."""
+        text = _read_log()
+        secrets, user = [], ""
+        try:
+            from .core.sunshine_api import load_credentials
+            user, password = load_credentials(self.conf_dir)
+            secrets.append(password)
+        except Exception:                            # noqa: BLE001 - none stored is fine
+            pass
+        facts = logshare.machine_facts(client_name=self.client_name if self.via_sunshine else "",
+                                       sunshine_user=user, games=_app_names(self.conf_dir),
+                                       secrets=secrets)
+        return logshare.examine(text, facts, remove)
+
     def _auth_state(self):
         try:
             return check_auth(self.conf_dir)
@@ -947,13 +980,46 @@ class PlanHandler(BaseHTTPRequestHandler):
         if parts.path == "/log/pad":
             # pad.js says what the controller is, for a bug report. Written
             # only when it differs from the last, so once a session.
-            line = pad_line(self._form() or {})
+            fields = self._form() or {}
+            line = pad_line(fields)
+            if line:
+                _PAD_LOGGED["name"] = _one_line((fields.get("name") or [""])[0])
             if line and line != _PAD_LOGGED.get("last"):
                 _PAD_LOGGED["last"] = line
                 log.warning("%s", line)
             self.send_response(204)
             self.send_header("Content-Length", "0")
             self.end_headers()
+            return
+
+        if parts.path == "/report/share":
+            # Send: the same choices the page showed, applied to the log as
+            # it is now, which is at most a few lines longer.
+            fields = self._form() or {}
+            remove = [k for k in fields.get("remove", []) if k in logshare.OPTIONAL]
+            try:
+                address = logshare.send(self._examine_log(remove).text)
+            except logshare.SendError as e:
+                log.warning("sharing the log failed: %s", e)
+                self._send(200, error_page(f"{e} Nothing was sent.", title="The log was not sent",
+                                           retry="/report/share"))
+                return
+            log.warning("log shared at %s", address)
+            self._send(200, shared_page(address))
+            return
+
+        if parts.path == "/report/controller":
+            # The controller test's results: into the log, then the result page.
+            fields = self._form() or {}
+            results = {p: _one_line((fields.get(f"r_{p}") or ["missed"])[0], 20) for p in PAD_TEST_ORDER}
+            name = _one_line((fields.get("name") or [""])[0]) or _PAD_LOGGED.get("name", "")
+            good = sum(1 for r in results.values() if r == "ok")
+            log.warning("padtest: %s, %d of %d as expected", name or "no name", good, len(PAD_TEST_ORDER))
+            for p in PAD_TEST_ORDER:
+                if results[p] != "ok":
+                    log.warning("padtest: %s %s (%s)", PAD_TEST_NAMES[p],
+                                pad_result_words(p, results[p]), results[p])
+            self._send(200, controller_test_page(name, results))
             return
 
         if parts.path == "/config-dir":
@@ -1625,6 +1691,27 @@ def _count_apps(conf_dir: str) -> Optional[int]:
         return None
     apps = payload.get("apps") if isinstance(payload, dict) else payload
     return len(apps) if isinstance(apps, list) else None
+
+
+def _read_log() -> str:
+    """The server's log for this session: the file the launcher writes to."""
+    from .launcher import log_path
+    try:
+        with open(log_path(), "r", encoding="utf-8", errors="replace") as handle:
+            return handle.read()
+    except OSError:
+        return ""
+
+
+def _app_names(conf_dir: str) -> List[str]:
+    """The names in apps.json, which the share screen asks about (#71)."""
+    try:
+        with open(os.path.join(conf_dir, "apps.json"), "r", encoding="utf-8") as handle:
+            payload = json.load(handle)
+    except (OSError, ValueError):
+        return []
+    apps = payload.get("apps") if isinstance(payload, dict) else payload
+    return [str(a.get("name")) for a in apps or [] if isinstance(a, dict) and a.get("name")]
 
 
 def _describe_platform(environ: Optional[Dict[str, str]] = None,

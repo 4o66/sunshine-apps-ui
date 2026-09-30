@@ -115,10 +115,12 @@ class Facts:
     client_name: str = ""
     sunshine_user: str = ""
     games: Sequence[str] = ()
+    # Values that are secret wherever they appear: the Sunshine password.
+    secrets: Sequence[str] = ()
 
 
 def machine_facts(client_name: str = "", sunshine_user: str = "",
-                  games: Iterable[str] = ()) -> Facts:
+                  games: Iterable[str] = (), secrets: Iterable[str] = ()) -> Facts:
     import getpass
     import socket
     home = os.path.expanduser("~")
@@ -133,7 +135,7 @@ def machine_facts(client_name: str = "", sunshine_user: str = "",
     return Facts(home=home if home not in ("", "/", "~") else "", user=user or "",
                  hostname=hostname or "", client_name=client_name or "",
                  sunshine_user=sunshine_user or "",
-                 games=tuple(games))
+                 games=tuple(games), secrets=tuple(s for s in secrets if s and len(s) >= 4))
 
 
 class _Editor:
@@ -214,6 +216,8 @@ def examine(text: str, facts: Facts, remove: Iterable[str] = ()) -> Examined:
     ed.sub(TOKEN, lambda m, p: (F["token"].add(), (m.group(1), "[removed]"))[1])
     ed.sub(SECRET_FIELD, lambda m, p: (F["secrets"].add(), (m.group(1), "[removed]"))[1])
     ed.sub(HEX32, lambda m, p: (F["secrets"].add(), "[removed]")[1])
+    for secret in facts.secrets:
+        ed.literal(secret, "[removed]", F["secrets"])
     ed.literal(facts.sunshine_user, "[removed]", F["sunshine_user"], word=True,
                record=facts.sunshine_user)
 

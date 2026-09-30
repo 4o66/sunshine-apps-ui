@@ -20,7 +20,7 @@ sys.path.insert(0, os.path.join(ROOT, "src"))
 
 from unittest import mock  # noqa: E402
 
-from sunshine_apps_ui import security  # noqa: E402
+from sunshine_apps_ui import render, security  # noqa: E402
 from sunshine_apps_ui import server as server_module  # noqa: E402
 from sunshine_apps_ui.server import serve  # noqa: E402
 
@@ -499,6 +499,74 @@ class CredentialsEndpointTest(ServerTest):
             srv.log.warning("end")
         lines = [r.getMessage() for r in seen.records if r.getMessage().startswith("pad:")]
         self.assertEqual(lines, ["pad: Test Pad, 17 buttons, 4 axes, mapping standard, no layout rules"])
+
+    def test_share_shows_what_the_log_holds_and_sends_nothing(self):
+        log = ("20:00:00 WARNING http://127.0.0.1:1/?token=abc123\n"
+               "20:00:01 WARNING scan: steam: 2 found in /mnt/games/Lib\n")
+        with mock.patch.object(server_module, "_read_log", lambda: log), \
+                mock.patch("sunshine_apps_ui.logshare.send") as send:
+            status, body = self.get(f"/report/share?token={self.token}")
+        self.assertEqual(status, 200)
+        self.assertIn("The session token", body)
+        self.assertIn("?token=<i>[removed]</i>", body)
+        self.assertNotIn("abc123", body)
+        self.assertIn('name="remove" value="folders"', body)
+        send.assert_not_called()
+
+    def test_a_switch_removes_and_keeps_its_focus(self):
+        log = "20:00:01 WARNING scan: steam: 2 found in /mnt/games/Lib\n"
+        with mock.patch.object(server_module, "_read_log", lambda: log):
+            _, body = self.get(f"/report/share?token={self.token}&remove=folders&at=folders&remove=bogus")
+        self.assertIn("<i>[folder]</i>", body)
+        self.assertIn('value="folders" autofocus checked', body)
+        self.assertIn('<input type="hidden" name="remove" value="folders">', body)
+        self.assertNotIn("bogus", body)
+
+    def test_send_posts_the_sanitized_log_and_shows_its_link(self):
+        log = "20:00:00 WARNING http://127.0.0.1:1/?token=abc123 at /mnt/games/Lib\n"
+        with mock.patch.object(server_module, "_read_log", lambda: log), \
+                mock.patch("sunshine_apps_ui.logshare.send", return_value="https://dpaste.com/ABC") as send:
+            status, _ = self.post({"remove": "folders"}, token=self.token, path="/report/share")
+        self.assertEqual(status, 200)
+        sent = send.call_args[0][0]
+        self.assertNotIn("abc123", sent)
+        self.assertIn("[folder]", sent)
+
+    def test_a_failed_send_says_so_and_offers_to_try_again(self):
+        from sunshine_apps_ui import logshare
+        with mock.patch.object(server_module, "_read_log", lambda: "x\n"), \
+                mock.patch("sunshine_apps_ui.logshare.send", side_effect=logshare.SendError("dpaste.com could not be reached.")):
+            req = urllib.request.Request(f"http://127.0.0.1:{self.port}/report/share?token={self.token}",
+                                         data=b"", method="POST")
+            with urllib.request.urlopen(req, timeout=10) as r:
+                body = r.read().decode()
+        self.assertIn("The log was not sent", body)
+        self.assertIn("could not be reached. Nothing was sent.", body)
+        self.assertIn('href="/report/share"', body)
+
+    def test_controller_results_are_logged_and_shown(self):
+        fields = {f"r_{p}": "ok" for p in render.PAD_TEST_ORDER}
+        fields.update(r_rup="button:7", r_rdown="missed", name="Test Pad")
+        with self.assertLogs("sunshine-apps-ui", "WARNING") as seen:
+            req = urllib.request.Request(f"http://127.0.0.1:{self.port}/report/controller?token={self.token}",
+                                         data=urllib.parse.urlencode(fields).encode(), method="POST")
+            with urllib.request.urlopen(req, timeout=10) as r:
+                body = r.read().decode()
+        lines = [r.getMessage() for r in seen.records if r.getMessage().startswith("padtest:")]
+        self.assertEqual(lines, ["padtest: Test Pad, 22 of 24 as expected",
+                                 "padtest: Right stick up arrived as a button (7), not the stick (button:7)",
+                                 "padtest: Right stick down did not arrive at all (missed)"])
+        self.assertIn("22 of 24 as expected", body)
+        self.assertIn("<b>Right stick up</b> arrived as a button (7), not the stick.", body)
+
+    def test_the_controller_test_page_and_its_script(self):
+        status, body = self.get(f"/report/controller?token={self.token}")
+        self.assertEqual(status, 200)
+        self.assertIn("data-padtest", body)
+        self.assertIn('<script src="/padtest.js"></script>', body)
+        status, js = self.get(f"/padtest.js?token={self.token}")
+        self.assertEqual(status, 200)
+        self.assertIn("PAD.paused", js)
 
     def test_an_unknown_post_path_is_refused(self):
         status, _ = self.post({"a": "b"}, token=self.token, path="/anything")

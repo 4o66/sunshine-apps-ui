@@ -7,6 +7,7 @@ mapped to arrows and Enter.
 """
 
 import html
+import re
 from urllib.parse import quote
 from typing import Any, Dict, List, Optional
 
@@ -507,11 +508,11 @@ shown by sunshine-apps-ui {_e(__version__)}.</p>
 
 
 def error_page(message: str, detail: str = "", token: str = "",
-               title: str = "Something went wrong") -> str:
+               title: str = "Something went wrong", retry: str = "/") -> str:
     """Something that stopped a page, and the way back (#68)."""
     extra = f'\n<p class="muted small mono" style="max-width:48rem;overflow-wrap:anywhere">{_e(detail)}</p>' if detail else ""
     main = (f'<main class="center"><svg style="width:4rem;height:4rem;color:#ff6b78" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3 2 21h20z"/><path d="M12 10v5M12 18v.5"/></svg><h1>{_e(title)}</h1>\n<p>{_e(message)}</p>{extra}</main>')
-    bar = '<span class="grow"></span>\n<a class="btn" href="/"><span class="glyph a">A</span>Try again</a>'
+    bar = f'<span class="grow"></span>\n<a class="btn" href="{_e(retry)}"><span class="glyph a">A</span>Try again</a>'
     return frame.page(title, main, bar)
 
 
@@ -1215,7 +1216,7 @@ def _updates_pane(prefs: Dict[str, Any], answer: Any, current_version: str) -> s
 
 def report_page(token: str, via_sunshine: bool = False,
                 platform: str = "") -> str:
-    """Where to report a bug, in the two ways this is ever looked at.
+    """Where to report a bug, in the two ways this is ever looked at (#71).
 
     **On a television, through Moonlight, there is no way to get a URL out.**
     No keyboard, no address bar, nothing to copy into. So the address is a QR
@@ -1227,55 +1228,310 @@ def report_page(token: str, via_sunshine: bool = False,
     browser gets ``target="_blank"``. Either way the manager stays where it is.
 
     Both are always on the page: the detection only decides which comes first,
-    so being wrong about it costs nothing.
+    so being wrong about it costs nothing. Then Share the log, the controller
+    test, and what to mention, as the Report board draws them.
     """
     from . import qr
 
-    code = f'<div class="qr">{qr.svg(ISSUES_URL)}</div>'
-    address = f'<p class="why"><code>{_e(ISSUES_URL)}</code></p>'
-    link = (f'<div class="actions"><a class="btn" href="{_e(ISSUES_URL)}" '
-            f'target="_blank" rel="noopener noreferrer">'
-            f'Open the issues page</a></div>')
-
+    link = (f'<div><a class="btn sec" href="{_e(ISSUES_URL)}" target="_blank" '
+            f'rel="noopener noreferrer">Open the issues page</a></div>')
     if via_sunshine:
-        first = (f'<section class="ok"><h2>Scan this with your phone</h2>'
-                 f'<p class="why">Carry on wherever suits you. Scan this and '
-                 f'the issues page opens on your phone, which has a keyboard '
-                 f'and can paste a log -- neither of which a television has.'
-                 f'</p>{code}{address}</section>'
-                 f'<section><h2>Or, at the machine itself</h2>{link}</section>')
+        first = ('<h2>Scan this with your phone</h2>\n'
+                 '<p>Carry on wherever suits you. Scan this and the issues page opens on your phone, '
+                 'which has a keyboard and can paste a log &mdash; neither of which a television has.</p>\n'
+                 f'<h2 style="margin-top:.4rem">Or, at the machine itself</h2>\n{link}')
     else:
-        first = (f'<section class="ok"><h2>Report a bug</h2>'
-                 f'<p class="why">This opens the issues page in your usual '
-                 f'browser. The manager stays open behind it.</p>'
-                 f'{link}{address}</section>'
-                 f'<section><h2>Or scan it with your phone</h2>{code}</section>')
+        first = ('<h2>In your usual browser</h2>\n'
+                 '<p>This opens the issues page in your usual browser. The manager stays open behind it.</p>\n'
+                 f'{link}\n<h2 style="margin-top:.4rem">Or scan it with your phone</h2>\n'
+                 '<p>Scan the code and the issues page opens on your phone.</p>')
 
-    # What to put in the report. Asking someone at a television to go and find
-    # a version string is asking them not to bother.
-    opened = ("through Sunshine, on a stream" if via_sunshine
-              else "at the machine")
-    facts = (f'<section><h2>Worth mentioning in the report</h2><ul>'
-             f'<li><span class="name">Version</span>'
-             f'<span class="sel">{_e(_version_label())}</span></li>'
-             f'<li><span class="name">Running on</span>'
-             f'<span class="sel">{_e(platform or "unknown")}</span></li>'
-             f'<li><span class="name">Opened</span>'
-             f'<span class="sel">{opened}</span></li>'
-             f'</ul></section>')
-
-    return f"""<!doctype html>
-{_html()}<head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>{_title("Report a bug")}</title><style>{_CSS}{_QR_CSS}</style></head>
-<body>
-<div class="navbar"><span class="brand">Sunshine</span><span class="sep">/</span>
-<span class="where">App Manager</span>{_version_chip()}</div>
-<div class="wrap">
+    opened = "through Sunshine, on a stream" if via_sunshine else "at the machine"
+    main = f'''<main class="main">
+<div class="head"><h1>Report a bug</h1></div>
+<div style="display:flex;gap:2.4rem;align-items:flex-start">
+<div class="qr">{qr.svg(ISSUES_URL)}</div>
+<div style="display:flex;flex-direction:column;gap:1rem;max-width:46rem">
 {first}
-{facts}
-<div class="actions"><a class="btn sec" href="/">Back to the apps</a></div>
-</div></body></html>"""
+<h2 style="margin-top:.4rem">Share the log</h2>
+<p>The manager's log often says what went wrong. Share it and you get a link to paste into the report. You see exactly what is sent before anything leaves this machine. It covers this session only: the log starts again each time the manager opens.</p>
+<div><a class="btn sec" href="/report/share"><span class="glyph x">X</span>Share the log</a></div>
+<h2 style="margin-top:.4rem">A controller that misbehaves</h2>
+<p>Test it: you are asked for each button and stick in turn, and the log records what arrived. Then share the log.</p>
+<div><a class="btn sec" href="/report/controller"><span class="glyph y">Y</span>Test the controller</a></div>
+<h2 style="margin-top:.4rem">Worth mentioning in the report</h2>
+<dl class="facts">
+<dt>Version</dt><dd>{_e(_version_label())}</dd>
+<dt>Running on</dt><dd>{_e(platform or "unknown")}</dd>
+<dt>Opened</dt><dd>{opened}</dd>
+</dl>
+</div>
+</div>
+</main>'''
+    bar = ('<a class="btn sec" href="/" data-back autofocus><span class="glyph b">B</span>Back to the apps</a>\n'
+           '<span class="grow"></span>')
+    return frame.page("Report a bug", main, bar)
+
+
+def _times(n: int) -> str:
+    return "once" if n == 1 else "twice" if n == 2 else f"{n} times"
+
+
+def _codes(values) -> str:
+    return ", ".join(f"<code>{_e(v)}</code>" for v in values)
+
+
+def _share_rows(ex, remove) -> str:
+    """What this log contains, one row per kind found, as the Share board draws it."""
+    rows = []
+
+    def fixed(name, meta, tag="REMOVED"):
+        rows.append(f'<div class="item"><span class="grow"><span class="name">{name}</span>'
+                    f'<span class="meta">{meta}</span></span><span class="what gone">{tag}</span></div>')
+
+    def switch(kind, name, meta):
+        on = " checked" if kind in remove else ""
+        rows.append(f'<label class="item switch"><input type="checkbox" name="remove" value="{kind}"{on}>'
+                    f'<span class="grow"><span class="name">{name}</span><span class="meta">{meta}</span></span>'
+                    f'<span class="sw">Remove</span><span class="knob"></span></label>')
+
+    f = ex.found("token")
+    if f:
+        fixed("The session token", f"Opens this manager without asking. Found {_times(f.count)}.")
+    f = ex.found("home")
+    if f:
+        where = _codes(f.values[:1]) if f.values else "Your home folder"
+        fixed("Your home folder", f"{where} appears {_times(f.count)}. It is shown as ~.", "SHOWN AS ~")
+    f = ex.found("machine")
+    if f:
+        fixed("This machine's name", f"{_codes(f.values[:1])} appears {_times(f.count)}.")
+    f = ex.found("device")
+    if f:
+        fixed("This device's name", f"{_codes(f.values[:1])}, the device Moonlight streams to, "
+                                    f"appears {_times(f.count)}.")
+    f = ex.found("sunshine_user")
+    if f:
+        fixed("Your Sunshine user name", f"Appears {_times(f.count)}.")
+    f = ex.found("addresses")
+    if f:
+        network, pads = f.count - f.controller, f.controller
+        parts = []
+        if network:
+            parts.append(f"{network} network address" + ("" if network == 1 else "es"))
+        if pads:
+            parts.append(f"{pads} controller's Bluetooth address" if pads == 1
+                         else f"{pads} controllers' Bluetooth addresses")
+        fixed("Addresses", ", and ".join(parts) + ".")
+    f = ex.found("controllers")
+    if f:
+        switch("controllers", "Controller names", f"{_codes(f.values)}. Often what a controller bug is about.")
+    f = ex.found("games")
+    if f:
+        n = len(f.values)
+        switch("games", "Game names", f"The log names {n} game{'' if n == 1 else 's'} from your library.")
+    f = ex.found("folders")
+    if f:
+        switch("folders", "Folders outside your home", _codes(f.values))
+    return "\n".join(rows)
+
+
+def share_page(ex, remove=(), at: str = "") -> str:
+    """Share the log (#71): what the log holds, then the log as it will be sent.
+
+    The switches are a form that asks for this page again, so the log below
+    always shows what Send would send. Nothing leaves until Send, which posts
+    the same choices.
+    """
+    remove = set(remove)
+    secrets = ex.found("secrets")
+    said = (f"{secrets.count} {'was' if secrets.count == 1 else 'were'} found." if secrets
+            else "None was found.")
+    rows = _share_rows(ex, remove)
+    # Coming back from a switch: focus stays on it, not on Back.
+    back_focus = " autofocus"
+    if at and f'value="{at}"' in rows:
+        rows = rows.replace(f'value="{at}"', f'value="{at}" autofocus', 1)
+        back_focus = ""
+    contains = (f'<form class="list contains" method="get" action="/report/share" data-submit-on-change>\n'
+                f'{rows}\n</form>' if rows else '<p class="muted">Nothing in it needs taking out.</p>')
+    switch_note = " A switch that is on removes those from the log." if 'class="item switch"' in rows else ""
+    log_html = "".join(f"<i>{_e(text)}</i>" if replaced else _e(text) for text, replaced in ex.pieces)
+    if not ex.pieces:
+        log_html = "The log is empty."
+    hidden = "".join(f'<input type="hidden" name="remove" value="{_e(k)}">' for k in sorted(remove))
+    main = f'''<main class="main">
+<div class="head"><h1>Share the log</h1><span class="sub">Check what it holds, then send it.</span></div>
+<h2 style="margin:0 0 .8rem">What this log contains</h2>
+{contains}
+<p class="muted small" style="margin:.7rem 0 1.6rem">Anything that looks like a key or a password is always removed. {said}{switch_note}</p>
+<h2 style="margin:0 0 .8rem">The log as it will be sent</h2>
+<pre class="log">{log_html}</pre>
+<p class="muted" style="margin-top:1rem;max-width:56rem">It goes to <b>dpaste.com</b>, a public paste service: anyone with the link can read it, and it is deleted after 7 days. Once sent it cannot be taken back. Nothing is sent until you choose Send.</p>
+</main>'''
+    bar = (f'<a class="btn sec" href="/report" data-back{back_focus}><span class="glyph b">B</span>Back</a>\n'
+           '<span class="grow"></span>\n'
+           f'<form method="post" action="/report/share">{hidden}'
+           '<button class="btn" type="submit"><span class="glyph y">Y</span>Send</button></form>')
+    return frame.page("Share the log", main, bar).replace(
+        "</body>", '<script src="/app.js"></script>\n</body>', 1)
+
+
+def shared_page(address: str) -> str:
+    """The log is on dpaste.com: its link as a QR code, for the phone (#71)."""
+    from . import qr
+    main = f'''<main class="main">
+<div class="head"><h1>Log shared</h1></div>
+<div style="display:flex;gap:2.4rem;align-items:flex-start">
+<div class="qr">{qr.svg(address)}</div>
+<div style="display:flex;flex-direction:column;gap:1rem;max-width:46rem">
+<h2>Scan this with your phone</h2>
+<p>It opens the shared log. Copy its address into the bug report.</p>
+<p class="mono">{_e(address)}</p>
+<p class="muted small">Deleted after 7 days.</p>
+</div>
+</div>
+</main>'''
+    bar = ('<a class="btn sec" href="/report" data-back autofocus><span class="glyph b">B</span>Back to Report a bug</a>\n'
+           '<span class="grow"></span>')
+    return frame.page("Log shared", main, bar)
+
+
+# The controller test's inputs, in the order it asks for them, and their names.
+PAD_TEST_ORDER = ("a", "b", "x", "y", "lb", "rb", "lt", "rt", "view", "menu", "l3", "r3",
+                  "dup", "ddown", "dleft", "dright", "lup", "ldown", "lleft", "lright",
+                  "rup", "rdown", "rleft", "rright")
+PAD_TEST_NAMES = {
+    "a": "A", "b": "B", "x": "X", "y": "Y", "lb": "LB", "rb": "RB", "lt": "LT", "rt": "RT",
+    "view": "View", "menu": "Menu", "l3": "Left stick, pressed", "r3": "Right stick, pressed",
+    "dup": "D-pad up", "ddown": "D-pad down", "dleft": "D-pad left", "dright": "D-pad right",
+    "lup": "Left stick up", "ldown": "Left stick down", "lleft": "Left stick left",
+    "lright": "Left stick right", "rup": "Right stick up", "rdown": "Right stick down",
+    "rleft": "Right stick left", "rright": "Right stick right"}
+
+
+def pad_result_words(part: str, result: str) -> str:
+    """What happened to one input, as the result page and the log say it.
+
+    ``result`` is ok, missed, other:<part>, button:<n> or axis:<n><sign>, as
+    padtest.js posts it. Anything else is taken as missed.
+    """
+    kind, _, value = result.partition(":")
+    if kind == "ok":
+        return "as expected"
+    if kind == "other" and value in PAD_TEST_NAMES:
+        return f"arrived as {PAD_TEST_NAMES[value]}"
+    if kind in ("button", "axis") and re.fullmatch(r"\d{1,3}[+-]?", value):
+        what = ("the stick" if re.fullmatch(r"[lr](up|down|left|right)", part) else
+                "the d-pad" if part.startswith("d") else
+                "the trigger" if part in ("lt", "rt") else "")
+        noun = "a button" if kind == "button" else "an axis"
+        if what:
+            return f"arrived as {noun} ({value}), not {what}"
+        return f"arrived as {'a different button' if kind == 'button' else 'an axis'} ({value})"
+    return "did not arrive at all"
+
+
+def pad_map(states: Dict[str, str]) -> str:
+    """The controller drawn for the test, each part marked want, ok or bad."""
+    def c(k):
+        return "cp" + (f" {states[k]}" if k in states else "")
+
+    def wedges(cx, cy, p):
+        out = []
+        for k, (dx, dy) in (("up", (0, -1)), ("down", (0, 1)), ("left", (-1, 0)), ("right", (1, 0))):
+            tx, ty = cx + dx * 76, cy + dy * 76
+            bx, by = cx + dx * 60, cy + dy * 60
+            px, py = -dy * 15, dx * 15
+            out.append(f'<path class="{c(p + k)}" data-part="{p + k}" '
+                       f'd="M{tx} {ty} L{bx + px} {by + py} L{bx - px} {by - py} Z"/>')
+        return "".join(out)
+
+    def btn(k, x, y, t):
+        return (f'<g class="{c(k)}" data-part="{k}"><circle cx="{x}" cy="{y}" r="25"/>'
+                f'<text x="{x}" y="{y + 8}">{t}</text></g>')
+
+    def rect(k, x, y, w, h, r, t, ty=None):
+        return (f'<g class="{c(k)}" data-part="{k}"><rect x="{x}" y="{y}" width="{w}" height="{h}" rx="{r}"/>'
+                f'<text x="{x + w / 2:g}" y="{ty or y + h / 2 + 7:g}">{t}</text></g>')
+
+    def dpad(k, x, y, w, h):
+        return f'<rect class="{c(k)}" data-part="{k}" x="{x}" y="{y}" width="{w}" height="{h}" rx="5"/>'
+
+    return ('<svg class="padmap" viewBox="0 0 800 500" role="img" '
+            'aria-label="A controller, with the input asked for highlighted">\n'
+            '<path class="body" d="M200 100 C260 80 540 80 600 100 C690 125 740 200 770 330 C795 440 760 495 '
+            '700 488 C650 480 620 420 580 382 C540 412 260 412 220 382 C180 420 150 480 100 488 C40 495 5 440 '
+            '30 330 C60 200 110 125 200 100 Z"/>\n'
+            + rect("lt", 160, 4, 110, 40, 14, "LT") + rect("rt", 530, 4, 110, 40, 14, "RT") + "\n"
+            + rect("lb", 140, 52, 140, 34, 17, "LB") + rect("rb", 520, 52, 140, 34, 17, "RB") + "\n"
+            + rect("view", 346, 150, 44, 26, 13, "View", 202) + rect("menu", 410, 150, 44, 26, 13, "Menu", 202) + "\n"
+            + f'<g class="{c("l3")}" data-part="l3"><circle cx="220" cy="210" r="42"/><text x="220" y="218">L</text></g>'
+            + wedges(220, 210, "l") + "\n"
+            + f'<g class="{c("r3")}" data-part="r3"><circle cx="490" cy="300" r="42"/><text x="490" y="308">R</text></g>'
+            + wedges(490, 300, "r") + "\n"
+            + dpad("dup", 294, 248, 32, 36) + "\n" + dpad("ddown", 294, 316, 32, 36) + "\n"
+            + dpad("dleft", 258, 284, 36, 32) + "\n" + dpad("dright", 326, 284, 36, 32) + "\n"
+            + btn("y", 590, 158, "Y") + btn("x", 538, 210, "X") + btn("b", 642, 210, "B") + btn("a", 590, 262, "A")
+            + "\n</svg>")
+
+
+_PAD_LEGEND = ('<div class="legend"><span><i class="want"></i>Press this</span><span><i class="ok"></i>As expected</span>'
+               '<span><i class="bad"></i>Missed, or not what was expected</span></div>')
+
+
+def controller_test_page(pad_name: str = "", results: Optional[Dict[str, str]] = None) -> str:
+    """The controller test (phase 7): before it starts, or its result.
+
+    While it runs, padtest.js redraws the right-hand side and the diagram; the
+    page it starts from is the Start board, and what the results are posted to
+    renders the Done board.
+    """
+    sub = f'<span class="sub" data-pad-name>{_e(pad_name)}</span>'
+    if results is None:
+        main = f'''<main class="main" data-padtest>
+<div class="head"><h1>Test the controller</h1>{sub}</div>
+<div class="padtest">{pad_map({"a": "want"})}
+<div class="ask"><span class="n">24 buttons and directions, one at a time</span>
+<b>Press <span class="big">A</span> to start</b>
+<p class="muted">A is the first one tested. Each is shown in blue on the controller; press it within 8 seconds, or it is marked missed and the test moves on.</p>
+<p class="muted">While the test runs every button counts, so hold <b>A</b> for 2 seconds to start over, or hold <b>B</b> to stop.</p>
+{_PAD_LEGEND}</div></div>
+<form id="padtest-results" method="post" action="/report/controller" hidden><input type="hidden" name="name" value="{_e(pad_name)}"></form>
+</main>
+<script src="/padtest.js"></script>'''
+        bar = ('<a class="btn sec" href="/report" data-back data-when="start" autofocus><span class="glyph b">B</span>Back</a>\n'
+               '<a class="btn sec" href="/report" data-stop data-when="running" hidden><span class="glyph b wide">hold B</span>Stop</a>\n'
+               '<span class="grow"></span>\n'
+               '<button class="btn sec" type="button" data-start-over data-when="running" hidden>'
+               '<span class="glyph a wide">hold A</span>Start over</button>')
+        return frame.page("Test the controller", main, bar)
+
+    states = {p: ("ok" if results.get(p, "missed") == "ok" else "bad") for p in PAD_TEST_ORDER}
+    wrong = [p for p in PAD_TEST_ORDER if states[p] == "bad"]
+    good = len(PAD_TEST_ORDER) - len(wrong)
+    if wrong:
+        head = f"{len(wrong)} {'was' if len(wrong) == 1 else 'were'} not"
+        items = "".join(f"<li><b>{_e(PAD_TEST_NAMES[p])}</b> {_e(pad_result_words(p, results.get(p, 'missed')))}.</li>"
+                        for p in wrong)
+        detail = (f'<ul class="results">{items}</ul>\n<p class="muted">What each one sent is in the log, '
+                  'so sharing the log sends it with your report.</p>')
+    else:
+        head = "Every one arrived as expected"
+        detail = '<p class="muted">The result is in the log, so sharing the log sends it with your report.</p>'
+    legend = _PAD_LEGEND.replace('<span><i class="want"></i>Press this</span>', "")
+    main = f'''<main class="main">
+<div class="head"><h1>Controller test: done</h1>{sub}</div>
+<div class="padtest">{pad_map(states)}
+<div class="ask"><span class="n">{good} of {len(PAD_TEST_ORDER)} as expected</span>
+<b>{head}</b>
+{detail}
+{legend}</div></div>
+</main>'''
+    bar = ('<a class="btn sec" href="/report" data-back><span class="glyph b">B</span>Back</a>\n'
+           '<span class="grow"></span>\n'
+           '<a class="btn sec" href="/report/controller"><span class="glyph x">X</span>Test again</a>\n'
+           '<a class="btn" href="/report/share" autofocus><span class="glyph y">Y</span>Share the log</a>')
+    return frame.page("Controller test: done", main, bar)
 
 
 def scanning_page(token: str, status: Dict[str, Any]) -> str:
