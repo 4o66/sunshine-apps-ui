@@ -354,23 +354,30 @@ font-family:var(--mono);font-size:.85rem;line-height:1.55;white-space:pre-wrap;o
 .contains .item .name{white-space:normal}
 .contains .switch .sw{color:var(--text-muted);font-size:.85rem;font-weight:620}
 
-/* The controller test: what is asked for now, and every input's result. */
-.ask{display:flex;flex-direction:column;gap:.3rem;margin:0 0 1.4rem}
+/* The controller test: a controller drawn with the input asked for in blue,
+   those that arrived as expected green, missed or unexpected red. */
+.padtest{display:grid;grid-template-columns:minmax(0,3fr) minmax(0,2fr);gap:2.4rem;align-items:center}
+.padmap{width:100%;height:auto;max-height:calc(100vh - 16rem);display:block}
+.padmap .body{fill:var(--surface);stroke:var(--border-strong);stroke-width:3}
+.padmap .cp circle,.padmap .cp rect,.padmap path.cp,.padmap rect.cp{fill:var(--bg-subtle);stroke:var(--border-strong);stroke-width:2.5}
+.padmap text{stroke:none;font-weight:700;font-size:22px;text-anchor:middle;fill:var(--text)}
+.padmap .cp.ok circle,.padmap .cp.ok rect,.padmap .ok.cp{fill:var(--success);stroke:var(--success)}
+.padmap .cp.bad circle,.padmap .cp.bad rect,.padmap .bad.cp{fill:var(--danger);stroke:var(--danger)}
+.padmap .cp.want circle,.padmap .cp.want rect,.padmap .want.cp{fill:#0b5ed7;stroke:var(--focus);stroke-width:5}
+.padmap .ok text,.padmap .bad text,.padmap .want text{fill:#fff}
+.ask{display:flex;flex-direction:column;gap:.5rem}
+.ask p{margin:0}
 .ask .n{color:var(--text-muted);font-size:.9rem;font-weight:620}
 .ask > b{font-size:1.6rem;font-weight:700}
 .ask .big{display:inline-flex;align-items:center;justify-content:center;min-width:3.4rem;height:2.6rem;
-padding:0 .7rem;margin-left:.3rem;border-radius:.6rem;background:var(--primary);color:#fff;font-size:1.3rem}
-.chips{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:.6rem}
-.chip{display:flex;flex-direction:column;gap:.15rem;padding:.55rem .8rem;border-radius:var(--radius-md);
-background:var(--bg-subtle);border:1px solid var(--border);min-height:3.6rem}
-.chip b{font-weight:620;font-size:.95rem}
-.chip span{font-size:.8rem;color:var(--text-muted)}
-.chip.ok{background:var(--surface);border-color:var(--success)}
-.chip.ok span{color:var(--success)}
-.chip.bad{background:var(--surface);border:2px solid var(--warning)}
-.chip.bad span{color:var(--text)}
-.chip.now{background:var(--surface);box-shadow:0 0 0 .18rem var(--focus-halo),0 0 0 .45rem var(--focus)}
-.chip.now span{color:var(--text)}
+padding:0 .7rem;margin:0 .2rem;border-radius:.6rem;background:#0b5ed7;color:#fff;font-size:1.3rem}
+.timer{height:.8rem;border-radius:999px;background:var(--bg-subtle);border:1px solid var(--border);overflow:hidden;margin-top:.4rem}
+.timer span{display:block;height:100%;background:#0b5ed7;border-radius:999px}
+.results{margin:.2rem 0;padding-left:1.2rem;display:flex;flex-direction:column;gap:.3rem}
+.legend{display:flex;flex-wrap:wrap;gap:.5rem 1.2rem;margin-top:1rem;font-size:.85rem;color:var(--text-muted)}
+.legend span{display:inline-flex;align-items:center;gap:.45rem}
+.legend i{width:.95rem;height:.95rem;border-radius:50%;display:inline-block}
+.legend i.want{background:#0b5ed7;box-shadow:0 0 0 2px var(--focus)}.legend i.ok{background:var(--success)}.legend i.bad{background:var(--danger)}
 
 /* Searching by another name: a field with a mouse or keyboard, the X button
    (and the on-screen keyboard) with a controller. Approved 2026-09-28. */

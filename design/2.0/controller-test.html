@@ -11,38 +11,30 @@
 <span class="brand">Sunshine</span><span class="sep">/</span><span class="where">App Manager</span>
 <span class="ver">2.0.0</span>
 </header>
-<main class="main">
-<div class="head"><h1>Test the controller</h1><span class="sub">Sunshine (libvirtualhid) X-Box Series Controller</span></div>
-<div class="ask"><span class="n">8 of 24</span><b>Press <span class="big">RT</span></b><span class="muted">the right trigger. Nothing yet: it is skipped in 8 seconds if nothing arrives.</span></div>
-<div class="chips">
-<div class="chip ok"><b>A</b><span>As expected</span></div>
-<div class="chip ok"><b>B</b><span>As expected</span></div>
-<div class="chip ok"><b>X</b><span>As expected</span></div>
-<div class="chip ok"><b>Y</b><span>As expected</span></div>
-<div class="chip ok"><b>LB</b><span>As expected</span></div>
-<div class="chip ok"><b>RB</b><span>As expected</span></div>
-<div class="chip ok"><b>LT</b><span>As expected</span></div>
-<div class="chip now"><b>RT</b><span>Press it now</span></div>
-<div class="chip "><b>View</b><span></span></div>
-<div class="chip "><b>Menu</b><span></span></div>
-<div class="chip "><b>Left stick, pressed</b><span></span></div>
-<div class="chip "><b>Right stick, pressed</b><span></span></div>
-<div class="chip "><b>D-pad up</b><span></span></div>
-<div class="chip "><b>D-pad down</b><span></span></div>
-<div class="chip "><b>D-pad left</b><span></span></div>
-<div class="chip "><b>D-pad right</b><span></span></div>
-<div class="chip "><b>Left stick up</b><span></span></div>
-<div class="chip "><b>Left stick down</b><span></span></div>
-<div class="chip "><b>Left stick left</b><span></span></div>
-<div class="chip "><b>Left stick right</b><span></span></div>
-<div class="chip "><b>Right stick up</b><span></span></div>
-<div class="chip "><b>Right stick down</b><span></span></div>
-<div class="chip "><b>Right stick left</b><span></span></div>
-<div class="chip "><b>Right stick right</b><span></span></div>
-</div>
+<main class="main"><div class="head"><h1>Test the controller</h1><span class="sub">Sunshine (libvirtualhid) X-Box Series Controller</span></div>
+<div class="padtest"><svg class="padmap" viewBox="0 0 800 500" role="img" aria-label="A controller, with the input asked for highlighted">
+<path class="body" d="M200 100 C260 80 540 80 600 100 C690 125 740 200 770 330 C795 440 760 495 700 488 C650 480 620 420 580 382 C540 412 260 412 220 382 C180 420 150 480 100 488 C40 495 5 440 30 330 C60 200 110 125 200 100 Z"/>
+<g class="cp ok"><rect x="160" y="4" width="110" height="40" rx="14"/><text x="215.0" y="31">LT</text></g><g class="cp ok"><rect x="530" y="4" width="110" height="40" rx="14"/><text x="585.0" y="31">RT</text></g>
+<g class="cp ok"><rect x="140" y="52" width="140" height="34" rx="17"/><text x="210.0" y="76">LB</text></g><g class="cp ok"><rect x="520" y="52" width="140" height="34" rx="17"/><text x="590.0" y="76">RB</text></g>
+<g class="cp ok"><rect x="346" y="150" width="44" height="26" rx="13"/><text x="368.0" y="202">View</text></g><g class="cp ok"><rect x="410" y="150" width="44" height="26" rx="13"/><text x="432.0" y="202">Menu</text></g>
+<g class="cp ok"><circle cx="220" cy="210" r="42"/><text x="220" y="218">L</text></g><path class="cp ok" d="M220 134 L235 150 L205 150 Z"/><path class="cp ok" d="M220 286 L205 270 L235 270 Z"/><path class="cp ok" d="M144 210 L160 195 L160 225 Z"/><path class="cp ok" d="M296 210 L280 225 L280 195 Z"/>
+<g class="cp ok"><circle cx="490" cy="300" r="42"/><text x="490" y="308">R</text></g><path class="cp bad" d="M490 224 L505 240 L475 240 Z"/><path class="cp want" d="M490 376 L475 360 L505 360 Z"/><path class="cp" d="M414 300 L430 285 L430 315 Z"/><path class="cp" d="M566 300 L550 315 L550 285 Z"/>
+<rect class="cp ok" x="294" y="248" width="32" height="36" rx="5"/>
+<rect class="cp ok" x="294" y="316" width="32" height="36" rx="5"/>
+<rect class="cp ok" x="258" y="284" width="36" height="32" rx="5"/>
+<rect class="cp ok" x="326" y="284" width="36" height="32" rx="5"/>
+<g class="cp ok"><circle cx="590" cy="158" r="25"/><text x="590" y="166">Y</text></g><g class="cp ok"><circle cx="538" cy="210" r="25"/><text x="538" y="218">X</text></g><g class="cp ok"><circle cx="642" cy="210" r="25"/><text x="642" y="218">B</text></g><g class="cp ok"><circle cx="590" cy="262" r="25"/><text x="590" y="270">A</text></g>
+</svg>
+<div class="ask"><span class="n">22 of 24</span>
+<b>Push the right stick <span class="big">down</span></b>
+<div class="timer" role="progressbar" aria-valuemin="0" aria-valuemax="8" aria-valuenow="5" aria-label="Time left"><span style="width:62.5%"></span></div>
+<span class="muted small">5 seconds left, then it is marked missed.</span>
+<h2 style="margin:1.2rem 0 .4rem;font-size:1.05rem">Not as expected so far</h2>
+<p style="margin:0">Right stick up arrived as a button (7), not the stick.</p>
+<div class="legend"><span><i class="want"></i>Press this</span><span><i class="ok"></i>As expected</span><span><i class="bad"></i>Missed, or not what was expected</span></div></div></div>
 </main>
 <footer class="bar">
 <a class="btn sec" href="report.html"><span class="glyph b wide">hold B</span>Stop</a>
 <span class="grow"></span>
-<span class="muted small">Every button is being tested, so holding B for 2 seconds is how to stop.</span>
+<a class="btn sec" href="controller-test-start.html"><span class="glyph a wide">hold A</span>Start over</a>
 </footer>

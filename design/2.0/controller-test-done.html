@@ -13,38 +13,29 @@
 </header>
 <main class="main">
 <div class="head"><h1>Controller test: done</h1><span class="sub">Sunshine (libvirtualhid) X-Box Series Controller</span></div>
-<div class="notice warn"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3 2 21h20z"/><path d="M12 10v5M12 18v.5"/></svg><div class="text"><b>2 of 24 did not arrive as expected.</b><span>Right stick up arrived as a button, and right stick down did not arrive at all. What each one sent is in the log, so sharing the log sends it with your report.</span></div></div>
-<div class="chips">
-<div class="chip ok"><b>A</b><span>As expected</span></div>
-<div class="chip ok"><b>B</b><span>As expected</span></div>
-<div class="chip ok"><b>X</b><span>As expected</span></div>
-<div class="chip ok"><b>Y</b><span>As expected</span></div>
-<div class="chip ok"><b>LB</b><span>As expected</span></div>
-<div class="chip ok"><b>RB</b><span>As expected</span></div>
-<div class="chip ok"><b>LT</b><span>As expected</span></div>
-<div class="chip ok"><b>RT</b><span>As expected</span></div>
-<div class="chip ok"><b>View</b><span>As expected</span></div>
-<div class="chip ok"><b>Menu</b><span>As expected</span></div>
-<div class="chip ok"><b>Left stick, pressed</b><span>As expected</span></div>
-<div class="chip ok"><b>Right stick, pressed</b><span>As expected</span></div>
-<div class="chip ok"><b>D-pad up</b><span>As expected</span></div>
-<div class="chip ok"><b>D-pad down</b><span>As expected</span></div>
-<div class="chip ok"><b>D-pad left</b><span>As expected</span></div>
-<div class="chip ok"><b>D-pad right</b><span>As expected</span></div>
-<div class="chip ok"><b>Left stick up</b><span>As expected</span></div>
-<div class="chip ok"><b>Left stick down</b><span>As expected</span></div>
-<div class="chip ok"><b>Left stick left</b><span>As expected</span></div>
-<div class="chip ok"><b>Left stick right</b><span>As expected</span></div>
-<div class="chip bad"><b>Right stick up</b><span>Arrived as a button (7), not the stick</span></div>
-<div class="chip bad"><b>Right stick down</b><span>Nothing arrived</span></div>
-<div class="chip ok"><b>Right stick left</b><span>As expected</span></div>
-<div class="chip ok"><b>Right stick right</b><span>As expected</span></div>
-</div>
+<div class="padtest"><svg class="padmap" viewBox="0 0 800 500" role="img" aria-label="A controller, with the input asked for highlighted">
+<path class="body" d="M200 100 C260 80 540 80 600 100 C690 125 740 200 770 330 C795 440 760 495 700 488 C650 480 620 420 580 382 C540 412 260 412 220 382 C180 420 150 480 100 488 C40 495 5 440 30 330 C60 200 110 125 200 100 Z"/>
+<g class="cp ok"><rect x="160" y="4" width="110" height="40" rx="14"/><text x="215.0" y="31">LT</text></g><g class="cp ok"><rect x="530" y="4" width="110" height="40" rx="14"/><text x="585.0" y="31">RT</text></g>
+<g class="cp ok"><rect x="140" y="52" width="140" height="34" rx="17"/><text x="210.0" y="76">LB</text></g><g class="cp ok"><rect x="520" y="52" width="140" height="34" rx="17"/><text x="590.0" y="76">RB</text></g>
+<g class="cp ok"><rect x="346" y="150" width="44" height="26" rx="13"/><text x="368.0" y="202">View</text></g><g class="cp ok"><rect x="410" y="150" width="44" height="26" rx="13"/><text x="432.0" y="202">Menu</text></g>
+<g class="cp ok"><circle cx="220" cy="210" r="42"/><text x="220" y="218">L</text></g><path class="cp ok" d="M220 134 L235 150 L205 150 Z"/><path class="cp ok" d="M220 286 L205 270 L235 270 Z"/><path class="cp ok" d="M144 210 L160 195 L160 225 Z"/><path class="cp ok" d="M296 210 L280 225 L280 195 Z"/>
+<g class="cp ok"><circle cx="490" cy="300" r="42"/><text x="490" y="308">R</text></g><path class="cp bad" d="M490 224 L505 240 L475 240 Z"/><path class="cp bad" d="M490 376 L475 360 L505 360 Z"/><path class="cp ok" d="M414 300 L430 285 L430 315 Z"/><path class="cp ok" d="M566 300 L550 315 L550 285 Z"/>
+<rect class="cp ok" x="294" y="248" width="32" height="36" rx="5"/>
+<rect class="cp ok" x="294" y="316" width="32" height="36" rx="5"/>
+<rect class="cp ok" x="258" y="284" width="36" height="32" rx="5"/>
+<rect class="cp ok" x="326" y="284" width="36" height="32" rx="5"/>
+<g class="cp ok"><circle cx="590" cy="158" r="25"/><text x="590" y="166">Y</text></g><g class="cp ok"><circle cx="538" cy="210" r="25"/><text x="538" y="218">X</text></g><g class="cp ok"><circle cx="642" cy="210" r="25"/><text x="642" y="218">B</text></g><g class="cp ok"><circle cx="590" cy="262" r="25"/><text x="590" y="270">A</text></g>
+</svg>
+<div class="ask"><span class="n">22 of 24 as expected</span>
+<b>2 were not</b>
+<ul class="results"><li><b>Right stick up</b> arrived as a button (7), not the stick.</li><li><b>Right stick down</b> did not arrive at all.</li></ul>
+<p class="muted">What each one sent is in the log, so sharing the log sends it with your report.</p>
+<div class="legend"><span><i class="ok"></i>As expected</span><span><i class="bad"></i>Missed, or not what was expected</span></div></div></div>
 </main>
 <footer class="bar">
 <a class="btn sec" href="report.html" data-back><span class="glyph b">B</span>Back</a>
 <span class="grow"></span>
-<a class="btn sec" href="controller-test.html"><span class="glyph x">X</span>Test again</a>
+<a class="btn sec" href="controller-test-start.html"><span class="glyph x">X</span>Test again</a>
 <a class="btn" href="report-share.html" autofocus><span class="glyph y">Y</span>Share the log</a>
 <a class="btn sec icon gear" href="settings.html" aria-label="Settings"><span class="glyph wide">☰</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></a>
 </footer>
