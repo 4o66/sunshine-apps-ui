@@ -1949,7 +1949,7 @@ class RestoreCopyTest(ServerTest):
     def test_the_picker_lists_the_copies_by_when_they_were_taken(self):
         _, body = self.get(f"/backups?token={self.token}")
         self.assertIn("15 Sep 2026 at 10:15:00", body)
-        self.assertIn("9 applications", body)
+        self.assertIn(">9 apps<", body)
 
     def test_a_copy_that_cannot_be_read_is_shown_but_not_offered(self):
         """Hiding it would be worse: you would wonder where it went."""
@@ -2565,7 +2565,7 @@ class ClosingTest(ServerTest):
 
     def test_it_says_the_window_is_going(self):
         from sunshine_apps_ui.render import closing_page
-        self.assertIn("Closed", closing_page())
+        self.assertIn("<h1>Closing</h1>", closing_page())
         self.assertIn("close it", closing_page())
 
     def test_staged_changes_are_asked_about_first(self):

@@ -40,21 +40,21 @@ class ConfirmationWordingTest(unittest.TestCase):
     """What the Apply page says each queued change will do."""
 
     def test_a_restore_says_when_the_copy_is_from(self):
-        html = render._queued_list([{"op": "rollback",
+        html = render._queued_rows([{"op": "rollback",
                                      "backup": "apps-20260927-005946.json",
-                                     "name": "the copy from apps-20260927-005946.json"}])
+                                     "name": "the copy from apps-20260927-005946.json"}], [])
         self.assertIn("Restore the copy from 27 Sep 2026 at 00:59:46", html)
         self.assertNotIn("rollback", html)
         self.assertNotIn(".json", html)
 
     def test_a_rename_says_the_new_name(self):
-        html = render._queued_list([{"op": "edit", "name": "Team Fortress 2",
-                                     "fields": {"name": "TF2 test", "cmd": "x"}}])
+        html = render._queued_rows([{"op": "edit", "name": "Team Fortress 2",
+                                     "fields": {"name": "TF2 test", "cmd": "x"}}], [])
         self.assertIn("Rename Team Fortress 2 to TF2 test", html)
 
     def test_an_edit_that_keeps_the_name_is_still_an_edit(self):
-        html = render._queued_list([{"op": "edit", "name": "Portal 2",
-                                     "fields": {"name": "Portal 2", "cmd": "y"}}])
+        html = render._queued_rows([{"op": "edit", "name": "Portal 2",
+                                     "fields": {"name": "Portal 2", "cmd": "y"}}], [])
         self.assertIn("Edit Portal 2", html)
 
 
@@ -87,3 +87,41 @@ class TileCaptionTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class FlowScreensTest(unittest.TestCase):
+    """2.0's flow screens (#67, #68, #70)."""
+
+    def test_confirm_shows_each_change_with_its_picture_and_flag(self):
+        apps = [{"name": "Satisfactory", "image-path": "/img/s.png"}]
+        html = render.confirm_page({}, "t", True, pending=[
+            {"op": "edit", "index": 0, "name": "Satisfactory", "fields": {"name": "Satisfactory"}},
+            {"op": "adopt", "name": "NIMRODS", "entry": {"image-path": "/img/n.png"}},
+        ], apps=apps)
+        self.assertIn("This will disconnect you.", html)
+        self.assertIn('/art?p=%2Fimg%2Fs.png', html)
+        self.assertIn('<span class="name">Edit Satisfactory</span></span><span class="what">EDITED</span>', html)
+        self.assertIn('<span class="name">Add NIMRODS</span></span><span class="what">NEW</span>', html)
+        self.assertIn("Write and reload", html)
+
+    def test_nothing_to_apply_offers_no_reload(self):
+        html = render.confirm_page({}, "t", True, pending=[])
+        self.assertNotIn("Write and reload", html)
+        self.assertIn("Nothing would change.", html)
+
+    def test_applied_while_streamed_has_nothing_to_press(self):
+        streamed = render.applied_page("t", True)
+        self.assertNotIn('<footer class="bar">', streamed)
+        self.assertIn('<a class="btn sec" href="/" data-back>', render.applied_page("t", False))
+
+    def test_the_password_can_be_shown_from_the_field_and_the_bar(self):
+        html = render.connect_page("t", username="sunshine")
+        self.assertEqual(html.count('data-show-password="p"'), 2)
+        self.assertIn('value="sunshine"', html)
+        self.assertIn('<script src="/app.js"></script>', html)
+
+    def test_a_failed_scan_says_why_and_offers_the_way_back(self):
+        html = render.scanning_page("t", {"error": "Steam could not be read", "latest": "", "elapsed": 1})
+        self.assertIn("<h1>The scan stopped</h1>", html)
+        self.assertIn("Steam could not be read", html)
+        self.assertIn("Back to the apps", html)

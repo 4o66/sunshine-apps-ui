@@ -669,8 +669,12 @@ class PlanHandler(BaseHTTPRequestHandler):
             # No scan here. Applying applies the queue, so the confirmation
             # shows the queue; running a library scan to decorate it promised
             # changes that would not happen and took seconds to say so.
+            try:
+                apps = get_state(self.conf_dir, use_cache=True).get("apps") or []
+            except EngineError:
+                apps = []
             self._send(200, confirm_page({}, self.token, self.via_sunshine,
-                                         pending=state.queue()))
+                                         pending=state.queue(), apps=apps))
             return
 
         if parts.path != "/plan":

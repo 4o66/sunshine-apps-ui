@@ -73,6 +73,22 @@
   sync();
   }
 
+  // Show password (#70): the eye in the field and X in the bar both turn the
+  // password field between hidden and shown.
+  Array.prototype.forEach.call(document.querySelectorAll("[data-show-password]"), function (b) {
+    b.addEventListener("click", function () {
+      var field = document.getElementById(b.getAttribute("data-show-password"));
+      if (!field) return;
+      var show = field.type === "password";
+      field.type = show ? "text" : "password";
+      Array.prototype.forEach.call(document.querySelectorAll("[data-show-password]"), function (other) {
+        other.setAttribute("aria-pressed", show ? "true" : "false");
+        var label = other.querySelector("[data-show-label]");
+        if (label) label.textContent = show ? "Hide password" : "Show password";
+      });
+    });
+  });
+
   // The Keyboard button: A on a text field opens the keyboard, and this says
   // so in the bar. The stylesheet shows it only while a controller is in use.
   var kb = document.querySelector(".btn.kb");

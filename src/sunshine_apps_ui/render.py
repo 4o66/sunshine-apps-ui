@@ -300,186 +300,141 @@ _QUEUED_WORDING = {
 }
 
 
-def _queued_list(pending: List[Dict[str, Any]]) -> str:
-    if not pending:
-        return ""
-    items = []
+# What a queued change is called on the confirm page, as a flag beside it:
+# the grid's own words, so a change reads the same in both places.
+_CONFIRM_FLAGS = {"edit": "EDITED", "add": "NEW", "hide": "WILL HIDE", "delete": "WILL DELETE",
+                  "suppress": "WILL HIDE", "restore": "WILL UN-HIDE", "clone": "COPY", "rollback": "RESTORE"}
+
+
+def _queued_words(op: Dict[str, Any]) -> tuple:
+    """(what the change does in words, its flag)."""
+    kind = str(op.get("op"))
+    if kind == "adopt":
+        # What a scan found, in words. A takeover says what it replaces. #42.
+        name = op.get("name") or "(unnamed)"
+        if op.get("replaces"):
+            return f"Replace {op['replaces']} with {name}", "UPDATED"
+        return (f"Update {name}", "UPDATED") if op.get("fields") else (f"Add {name}", "NEW")
+    if kind == "rollback":
+        return f"Restore the copy from {_when(str(op.get('backup') or ''))}", "RESTORE"
+    verb = _QUEUED_WORDING.get(kind, kind)
+    fields = op.get("fields") if isinstance(op.get("fields"), dict) else {}
+    name = op.get("name") or fields.get("name") or "(unnamed)"
+    renamed = fields.get("name") if kind == "edit" else None
+    if renamed and renamed != name:
+        return f"Rename {name} to {renamed}", "EDITED"
+    return f"{verb} {name}", _CONFIRM_FLAGS.get(kind, "")
+
+
+def _queued_rows(pending: List[Dict[str, Any]], apps: List[Dict[str, Any]]) -> str:
+    """The queue as rows, each with its tile's picture and what changes (#67)."""
+    rows = []
     for op in pending:
-        if op.get("op") == "adopt":
-            # What a scan found, in words: it was printing "adopt", the
-            # queue's own name for it. A takeover says what it replaces, or
-            # nothing on this page mentions Sunshine's tile going. #42.
-            name = op.get("name") or "(unnamed)"
-            if op.get("replaces"):
-                text = f"Replace {op['replaces']} with {name}"
-            else:
-                text = f"{'Update' if op.get('fields') else 'Add'} {name}"
-            items.append(f'<li><span class="name">{_e(text)}</span></li>')
-            continue
-        if op.get("op") == "rollback":
-            # It said "rollback the copy from apps-20260927-005946.json": the
-            # queue's word and a file name, where the page that chose it had
-            # said "27 Sep 2026 at 00:59:46".
-            text = f"Restore the copy from {_when(str(op.get('backup') or ''))}"
-            items.append(f'<li><span class="name">{_e(text)}</span></li>')
-            continue
-        verb = _QUEUED_WORDING.get(str(op.get("op")), str(op.get("op")))
-        name = op.get("name") or (op.get("fields") or {}).get("name") or "(unnamed)"
-        renamed = (op.get("fields") or {}).get("name") if op.get("op") == "edit" else None
-        if renamed and renamed != name:
-            # "Edit Team Fortress 2" did not say it would be called something
-            # else afterwards, which is the one change you would look for.
-            items.append(f'<li><span class="name">'
-                         f'{_e(f"Rename {name} to {renamed}")}</span></li>')
-            continue
-        items.append(f'<li><span class="name">{_e(verb)} {_e(name)}</span></li>')
-    return (f'<h3 class="ch">Your changes <span class="n">{len(pending)}</span></h3>'
-            f'<ul>{"".join(items)}</ul>')
+        text, flag = _queued_words(op)
+        # A scan's change carries "fields" as the names of what changed, a
+        # change made here as the values; only the latter can hold a picture.
+        fields = op.get("fields") if isinstance(op.get("fields"), dict) else {}
+        picture = fields.get("image-path") or (op.get("entry") or {}).get("image-path") or ""
+        if not picture:
+            index = op.get("index")
+            match = (apps[index] if isinstance(index, int) and 0 <= index < len(apps) else None) or next(
+                (a for a in apps if a.get("name") == op.get("name")), None)
+            picture = (match or {}).get("image-path") or ""
+        thumb = (f'<img class="thumb" src="/art?p={_eq(picture)}" alt="">' if picture
+                 else '<span class="thumb" style="background:var(--bg-muted)"></span>')
+        rows.append(f'<div class="item">{thumb}<span class="grow"><span class="name">{_e(text)}</span></span>'
+                    + (f'<span class="what">{_e(flag)}</span>' if flag else "") + '</div>')
+    return '<div class="list">\n' + "\n".join(rows) + '\n</div>'
 
 
 def confirm_page(doc: Dict[str, Any], token: str, via_sunshine: bool = False,
-                 pending: Optional[List[Dict[str, Any]]] = None) -> str:
-    """The step between wanting to apply and applying.
+                 pending: Optional[List[Dict[str, Any]]] = None,
+                 apps: Optional[List[Dict[str, Any]]] = None) -> str:
+    """The step between wanting to apply and applying (#67).
 
     It lists the queue and nothing else, because the queue is exactly what
-    applying does. It used to run a scan and show what that found as well,
-    which was wrong twice over: it promised changes Apply does not make -- a
-    game deleted earlier reappears in a scan and was listed as "will be added",
-    then was not added -- and it ran a library scan nobody asked for, on the
-    page whose whole job is to ask first.
-
-    Applying reloads Sunshine, which ends any stream in progress. That is not a
-    malfunction -- it is how the new list reaches Moonlight -- but it should be
-    stated before it happens rather than discovered.
+    applying does. Applying reloads Sunshine, which ends any stream in
+    progress; that is said before it happens rather than discovered.
     """
     pending = pending or []
     changing = len(pending)
-
     if via_sunshine:
-        warning = ("<p><b>This will disconnect you.</b> Sunshine has to reload its app "
-                   "list, which ends the stream you are watching this through. You will "
-                   "return to Moonlight, where the new games should appear in the next "
-                   "30 seconds.</p>")
+        warning = notice2("warn", "This will disconnect you.",
+                          "Sunshine has to reload its app list, which ends the stream you are watching this "
+                          "through. You will return to Moonlight, where the new games should appear in the next "
+                          "30 seconds.")
     else:
-        warning = ("<p>Sunshine will reload its app list. Any stream in progress will "
-                   "disconnect and return to Moonlight, where the new games should "
-                   "appear in the next 30 seconds.</p>")
-
+        warning = notice2("warn", "", "Sunshine will reload its app list. Any stream in progress will disconnect "
+                          "and return to Moonlight, where the new games should appear in the next 30 seconds.")
     if changing:
-        warn_block = f'<section class="warn">{warning}</section>'
-        action_block = (f'<form method="post" action="/apply">'
-                        f'<div class="actions">'
-                        f'<button class="btn" type="submit">Write and reload</button>'
-                        f'<a class="btn sec" href="/">Cancel</a>'
-                        f'</div></form>')
+        body = (f'{warning}\n<h2 style="margin:0 0 .8rem">Your changes <span class="muted" style="font-weight:500">'
+                f'{changing}</span></h2>\n' + _queued_rows(pending, apps or []))
+        bar = ['<a class="btn sec" href="/" data-back><span class="glyph b">B</span>Cancel</a>',
+               '<span class="grow"></span>',
+               '<form method="post" action="/apply"><button class="btn" type="submit"><span class="glyph y">Y</span>'
+               'Write and reload</button></form>']
     else:
         # Applying would reload Sunshine, and reloading disconnects. Not worth
         # doing for no change, so do not offer it.
-        warn_block = ""
-        action_block = (f'<div class="actions">'
-                        f'<a class="btn" href="/" data-back>Back</a></div>')
-
-    return f"""<!doctype html>
-{_html()}<head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>{_title('Apply changes')}</title><style>{_CSS}</style></head>
-<body>
-<div class="navbar"><span class="brand">Sunshine</span><span class="sep">/</span>
-<span class="where">App Manager</span>{_version_chip()}</div>
-<div class="wrap">
-<h1>Apply {changing} change{'' if changing == 1 else 's'}?</h1>
-<section>{_queued_list(pending)
-  or '<p class="why">Nothing would change.</p>'}</section>
-{warn_block}
-{action_block}
-</div></body></html>"""
+        body = '<p>Nothing would change.</p>'
+        bar = ['<a class="btn sec" href="/" data-back><span class="glyph b">B</span>Back</a>',
+               '<span class="grow"></span>']
+    main = (f'<main class="main">\n<div class="head"><h1>Apply {changing} change{"" if changing == 1 else "s"}?'
+            f'</h1></div>\n{body}\n</main>')
+    return frame.page("Apply changes", main, "\n".join(bar))
 
 
 def closing_page(via_sunshine: bool = False) -> str:
-    """The last page, shown while the server is on its way down.
+    """The last page, shown while the server is on its way down (#68).
 
     There is a page at all because the window takes a moment to go, and a
     frame of "this site cannot be reached" as the server stops looks like a
     crash rather than like leaving.
     """
-    # Which kind of window this is showing in is not something the server
-    # knows: it starts before the launcher has decided, and a browser may have
-    # been the fallback. So say what is true of both rather than guess.
     if via_sunshine:
-        detail = ("Sunshine will end this stream and you will be back in "
-                  "Moonlight in a moment.")
+        detail = "Sunshine will end this stream and you will be back in Moonlight in a moment."
     else:
-        detail = ("Its own window closes itself. A browser tab stays until you "
-                  "close it -- we cannot close a window we did not open.")
-    return f"""<!doctype html>
-{_html()}<head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>{_title('Closing')}</title><style>{_CSS}</style></head>
-<body>
-<div class="navbar"><span class="brand">Sunshine</span><span class="sep">/</span>
-<span class="where">App Manager</span>{_version_chip()}</div>
-<div class="wrap">
-<section class="ok"><h2>Closed</h2><p class="why">{_e(detail)}</p></section>
-</div></body></html>"""
+        detail = ("Its own window closes itself. A browser tab stays until you close it -- we cannot close a "
+                  "window we did not open.")
+    return frame.page("Closing", f'<main class="center"><h1>Closing</h1>\n<p>{_e(detail)}</p></main>', None)
 
 
 def leaving_with_changes_page(token: str, queued: int) -> str:
-    """Asked before closing while something is staged, and only then.
+    """Asked before closing while something is staged, and only then (#68).
 
     The queue is a file and outlives the program, so nothing is lost by
-    leaving -- but "I pressed close and my changes vanished" is what somebody
-    would reasonably assume, so say what actually happens instead.
+    leaving -- say what actually happens instead of letting it be assumed.
     """
-    return f"""<!doctype html>
-{_html()}<head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>{_title('Close?')}</title><style>{_CSS}</style></head>
-<body>
-<div class="navbar"><span class="brand">Sunshine</span><span class="sep">/</span>
-<span class="where">App Manager</span>{_version_chip()}</div>
-<div class="wrap">
-<h1>Close without applying?</h1>
-<p class="sub">{queued} change{'' if queued == 1 else 's'} {'is' if queued == 1
-else 'are'} staged and {'has' if queued == 1 else 'have'} not been written to
-Sunshine.</p>
-<section><p class="why">Nothing is lost by closing: what you have staged is
-still here the next time you open the manager. Applying is what writes it to
-Sunshine.</p></section>
-<div class="actions">
-<a class="btn" href="/">Back to the apps</a>
-<form method="post" action="/quit" class="inline">
-<input type="hidden" name="anyway" value="1">
-<button class="btn sec" type="submit">Close anyway</button></form>
-</div>
-</div></body></html>"""
+    main = (f'<main class="center"><svg style="width:4rem;height:4rem;color:var(--warning)" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3 2 21h20z"/><path d="M12 10v5M12 18v.5"/></svg><h1>Close without applying?</h1>\n'
+            f'<p>{queued} change{"" if queued == 1 else "s"} {"is" if queued == 1 else "are"} staged and '
+            f'{"has" if queued == 1 else "have"} not been written to Sunshine.</p>\n'
+            f'<p>Nothing is lost by closing: what you have staged is still here the next time you open the manager. '
+            f'Applying is what writes it to Sunshine.</p></main>')
+    bar = ['<a class="btn sec" href="/" data-back><span class="glyph b">B</span>Back to the apps</a>',
+           '<span class="grow"></span>',
+           '<form method="post" action="/quit"><input type="hidden" name="anyway" value="1">'
+           '<button class="btn sec" type="submit">Close anyway</button></form>']
+    return frame.page("Close?", main, "\n".join(bar))
 
 
 def applied_page(token: str, via_sunshine: bool = False) -> str:
-    """Shown straight after a successful apply.
+    """Shown straight after a successful apply (#67).
 
     Deliberately static. Redirecting to the plan would re-run the importer, and
     a reload ends the stream, so Sunshine terminates our process group while
-    that subprocess is running -- which surfaced as "could not read a plan"
-    exactly when the apply had in fact succeeded.
+    that subprocess is running. Streamed, there is nothing to press: the stream
+    is ending. At the machine the window stays, so it offers the way back.
     """
     if via_sunshine:
-        detail = ("This stream is ending so Sunshine can reload. You will return to "
-                  "Moonlight, where the new games should appear in the next 30 seconds.")
+        detail = ("This stream is ending so Sunshine can reload. You will return to Moonlight, where the new games "
+                  "should appear in the next 30 seconds.")
+        bar = None
     else:
-        detail = ("Sunshine reloaded its app list. Any stream in progress has "
-                  "disconnected and will show the new games within 30 seconds.")
-    return f"""<!doctype html>
-{_html()}<head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>{_title('Applied')}</title><style>{_CSS}</style></head>
-<body>
-<div class="navbar"><span class="brand">Sunshine</span><span class="sep">/</span>
-<span class="where">App Manager</span>{_version_chip()}</div>
-<div class="wrap">
-<h1>Applied</h1>
-<section class="ok"><p class="why">apps.json was written. {_e(detail)}</p></section>
-<div class="actions"><a class="btn sec" href="/">Back to the apps</a></div>
-</div></body></html>"""
+        detail = ("Sunshine reloaded its app list. Any stream in progress has disconnected and will show the new "
+                  "games within 30 seconds.")
+        bar = '<span class="grow"></span>\n<a class="btn sec" href="/" data-back><span class="glyph b">B</span>Back to the apps</a>'
+    main = (f'<main class="center"><svg style="width:4rem;height:4rem;color:var(--success)" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="10"/><path d="m7 12.5 3.2 3.2L17 9"/></svg><h1>Applied</h1>\n<p>apps.json was written. {_e(detail)}</p></main>')
+    return frame.page("Applied", main, bar)
 
 
 def page(doc: Dict[str, Any], log: str = "", token: str = "",
@@ -553,19 +508,11 @@ shown by sunshine-apps-ui {_e(__version__)}.</p>
 
 def error_page(message: str, detail: str = "", token: str = "",
                title: str = "Something went wrong") -> str:
-    extra = f"<pre>{_e(detail)}</pre>" if detail else ""
-    return f"""<!doctype html>
-{_html()}<head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>{_title()}</title><style>{_CSS}</style></head>
-<body>
-<div class="navbar"><span class="brand">Sunshine</span><span class="sep">/</span>
-<span class="where">App Manager</span>{_version_chip()}</div>
-<div class="wrap">
-<section class="err"><h2>{_e(title)}</h2>
-<p class="why">{_e(message)}</p>{extra}</section>
-<div class="actions"><a class="btn sec" href="/">Try again</a></div>
-</div></body></html>"""
+    """Something that stopped a page, and the way back (#68)."""
+    extra = f'\n<p class="muted small mono" style="max-width:48rem;overflow-wrap:anywhere">{_e(detail)}</p>' if detail else ""
+    main = (f'<main class="center"><svg style="width:4rem;height:4rem;color:#ff6b78" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3 2 21h20z"/><path d="M12 10v5M12 18v.5"/></svg><h1>{_e(title)}</h1>\n<p>{_e(message)}</p>{extra}</main>')
+    bar = '<span class="grow"></span>\n<a class="btn" href="/"><span class="glyph a">A</span>Try again</a>'
+    return frame.page(title, main, bar)
 
 
 # Field names as they read on screen. "image-path" is what apps.json calls it;
@@ -614,47 +561,28 @@ border:1px solid var(--border);border-radius:var(--radius-md);padding:.7rem .9re
 
 def backups_page(copies: List[Dict[str, Any]], token: str,
                  error: str = "") -> str:
-    """Pick a kept copy of apps.json to go back to."""
+    """Pick a kept copy of apps.json to go back to (#69)."""
     rows = []
     for copy in copies:
         when = _when(str(copy.get("name", "")))
         if not copy.get("readable"):
-            rows.append(f'<div class="copy broken"><span class="when">{_e(when)}</span>'
-                        f'<span class="what">This copy cannot be read, so it cannot '
-                        f'be restored.</span></div>')
+            rows.append(f'<div class="item"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg><span class="grow"><span class="name">{_e(when)}</span>'
+                        f'<span class="meta">This copy cannot be read, so it cannot be restored.</span></span></div>')
             continue
         count = copy.get("apps", 0)
-        rows.append(
-            f'<div class="copy"><span class="when">{_e(when)}</span>'
-            f'<span class="what">{count} application{"" if count == 1 else "s"}</span>'
-            f'<a class="btn sec" href="/backups?restore={_eq(str(copy.get("name")))}'
-            f'">See what this would change</a></div>')
-
-    body = ("".join(rows) if rows else
-            '<p class="why">No copies yet. One is taken automatically before '
-            'anything is written to apps.json.</p>')
-    problem = (f'<section class="err"><p class="why">{_e(error)}</p></section>'
-               if error else "")
-
-    return f"""<!doctype html>
-{_html()}<head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>{_title('Restore a copy')}</title>
-<style>{_CSS}{_BACKUPS_CSS}</style></head>
-<body>
-<div class="navbar"><span class="brand">Sunshine</span><span class="sep">/</span>
-<span class="where">App Manager</span>{_version_chip()}</div>
-<div class="wrap">
-<h1>Restore a copy</h1>
-<p class="sub">A copy of apps.json is taken before anything is written to it.
-The most recent {len(copies)} are kept.</p>
-{problem}
-<div class="copies">{body}</div>
-<p class="why">Choosing one shows what it would change on the grid. Nothing is
-written until you apply it, and a copy of the current file is taken first --
-so a restore can itself be undone.</p>
-<div class="actions"><a class="btn sec" href="/" data-back>Back</a></div>
-</div></body></html>"""
+        rows.append(f'<a class="item" href="/backups?restore={_eq(str(copy.get("name")))}"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>'
+                    f'<span class="grow"><span class="name">{_e(when)}</span><span class="meta">{count} '
+                    f'app{"" if count == 1 else "s"}</span></span><span class="meta">See what this would change</span></a>')
+    body = ('<div class="list">\n' + "\n".join(rows) + '\n</div>' if rows else
+            '<p>No copies yet. One is taken automatically before anything is written to apps.json.</p>')
+    problem = notice2("err", "", _e(error)) + "\n" if error else ""
+    main = (f'<main class="main">\n<div class="head"><h1>Restore a copy</h1><span class="sub">A copy of apps.json is '
+            f'taken before anything is written to it. The most recent {len(copies)} are kept.</span></div>\n{problem}'
+            f'<p class="muted" style="max-width:56rem;margin:0 0 1.2rem">Choosing one shows what it would change on the '
+            f'grid. Nothing is written until you apply it, and a copy of the current file is taken first, so a restore '
+            f'can itself be undone.</p>\n{body}\n</main>')
+    bar = '<a class="btn sec" href="/" data-back><span class="glyph b">B</span>Back</a>\n<span class="grow"></span>'
+    return frame.page("Restore a copy", main, bar)
 
 
 # ---------------------------------------------------------------- the grid ---
@@ -746,38 +674,40 @@ def _tile(entry: Dict[str, Any], token: str, *, is_new: bool = False,
 
 
 def connect_page(token: str, message: str = "", username: str = "") -> str:
-    """The credentials form on its own page, reachable from the grid."""
-    return f"""<!doctype html>
-{_html()}<head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>{_title('Connect to Sunshine')}</title><style>{_CSS}</style></head>
-<body>
-<div class="navbar"><span class="brand">Sunshine</span><span class="sep">/</span>
-<span class="where">App Manager</span>{_version_chip()}</div>
-<div class="wrap">
-{credentials_form(token, message, username)}
-<div class="actions"><a class="btn sec" href="/" data-back>Back</a></div>
-</div></body></html>"""
+    """Sunshine's web login, checked before it is stored (#70)."""
+    said = notice2("err", "", _e(message)) + "\n" if message else ""
+    main = (f'<main class="main">\n<div class="head"><h1>Connect to Sunshine</h1></div>\n{said}'
+            f'<p class="muted" style="max-width:48rem;margin:0 0 1.4rem">Applying changes asks Sunshine to reload, which '
+            f'needs the login you use for its web interface at port 47990.</p>\n'
+            f'<form class="fields" id="creds" method="post" action="/credentials" style="max-width:40rem">\n'
+            f'<div class="field" style="grid-template-columns:9rem 1fr"><label for="u">Username</label><input id="u" '
+            f'name="username" type="text" autocomplete="username" value="{_e(username)}" required></div>\n'
+            f'<div class="field" style="grid-template-columns:9rem 1fr"><label for="p">Password</label><div class="withbtn">'
+            f'<input id="p" name="password" type="password" autocomplete="current-password" required>'
+            f'<button class="btn sec icon" type="button" aria-label="Show the password" aria-pressed="false" '
+            f'data-show-password="p"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.600-7 10-7 10 7 10 7-3.600 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg></button></div></div>\n</form>\n'
+            f'<p class="muted small" style="max-width:48rem;margin:1.2rem 0 0">Checked against Sunshine before it is stored, '
+            f'so a typo fails here rather than later. Saved to the config directory, readable only by you.</p>\n</main>')
+    bar = ['<a class="btn sec" href="/" data-back><span class="glyph b">B</span>Back</a>',
+           '<span class="grow"></span>', keyboard_button(),
+           '<button class="btn sec" type="button" data-show-password="p"><span class="glyph x">X</span>'
+           '<span data-show-label>Show password</span></button>',
+           '<button class="btn" type="submit" form="creds"><span class="glyph y">Y</span>Verify and save</button>']
+    page_html = frame.page("Connect to Sunshine", main, "\n".join(bar))
+    return page_html.replace("</body>", '<script src="/app.js"></script>\n</body>', 1)
 
 
 def render_elevating(token: str) -> str:
-    """Shown while Windows asks whether to allow it.
+    """Shown while Windows asks whether to allow it (#68).
 
     The new instance replaces this one as any relaunch does, so this page only
     has to exist for as long as the prompt does.
     """
-    return f"""<!doctype html>
-{_html()}<head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>{_title("Administrator")}</title><style>{_CSS}</style></head>
-<body><div class="wrap">
-<section class="ok"><h2>Windows is asking</h2>
-<p class="why">Allow it, and the manager opens again with the rights it needs to
-write <code>apps.json</code>. This window closes on its own.</p>
-<p class="why">Refusing is a fine answer: everything except saving works
-without it.</p></section>
-<div class="actions"><a class="btn sec" href="/" data-back>Back</a></div>
-</div></body></html>"""
+    main = ('<main class="center"><h1>Asking for elevated access</h1>\n<p>Allow it, and the manager opens again with '
+            'the rights it needs to write <code>apps.json</code>. This window closes on its own.</p>\n<p>Refusing is a '
+            'fine answer: everything except saving works without it.</p></main>')
+    bar = '<a class="btn sec" href="/" data-back><span class="glyph b">B</span>Back</a>\n<span class="grow"></span>'
+    return frame.page("Administrator", main, bar)
 
 
 # Where bugs go. One place, so the link on the page and the code in the QR
@@ -1349,57 +1279,30 @@ def report_page(token: str, via_sunshine: bool = False,
 
 
 def scanning_page(token: str, status: Dict[str, Any]) -> str:
-    """Shown while a scan runs, which on a real library is the best part of a minute.
+    """Shown while a scan runs, which on a real library is the best part of a minute (#68).
 
     It says what the scan is doing, taken from the lines the importers already
     write, because "please wait" for fifty seconds is indistinguishable from
-    nothing happening -- which is exactly how it was read.
-
-    The watcher is ``/scanning.js``, not an inline script: these pages are sent
-    with ``script-src 'self'`` and an inline one is refused without a word. The
-    first version of this page was inline, and it showed the scan's first line
-    and then sat at "0.0s elapsed" for ever -- indistinguishable from a hang,
-    which is the very thing the page exists to rule out.
-
-    The page is its own URL rather than ``/?scan``, so a refresh watches the
-    scan instead of starting another.
+    nothing happening. The watcher is /scanning.js: these pages refuse inline
+    script. The page is its own URL, so a refresh watches instead of starting
+    another scan.
     """
-    # Built here, not in the script, so the script holds no addresses.
-    done = "/?scanned=1"
-    poll = "/scan/status"
+    done, poll = "/?scanned=1", "/scan/status"
     latest = status.get("latest") or "Starting..."
     error = status.get("error") or ""
     if error:
-        body = (f"""<section class="err"><h2>The scan stopped</h2>
-<p class="why">{_e(error)}</p></section>""")
+        main = (f'<main class="center"><svg style="width:4rem;height:4rem;color:var(--warning)" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3 2 21h20z"/><path d="M12 10v5M12 18v.5"/></svg><h1>The scan stopped</h1>\n<p>{_e(error)}</p></main>')
+        bar = ('<a class="btn sec" href="/" data-back><span class="glyph b">B</span>Back to the apps</a>\n'
+               '<span class="grow"></span>')
     else:
-        body = f"""<section class="ok"><h2>Scanning your libraries</h2>
-<div class="scanning" data-scan-status="{_e(poll)}" data-scan-done="{_e(done)}">
-<div class="ring" aria-hidden="true"></div>
-<div><p class="why" id="scan-latest">{_e(latest)}</p>
-<p class="why dim"><span id="scan-elapsed">{_e(status.get('elapsed', 0))}</span>s
-elapsed. Steam is quick; Heroic reads its whole library and takes the longest.</p>
-</div></div></section>"""
-    return f"""<!doctype html>
-{_html()}<head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>{_title("Scanning")}</title><style>{_CSS}
-.scanning{{display:flex;gap:1rem;align-items:center}}
-.ring{{width:34px;height:34px;flex:0 0 34px;border-radius:50%;
-border:3px solid rgba(128,128,128,.25);border-top-color:#ffc400;
-animation:spin 900ms linear infinite}}
-@keyframes spin{{to{{transform:rotate(360deg)}}}}
-.dim{{opacity:.7;font-size:.9rem}}
-</style>
-<noscript><meta http-equiv="refresh" content="2"></noscript>
-<script src="/scanning.js" defer></script>
-</head>
-<body>
-<div class="navbar"><span class="brand">Sunshine</span><span class="sep">/</span>
-<span class="where">App Manager</span>{_version_chip()}</div>
-<div class="wrap">{body}
-<div class="actions"><a class="btn sec" href="/">Stop watching</a></div>
-</div></body></html>"""
+        main = (f'<main class="center" data-scan-status="{_e(poll)}" data-scan-done="{_e(done)}"><div class="ring"></div>'
+                f'<h1>Scanning your libraries</h1>\n<p id="scan-latest">{_e(latest)}</p><p class="small">'
+                f'<span id="scan-elapsed">{_e(status.get("elapsed", 0))}</span>s elapsed</p></main>')
+        bar = ('<a class="btn sec" href="/" data-back><span class="glyph b">B</span>Stop watching</a>\n'
+               '<span class="grow"></span>')
+    page_html = frame.page("Scanning", main, bar)
+    return page_html.replace("</head>", '<noscript><meta http-equiv="refresh" content="2"></noscript>\n'
+                             '<script src="/scanning.js" defer></script>\n</head>', 1)
 
 
 def grid_page(state: Dict[str, Any], token: str, *, new_ids: Optional[set] = None,

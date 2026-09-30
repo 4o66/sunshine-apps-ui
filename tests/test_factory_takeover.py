@@ -211,12 +211,12 @@ def test_a_tile_that_has_gained_a_marker_is_not_taken_by_name():
 
 def test_the_confirmation_says_a_takeover_replaces_sunshines_tile():
     """It printed "adopt #1 Desktop", and nothing said Desktop was going."""
-    from sunshine_apps_ui.render import _queued_list
-    html = _queued_list([
+    from sunshine_apps_ui.render import _queued_rows
+    html = _queued_rows([
         {"op": "adopt", "name": "#1 Desktop", "replaces": "Desktop", "fields": ["name"]},
         {"op": "adopt", "name": "Zz App Manager"},
         {"op": "adopt", "name": "Portal 2", "fields": ["image-path"]},
-    ])
+    ], [])
     assert "Replace Desktop with #1 Desktop" in html
     assert "Add Zz App Manager" in html
     assert "Update Portal 2" in html

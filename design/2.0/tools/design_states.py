@@ -476,6 +476,102 @@ def _settings_updates(engine):
     mock.patch.object(updates, "running", lambda: updates.Version(2, 0, 0, None)).start()
 
 
+# --- flow screens (#67, #68, #69, #70) ------------------------------------------
+
+def streamed(engine):
+    engine.state = board_state(without=["NIMRODS"])
+    os.environ["BSM_UI_VIA_SUNSHINE"] = "1"
+    os.environ["SUNSHINE_CLIENT_NAME"] = "Legion Go S"
+
+
+def two_changes():
+    edited("Satisfactory")
+    found_by_scan("NIMRODS")
+
+
+@scenario("confirm", [("/apply", "confirm.html")])
+def _confirm(engine):
+    streamed(engine)
+    two_changes()
+
+
+@scenario("applied", [("/applied", "applied.html")])
+def _applied(engine):
+    streamed(engine)
+
+
+@scenario("scanning", [("/scanning", "scanning.html")])
+def _scanning(engine):
+    from sunshine_apps_ui import scanjob
+    streamed(engine)
+    running = {"running": True, "ran": True, "latest": "Steam: 7 found. Now looking in Heroic.", "elapsed": 4.2, "error": ""}
+    mock.patch.object(scanjob.job, "status", lambda *a, **k: dict(running)).start()
+    mock.patch.object(scanjob.job, "running", lambda *a, **k: True).start()
+
+
+@scenario("backups", [("/backups", "backups.html")])
+def _backups(engine):
+    streamed(engine)
+    engine.copies = [{"name": f"apps-{stamp}.json", "apps": n, "readable": True}
+                     for stamp, n in (("20260927-005946", 12), ("20260926-211403", 11), ("20260926-092837", 11),
+                                      ("20260922-163710", 9), ("20260919-180255", 7))]
+
+
+@scenario("connect", [("/connect?set=u%3Dsunshine%3Bp%3Dhunter2hunter2", "connect.html")])
+def _connect(engine):
+    streamed(engine)
+    engine.auth = (True, "ok")
+
+
+@scenario("leaving", [("/_page/leaving", "leaving.html")])
+def _leaving(engine):
+    streamed(engine)
+
+
+@scenario("closing", [("/_page/closing", "closing.html")])
+def _closing(engine):
+    streamed(engine)
+
+
+@scenario("error", [("/_page/error", "error.html")])
+def _error(engine):
+    streamed(engine)
+
+
+@scenario("elevate", [("/_page/elevate", "elevate.html")])
+def _elevate(engine):
+    streamed(engine)
+
+
+@scenario("error-code", [("/_page/error-code", "error.html")])
+def _error_code(engine):
+    streamed(engine)
+
+
+def addresses_as_code(text):
+    """Option shown for a ruling: a web address in an error message set as code."""
+    import html as _h, re
+    return re.sub(r"(https?://[^\s<]+?)([.,;:]?(?:\s|$))", r"<code>\1</code>\2", _h.escape(text))
+
+
+def flow_page(handler, name):
+    """Pages that only follow a POST or a failure, rendered for a capture."""
+    from sunshine_apps_ui import render
+    if name == "leaving":
+        return render.leaving_with_changes_page(handler.token, 2)
+    if name == "closing":
+        return render.closing_page(True)
+    if name == "elevate":
+        return render.render_elevating(handler.token)
+    if name == "error":
+        return render.error_page("Sunshine did not answer at https://localhost:47990. It may still be starting.")
+    if name == "error-code":
+        page = render.error_page("Sunshine did not answer at https://localhost:47990. It may still be starting.")
+        plain = "Sunshine did not answer at https://localhost:47990. It may still be starting."
+        return page.replace("<p>" + plain + "</p>", "<p>" + addresses_as_code(plain) + "</p>", 1)
+    return None
+
+
 # What the address asks for, for a capture: ?theme=, ?scale=couch|desk (couch
 # is streamed and in controller use, as the boards are drawn) and ?focus=, the
 # control the board shows focused ("text:Keep this one", or a CSS selector).
@@ -484,6 +580,8 @@ LOOK = {"theme": None, "scale": None}
 DRIVE_JS = r"""(function(){
 var me=location.pathname+location.search;
 var q=new URLSearchParams(location.search), f=q.get("focus"), osk=q.get("osk"), typed=q.get("type")||"", press=q.get("press")||"";
+(q.get("set")||"").split(";").filter(Boolean).forEach(function(pair){var i=pair.indexOf("=");
+ var el=document.getElementById(pair.slice(0,i));if(el)el.value=pair.slice(i+1);});
 function find(spec,within){var el=null;within=within||document;
  if(spec.indexOf("text:")===0){var t=spec.slice(5);
   Array.prototype.forEach.call(within.querySelectorAll("a,button"),function(c){if(!el&&c.textContent.trim()===t)el=c;});}
@@ -564,6 +662,13 @@ def run(name, port, streamed, pad, drive_dir=None):
         query = parse_qs(parts.query)
         LOOK["theme"] = (query.get("theme") or [None])[0]
         LOOK["scale"] = (query.get("scale") or [None])[0]
+        if path.startswith("/_page/"):
+            body = flow_page(self, path[len("/_page/"):])
+            if body is not None:
+                self._send(200, body)
+                with open(served_file, "w") as handle:
+                    handle.write(self.path)
+                return
         real_get(self)
         with open(served_file, "w") as handle:
             handle.write(self.path)
