@@ -729,8 +729,11 @@ def run(name, port, streamed, pad, drive_dir=None):
                     handle.write(self.path)
                 return
         real_get(self)
-        with open(served_file, "w") as handle:
-            handle.write(self.path)
+        # Pages only: a window that fetches the scripts again with each page
+        # (WebView2 does) would otherwise leave "/pad.js" as the last served.
+        if not path.endswith((".js", ".css")) and not path.startswith(("/art", "/scan/status", "/_")):
+            with open(served_file, "w") as handle:
+                handle.write(self.path)
 
     mock.patch.object(srv.PlanHandler, "do_GET", do_get).start()
     real_pad = srv.with_pad
@@ -740,8 +743,10 @@ def run(name, port, streamed, pad, drive_dir=None):
     httpd = srv.serve("design-states", tempfile.mkdtemp(), {}, port=port)
     for draft_key, values in (getattr(engine, "drafts", None) or {}).items():
         state.set_draft(draft_key, values)
-    print(json.dumps({"scenario": name, "port": httpd.server_address[1], "state": tmp,
-                      "pages": pages}), flush=True)
+    # No console under pythonw.exe (Windows, so no window covers the app).
+    if sys.stdout is not None:
+        print(json.dumps({"scenario": name, "port": httpd.server_address[1], "state": tmp,
+                          "pages": pages}), flush=True)
     httpd.serve_forever()
 
 
