@@ -215,8 +215,10 @@
   // Sunshine's newer virtual pad ("Sunshine (libvirtualhid) X-Box Series
   // Controller") is laid out by WebKitGTK as it guesses: LT on axis 2,
   // resting at -1; RT on button 6; the right stick's left and right on axis
-  // 3, its up on button 7 as on or off, and its down lost altogether.
-  // Measured from the Legion Go S over Moonlight, 2026-09-28. So on that pad
+  // 3, its down on button 7 as on or off, and its up lost altogether (the
+  // controller test on the Legion Go S, 2026-09-30; a button reads only an
+  // axis's positive half, and down is positive). Measured from the Legion Go
+  // S over Moonlight, 2026-09-28. So on that pad
   // the right stick only goes left and right (axis 3), and the triggers are
   // read from where they are; elsewhere they are buttons 6 and 7 of the
   // standard layout, and the right stick scrolls both ways.

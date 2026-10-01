@@ -651,7 +651,7 @@ function put(){
   if(el.tagName==="INPUT"&&el.type==="text"){try{el.setSelectionRange(0,0)}catch(e){}}}}
 var pt=q.get("padtest");
 function padtest(){if(!pt||!window.PADTEST)return;var bits=pt.split(";"),at=+bits[0],left=8,res={};
- var order=["a","b","x","y","lb","rb","lt","rt","view","menu","l3","r3","dup","ddown","dleft","dright","lup","ldown","lleft","lright","rup","rdown","rleft","rright"];
+ var order=["a","b","x","y","lb","rb","lt","rt","view","menu","dup","ddown","dleft","dright","l3","lup","ldown","lleft","lright","r3","rup","rdown","rleft","rright"];
  order.slice(0,at-1).forEach(function(k){res[k]={kind:"ok"};});
  bits.slice(1).forEach(function(b){var i=b.indexOf("="),k=b.slice(0,i),v=b.slice(i+1);
   if(k==="left"){left=+v;return;}var j=v.indexOf(":");res[k]=j<0?{kind:v}:{kind:v.slice(0,j),value:v.slice(j+1)};});

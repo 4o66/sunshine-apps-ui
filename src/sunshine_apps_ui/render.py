@@ -1311,7 +1311,7 @@ def _share_rows(ex, remove) -> str:
                                     f"appears {_times(f.count)}.")
     f = ex.found("sunshine_user")
     if f:
-        fixed("Your Sunshine user name", f"Appears {_times(f.count)}.")
+        fixed("A user name", f"Where the log says it is one. Found {_times(f.count)}.")
     f = ex.found("addresses")
     if f:
         network, pads = f.count - f.controller, f.controller
@@ -1397,9 +1397,9 @@ def shared_page(address: str) -> str:
 
 
 # The controller test's inputs, in the order it asks for them, and their names.
-PAD_TEST_ORDER = ("a", "b", "x", "y", "lb", "rb", "lt", "rt", "view", "menu", "l3", "r3",
-                  "dup", "ddown", "dleft", "dright", "lup", "ldown", "lleft", "lright",
-                  "rup", "rdown", "rleft", "rright")
+PAD_TEST_ORDER = ("a", "b", "x", "y", "lb", "rb", "lt", "rt", "view", "menu",
+                  "dup", "ddown", "dleft", "dright", "l3", "lup", "ldown", "lleft", "lright",
+                  "r3", "rup", "rdown", "rleft", "rright")
 PAD_TEST_NAMES = {
     "a": "A", "b": "B", "x": "X", "y": "Y", "lb": "LB", "rb": "RB", "lt": "LT", "rt": "RT",
     "view": "View", "menu": "Menu", "l3": "Left stick, pressed", "r3": "Right stick, pressed",

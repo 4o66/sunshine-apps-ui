@@ -20,9 +20,11 @@ document.addEventListener("DOMContentLoaded", function () {
   var main = document.querySelector("[data-padtest]");
   if (!main || !window.PAD || typeof navigator.getGamepads !== "function") return;
 
-  var ORDER = ["a", "b", "x", "y", "lb", "rb", "lt", "rt", "view", "menu", "l3", "r3",
-    "dup", "ddown", "dleft", "dright", "lup", "ldown", "lleft", "lright",
-    "rup", "rdown", "rleft", "rright"];
+  // The buttons, the d-pad, then each stick: its press and its four ways
+  // before the next one (asked for after the Legion test, 2026-09-30).
+  var ORDER = ["a", "b", "x", "y", "lb", "rb", "lt", "rt", "view", "menu",
+    "dup", "ddown", "dleft", "dright", "l3", "lup", "ldown", "lleft", "lright",
+    "r3", "rup", "rdown", "rleft", "rright"];
   var NAMES = { a: "A", b: "B", x: "X", y: "Y", lb: "LB", rb: "RB", lt: "LT", rt: "RT",
     view: "View", menu: "Menu", l3: "Left stick, pressed", r3: "Right stick, pressed",
     dup: "D-pad up", ddown: "D-pad down", dleft: "D-pad left", dright: "D-pad right",
