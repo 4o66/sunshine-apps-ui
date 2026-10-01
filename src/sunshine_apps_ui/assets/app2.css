@@ -338,6 +338,11 @@ animation:spin 1s linear infinite}
 @media(prefers-reduced-motion:reduce){.ring{animation:none}}
 .qr{background:#fff;padding:1rem;border-radius:var(--radius-lg);width:13rem;height:13rem}
 .qr img,.qr svg{width:100%;height:100%;image-rendering:pixelated;display:block}
+/* An address to copy down by hand: large, in the console font, in a box of
+   its own, so 0 and O, 1 and l are told apart and nothing runs into it. */
+.url{margin:0;font-family:var(--mono);font-size:1.6rem;font-weight:600;letter-spacing:.03em;
+line-height:1.3;padding:.6rem 1rem;border-radius:var(--radius-md);background:var(--bg-subtle);
+border:1px solid var(--border-strong);color:var(--text);overflow-wrap:anywhere;user-select:all;width:fit-content;max-width:100%}
 .facts{display:grid;grid-template-columns:auto 1fr;gap:.4rem 1.4rem;text-align:left;font-size:.95rem}
 .facts dt{color:var(--text-muted)}
 .facts dd{margin:0;font-family:var(--mono);font-size:.9rem}
@@ -365,6 +370,18 @@ font-family:var(--mono);font-size:.85rem;line-height:1.55;white-space:pre-wrap;o
 .padmap .cp.bad circle,.padmap .cp.bad rect,.padmap .bad.cp{fill:var(--danger);stroke:var(--danger)}
 .padmap .cp.want circle,.padmap .cp.want rect,.padmap .want.cp{fill:#0b5ed7;stroke:var(--focus);stroke-width:5}
 .padmap .ok text,.padmap .bad text,.padmap .want text{fill:#fff}
+/* The controller check in Settings: pressed is blue, a trigger fills as it
+   is pulled, a stick's dot sits where the stick is. */
+.padmap .cp .pull{fill:#0b5ed7;stroke:none}
+.padmap .knob{fill:#0b5ed7;stroke:#fff;stroke-width:3}
+.padcheck{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2rem;align-items:center}
+.padmap .cp.on circle,.padmap .cp.on rect,.padmap .on.cp{fill:#0b5ed7;stroke:#0b5ed7}
+.padmap .on text{fill:#fff}
+.readout{grid-template-columns:auto 1fr;align-items:center}
+.readout dd{display:flex;align-items:center;gap:.7rem;font-family:inherit}
+.readout .num{font-family:var(--mono);font-size:1rem;font-weight:600}
+.meter{flex:0 0 7rem;height:.8rem;border-radius:999px;background:var(--bg-subtle);border:1px solid var(--border);overflow:hidden}
+.meter span{display:block;height:100%;background:#0b5ed7}
 .ask{display:flex;flex-direction:column;gap:.5rem}
 .ask p{margin:0}
 .ask .n{color:var(--text-muted);font-size:.9rem;font-weight:620}
