@@ -49,6 +49,7 @@ TOKEN = re.compile(r"(token=)[^\s&#\"'<>]+", re.I)
 SECRET_FIELD = re.compile(
     r"(\b(?:authorization|cookie|set-cookie|password|passwd|api[_-]?key|key|secret)"
     r"\s*[:=]\s*)(\"[^\"]*\"|'[^']*'|(?:bearer\s+|basic\s+)?[^\s,;&]+)", re.I)
+USER_FIELD = re.compile(r"(\b(?:user(?:name)?|login)\s*[:=]\s*)(\"[^\"]*\"|'[^']*'|[^\s,;&]+)", re.I)
 HEX32 = re.compile(r"\b[0-9a-fA-F]{32}\b")
 MAC = re.compile(r"\b(?:[0-9A-Fa-f]{2}[:-]){5}[0-9A-Fa-f]{2}\b")
 IPV4 = re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}\b")
@@ -171,11 +172,16 @@ class _Editor:
         self.pieces = out
 
     def literal(self, value: str, replacement: str, finding: Finding,
-                word: bool = False, record: Optional[str] = None) -> None:
+                word: bool = False, record: Optional[str] = None,
+                exact: bool = False) -> None:
+        """``exact``: this case only, and only as a whole token."""
         if not value:
             return
         body = re.escape(value)
-        pattern = re.compile(rf"(?<![\w.-]){body}(?![\w-])" if word else body, re.I)
+        if exact:
+            pattern = re.compile(rf"(?<!\S){body}(?!\S)|(?<=[=:]){body}(?![\w-])")
+        else:
+            pattern = re.compile(rf"(?<![\w.-]){body}(?![\w-])" if word else body, re.I)
 
         def make(m, _piece):
             finding.add(record)
@@ -216,10 +222,15 @@ def examine(text: str, facts: Facts, remove: Iterable[str] = ()) -> Examined:
     ed.sub(TOKEN, lambda m, p: (F["token"].add(), (m.group(1), "[removed]"))[1])
     ed.sub(SECRET_FIELD, lambda m, p: (F["secrets"].add(), (m.group(1), "[removed]"))[1])
     ed.sub(HEX32, lambda m, p: (F["secrets"].add(), "[removed]")[1])
+    # The Sunshine password as itself, in its own case, wherever it stands
+    # alone. Not inside words: a password that is an ordinary word (it can be
+    # "sunshine") would otherwise take that word out of every line (#71).
     for secret in facts.secrets:
-        ed.literal(secret, "[removed]", F["secrets"])
-    ed.literal(facts.sunshine_user, "[removed]", F["sunshine_user"], word=True,
-               record=facts.sunshine_user)
+        ed.literal(secret, "[removed]", F["secrets"], exact=True)
+    # A user name where the log says it is one. Not the stored name wherever it
+    # appears: Sunshine's user name is very often "sunshine", and matching it
+    # anywhere took Sunshine's own name out of the log (Legion test, 2026-09-30).
+    ed.sub(USER_FIELD, lambda m, p: (F["sunshine_user"].add(), (m.group(1), "[removed]"))[1])
 
     # The home folder as ~, both spellings on Windows; then the user name alone.
     homes = {facts.home, os.path.realpath(facts.home) if facts.home else ""}

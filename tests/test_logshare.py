@@ -53,12 +53,28 @@ class AlwaysRemoved(unittest.TestCase):
         e = run("on living-room-pc and living-room-pc.lan\n")
         self.assertEqual(e.text, "on [machine] and [machine]\n")
 
-    def test_the_moonlight_device_and_sunshine_user(self):
-        facts = L.Facts(client_name="Legion Go S", sunshine_user="admin7")
-        e = run("client Legion Go S as admin7\n", facts)
-        self.assertEqual(e.text, "client [device] as [removed]\n")
+    def test_the_moonlight_device(self):
+        e = run("client Legion Go S\n", L.Facts(client_name="Legion Go S"))
+        self.assertEqual(e.text, "client [device]\n")
         self.assertTrue(e.found("device"))
-        self.assertTrue(e.found("sunshine_user"))
+
+    def test_a_user_name_where_the_log_says_it_is_one(self):
+        e = run("auth user=admin7 ok, username: \"pat\"\n", L.Facts())
+        self.assertEqual(e.text, "auth user=[removed] ok, username: [removed]\n")
+        self.assertEqual(e.found("sunshine_user").count, 2)
+
+    def test_a_user_name_that_is_a_word_leaves_the_word_alone(self):
+        """The Legion test: a Sunshine user named "sunshine" took Sunshine's
+        own name out of every line."""
+        e = run("host: Sunshine 2026.906, gamepad auto\nconfig: /x/.config/sunshine\n",
+                L.Facts(sunshine_user="sunshine"))
+        self.assertEqual(e.text, "host: Sunshine 2026.906, gamepad auto\nconfig: /x/.config/sunshine\n")
+
+    def test_the_password_as_itself_but_not_inside_words(self):
+        facts = L.Facts(secrets=["sunshine"])
+        e = run("sent sunshine to it, pw=sunshine\nSunshine config: /x/.config/sunshine\n", facts)
+        self.assertEqual(e.text, "sent [removed] to it, pw=[removed]\n"
+                                 "Sunshine config: /x/.config/sunshine\n")
 
     def test_network_addresses_but_not_loopback(self):
         e = run("a 192.168.1.20 b 127.0.0.1 c fe80::1ff:fe23:4567:890a d ::1 e 0.0.0.0\n")
