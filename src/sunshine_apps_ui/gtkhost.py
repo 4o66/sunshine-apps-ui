@@ -249,6 +249,21 @@ def _is_ours(uri: str) -> bool:
     return parts.hostname in ("127.0.0.1", "::1", "localhost")
 
 
+def _no_core_dumps() -> None:
+    """No core dumps from the window or the WebKit processes it starts (#83).
+
+    WebKit's web process can still crash on its way out, in the GPU driver,
+    and systemd-coredump then spends gigabytes of memory on each dump: on a
+    16 GB machine with a game running, enough to push the game into swap.
+    The children inherit the limit; nothing else is affected.
+    """
+    try:
+        import resource
+        resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
+    except (ImportError, ValueError, OSError):
+        pass
+
+
 def main(argv: Optional[List[str]] = None) -> int:
     """Run the window. Returns a process exit code.
 
@@ -270,6 +285,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     if not url:
         print("No URL to show.", file=__import__("sys").stderr)
         return 2
+
+    _no_core_dumps()
 
     try:
         import gi
@@ -301,6 +318,31 @@ def main(argv: Optional[List[str]] = None) -> int:
         return EXIT_NO_TOOLKIT
 
     loop = GLib.MainLoop()
+    views = []
+
+    def leave(*_):
+        """Close: end the web process first, then the loop (#83).
+
+        Left to itself the web process tears down its GPU context as it
+        exits, and on NVIDIA and mesa drivers alike that crashes it in
+        WebKit's Skia teardown nearly every time. Ended from here it never
+        runs that teardown.
+        """
+        for view in views:
+            try:
+                view.terminate_web_process()
+            except Exception:                     # noqa: BLE001 - leaving regardless
+                pass
+        loop.quit()
+        return False
+
+    # The launcher stops the window with SIGTERM, which would kill Python where
+    # it stands and leave the web process to crash on its own way out.
+    for signum in (15, 2, 1):                     # SIGTERM, SIGINT, SIGHUP
+        try:
+            GLib.unix_signal_add(GLib.PRIORITY_HIGH, signum, leave)
+        except (AttributeError, TypeError):
+            pass
 
     def build():
         window = Gtk.Window()
@@ -350,11 +392,8 @@ def main(argv: Optional[List[str]] = None) -> int:
 
         view.connect("decide-policy", decide)
 
-        def closed(*_):
-            loop.quit()
-            return False
-
-        window.connect("close-request", closed)
+        views.append(view)
+        window.connect("close-request", leave)
         window.set_child(view)
         # The maintainer's rule, 2026-09-17: streamed through Moonlight nothing should
         # frame the page; opened at the machine, a window you cannot move or
