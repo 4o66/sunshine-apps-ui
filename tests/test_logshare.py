@@ -97,6 +97,13 @@ class AlwaysRemoved(unittest.TestCase):
         self.assertEqual(e.found("serials").count, 1)
         self.assertIsNone(e.found("addresses"))
 
+    def test_a_sunshine_pads_own_id_is_not_a_serial(self):
+        line = ("10:15:02 WARNING host: pad 045e:0b13 v0513 bus 0005: Sunshine (libvirtualhid) X-Box Series "
+                "Controller, at 045e:0b13/sunshine-gamepad-0\n")
+        e = run(line)
+        self.assertIn("at 045e:0b13/sunshine-gamepad-0", e.text)
+        self.assertIsNone(e.found("serials"))
+
     def test_a_bluetooth_address_there_is_an_address_not_a_serial(self):
         e = run()
         self.assertIsNone(e.found("serials"))

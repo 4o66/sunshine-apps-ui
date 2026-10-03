@@ -59,6 +59,9 @@ IPV6 = re.compile(r"(?<![\w:])(?:[0-9A-Fa-f]{0,4}:){2,7}[0-9A-Fa-f]{0,4}(?![\w:]
 # (#86). The name before it has had its commas taken out (see pad_line).
 PAD_UNIQ = re.compile(r"(\bhost: pad [0-9a-f]{4}:[0-9a-f]{4} v[0-9a-f]{4} bus [0-9a-f]{4}: "
                       r"[^,\n]*, at )([^\n]+)$", re.I | re.M)
+# What Sunshine's own virtual pads give as their Uniq: the same for every
+# Sunshine host, so nothing to remove (e.g. 045e:0b13/sunshine-gamepad-0).
+SUNSHINE_UNIQ = re.compile(r"[0-9a-f]{4}:[0-9a-f]{4}/sunshine-gamepad-\d+", re.I)
 # A line about a controller: the Bluetooth address on it is the pad's.
 PAD_LINE = re.compile(r"\b(pad|controller|gamepad|joystick|uniq)\b", re.I)
 # The pad summary pad.js sends, and the host's list of pads.
@@ -228,8 +231,10 @@ def examine(text: str, facts: Facts, remove: Iterable[str] = ()) -> Examined:
     ed.sub(SECRET_FIELD, lambda m, p: (F["secrets"].add(), (m.group(1), "[removed]"))[1])
     ed.sub(HEX32, lambda m, p: (F["secrets"].add(), "[removed]")[1])
     # A device's serial number, before any later rule splits its line. An
-    # address there is left for the address rule, which counts it as the pad's.
+    # address there is left for the address rule, which counts it as the pad's,
+    # and a Sunshine pad's own name for itself is left as it is.
     ed.sub(PAD_UNIQ, lambda m, p: None if MAC.fullmatch(m.group(2).strip())
+           or SUNSHINE_UNIQ.fullmatch(m.group(2).strip())
            else (F["serials"].add(), (m.group(1), "[serial]"))[1])
     # The Sunshine password as itself, in its own case, wherever it stands
     # alone. Not inside words: a password that is an ordinary word (it can be
