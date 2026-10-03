@@ -27,7 +27,7 @@
 <h2>Controller</h2>
 <div class="padcheck"><svg class="padmap" viewBox="0 0 800 500" role="img" aria-label="A controller, with the input asked for highlighted">
 <path class="body" d="M200 100 C260 80 540 80 600 100 C690 125 740 200 770 330 C795 440 760 495 700 488 C650 480 620 420 580 382 C540 412 260 412 220 382 C180 420 150 480 100 488 C40 495 5 440 30 330 C60 200 110 125 200 100 Z"/>
-<g class="cp" data-part="lt"><rect x="160" y="4" width="110" height="40" rx="14"/><rect class="pull" x="160" y="4" width="68.2" height="40" rx="14"/><text x="215" y="31">LT</text></g><g class="cp" data-part="rt"><rect x="530" y="4" width="110" height="40" rx="14"/><text x="585" y="31">RT</text></g>
+<g class="cp" data-part="lt"><rect x="160" y="4" width="110" height="40" rx="14"/><rect class="pull" x="160" y="4" width="68.2" height="40" rx="14"/><text class="val" x="215" y="31">0.62</text></g><g class="cp" data-part="rt"><rect x="530" y="4" width="110" height="40" rx="14"/><text x="585" y="31">RT</text></g>
 <g class="cp" data-part="lb"><rect x="140" y="52" width="140" height="34" rx="17"/><text x="210" y="76">LB</text></g><g class="cp on" data-part="rb"><rect x="520" y="52" width="140" height="34" rx="17"/><text x="590" y="76">RB</text></g>
 <g class="cp" data-part="view"><rect x="346" y="150" width="44" height="26" rx="13"/><text x="368" y="202">View</text></g><g class="cp" data-part="menu"><rect x="410" y="150" width="44" height="26" rx="13"/><text x="432" y="202">Menu</text></g>
 <g class="cp" data-part="l3"><circle cx="220" cy="210" r="42"/></g><circle class="knob" cx="207.4" cy="188.7" r="11"/><path class="cp on" data-part="lup" d="M220 134 L235 150 L205 150 Z"/><path class="cp" data-part="ldown" d="M220 286 L205 270 L235 270 Z"/><path class="cp" data-part="lleft" d="M144 210 L160 195 L160 225 Z"/><path class="cp" data-part="lright" d="M296 210 L280 225 L280 195 Z"/>
@@ -38,13 +38,8 @@
 <rect class="cp" data-part="dright" x="326" y="284" width="36" height="32" rx="5"/>
 <g class="cp" data-part="y"><circle cx="590" cy="158" r="25"/><text x="590" y="166">Y</text></g><g class="cp" data-part="x"><circle cx="538" cy="210" r="25"/><text x="538" y="218">X</text></g><g class="cp" data-part="b"><circle cx="642" cy="210" r="25"/><text x="642" y="218">B</text></g><g class="cp" data-part="a"><circle cx="590" cy="262" r="25"/><text x="590" y="270">A</text></g>
 </svg>
-<dl class="facts readout">
-<dt>Pressed now</dt><dd><span class="num">RB</span> <span class="muted">button 5</span></dd>
-<dt>LT</dt><dd><span class="meter"><span style="width:62%"></span></span><span class="num">0.62</span></dd>
-<dt>RT</dt><dd><span class="meter"><span style="width:0%"></span></span><span class="num">0.00</span></dd>
-<dt>Left stick</dt><dd><span class="num">x −0.42&nbsp;&nbsp;y −0.71</span></dd>
-<dt>Right stick</dt><dd><span class="num">x 0.00&nbsp;&nbsp;y 0.00</span></dd>
-</dl></div>
+<p class="sticks"><span><span class="muted">Left stick</span> <span class="num">x −0.42 y −0.71</span></span><span><span class="muted">Right stick</span> <span class="num">x  0.00 y  0.00</span></span></p>
+</div>
 <p class="muted small">Sunshine (libvirtualhid) X-Box Series Controller. Every button is shown rather than used: hold Y for 2 seconds to end.</p>
 </div>
 </div>

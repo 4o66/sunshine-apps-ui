@@ -1130,7 +1130,7 @@ def _day(stamp: str) -> str:
 def _pad_map_live() -> str:
     """The controller for the check in Settings: every part off, a dot in
     each stick where the letter was, and an empty fill in each trigger,
-    for padcheck.js to move."""
+    for padcheck.js to move. A trigger's label is where its value goes."""
     svg = pad_map({})
     for cx, cy, letter, side in ((220, 210, "L", "l"), (490, 300, "R", "r")):
         svg = svg.replace(f'<text x="{cx}" y="{cy + 8}">{letter}</text></g>',
@@ -1139,11 +1139,14 @@ def _pad_map_live() -> str:
         head = f'data-part="{part}"><rect x="{x}" y="4" width="110" height="40" rx="14"/>'
         svg = svg.replace(head, head + f'<rect class="pull" data-pull="{part}" x="{x}" y="4" width="0" '
                                        f'height="40" rx="14"/>', 1)
+        label = f'<text x="{x + 55}" y="31">{part.upper()}</text>'
+        svg = svg.replace(label, label.replace("<text ", f'<text data-label="{part}" ', 1), 1)
     return svg
 
 
 def _controller_pane(pad: Dict[str, str]) -> str:
-    """Settings, Controller: what is pressed, as it arrives (approved 2026-10-02).
+    """Settings, Controller: what is pressed, as it arrives (approved 2026-10-02;
+    the readout beside the drawing taken out, #84).
 
     Nothing is asked for and nothing is recorded; Report a bug has the test
     that goes into the log. The check itself is padcheck.js: A on the button
@@ -1154,8 +1157,6 @@ def _controller_pane(pad: Dict[str, str]) -> str:
     read_as = rules if rules and rules != "no layout rules" else "as a standard controller"
     facts = (f'<dl class="facts">\n<dt>Controller</dt><dd data-pad-name>{_e(name) or "none seen yet: press a button"}</dd>\n'
              f'<dt>Read as</dt><dd>{_e(read_as)}</dd>\n</dl>')
-    meter = lambda key, label: (f'<dt>{label}</dt><dd><span class="meter"><span data-meter="{key}" style="width:0%"></span>'
-                                f'</span><span class="num" data-value="{key}">0.00</span></dd>')
     return f'''<h2>Controller</h2>
 <div data-when="start">
 <p>Press anything and see what arrives: buttons light up, and the triggers and sticks show how far they move. Nothing is recorded. For a bug report, Report a bug has a test that goes into the log.</p>
@@ -1165,13 +1166,8 @@ def _controller_pane(pad: Dict[str, str]) -> str:
 </div>
 <div data-when="running" data-padcheck hidden>
 <div class="padcheck">{_pad_map_live()}
-<dl class="facts readout">
-<dt>Pressed now</dt><dd><span class="num" data-pressed>&nbsp;</span> <span class="muted" data-raw></span></dd>
-{meter("lt", "LT")}
-{meter("rt", "RT")}
-<dt>Left stick</dt><dd><span class="num" data-stick="l">x 0.00&nbsp;&nbsp;y 0.00</span></dd>
-<dt>Right stick</dt><dd><span class="num" data-stick="r">x 0.00&nbsp;&nbsp;y 0.00</span></dd>
-</dl></div>
+<p class="sticks"><span><span class="muted">Left stick</span> <span class="num" data-stick="l">x&nbsp;&nbsp;0.00 y&nbsp;&nbsp;0.00</span></span><span><span class="muted">Right stick</span> <span class="num" data-stick="r">x&nbsp;&nbsp;0.00 y&nbsp;&nbsp;0.00</span></span></p>
+</div>
 <p class="muted small"><span data-pad-name>{_e(name)}</span>. Every button is shown rather than used: hold Y for 2 seconds to end.</p>
 </div>'''
 

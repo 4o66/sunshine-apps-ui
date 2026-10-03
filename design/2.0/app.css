@@ -377,11 +377,6 @@ font-family:var(--mono);font-size:.85rem;line-height:1.55;white-space:pre-wrap;o
 .padcheck{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2rem;align-items:center}
 .padmap .cp.on circle,.padmap .cp.on rect,.padmap .on.cp{fill:#0b5ed7;stroke:#0b5ed7}
 .padmap .on text{fill:#fff}
-.readout{grid-template-columns:auto 1fr;align-items:center}
-.readout dd{display:flex;align-items:center;gap:.7rem;font-family:inherit}
-.readout .num{font-family:var(--mono);font-size:1rem;font-weight:600}
-.meter{flex:0 0 7rem;height:.8rem;border-radius:999px;background:var(--bg-subtle);border:1px solid var(--border);overflow:hidden}
-.meter span{display:block;height:100%;background:#0b5ed7}
 .ask{display:flex;flex-direction:column;gap:.5rem}
 .ask p{margin:0}
 .ask .n{color:var(--text-muted);font-size:.9rem;font-weight:620}
@@ -460,3 +455,8 @@ box-shadow:0 0 0 .18rem var(--focus-halo),0 0 0 .45rem var(--focus)}
 .switch:has(input:focus-visible),.pad .switch:has(input:focus),
 .choice:has(input:focus-visible),.pad .choice:has(input:focus){
 box-shadow:0 0 0 .18rem var(--focus-halo),0 0 0 .45rem var(--focus)}
+.padcheck:has(.sticks){grid-template-columns:minmax(0,1fr);gap:.6rem;justify-items:center}
+.padcheck:has(.sticks) .padmap{width:min(100%,calc((100vh - 22rem) * 1.6));max-height:none}
+.padmap text.val{font-family:var(--mono);font-variant-numeric:tabular-nums}
+.sticks{display:flex;gap:3rem;margin:0;white-space:pre}
+.sticks .num{font-family:var(--mono);font-size:1rem;font-weight:600;margin-left:.6rem}
