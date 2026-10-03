@@ -398,6 +398,9 @@ padding:0 .7rem;margin:0 .2rem;border-radius:.6rem;background:#0b5ed7;color:#fff
 /* While the test runs, every button is being tested: the gear is not a way out. */
 html.testing .bar .gear{display:none}
 [hidden]{display:none!important}
+/* A page drawn in two states, one shown at a time (the controller check):
+   the wrapper adds no box, so its children space as the pane's own. */
+.pane > [data-when]{display:contents}
 
 /* Searching by another name: a field with a mouse or keyboard, the X button
    (and the on-screen keyboard) with a controller. Approved 2026-09-28. */

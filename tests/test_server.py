@@ -568,6 +568,25 @@ class CredentialsEndpointTest(ServerTest):
         self.assertEqual(status, 200)
         self.assertIn("PAD.paused", js)
 
+    def test_settings_controller_names_the_pad_and_runs_the_check(self):
+        server_module._PAD_LOGGED.clear()
+        status, body = self.get(f"/settings?section=controller&token={self.token}")
+        self.assertEqual(status, 200)
+        self.assertIn("none seen yet: press a button", body)
+        self.assertIn('<script src="/padcheck.js"></script>', body)
+        self.assertIn("data-padcheck-start", body)
+        self.post({"name": "Test Pad", "buttons": "17", "axes": "4", "rules": "X and Y swapped"},
+                  token=self.token, path="/log/pad")
+        _, body = self.get(f"/settings?section=controller&token={self.token}")
+        self.assertIn("<dd data-pad-name>Test Pad</dd>", body)
+        self.assertIn("<dd>X and Y swapped</dd>", body)
+        status, js = self.get(f"/padcheck.js?token={self.token}")
+        self.assertEqual(status, 200)
+        self.assertIn("PAD.analog", js)
+
+    def test_the_shared_address_is_large_enough_to_copy(self):
+        self.assertIn('<p class="url">https://dpaste.com/X</p>', render.shared_page("https://dpaste.com/X"))
+
     def test_an_unknown_post_path_is_refused(self):
         status, _ = self.post({"a": "b"}, token=self.token, path="/anything")
         self.assertEqual(status, 404)

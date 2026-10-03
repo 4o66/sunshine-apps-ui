@@ -286,7 +286,9 @@ class PlanHandler(BaseHTTPRequestHandler):
                                           device=self.client_name if self.via_sunshine else "",
                                           text_size=text_size_for(self.client_name),
                                           defaults=self._defaults_preview() if section == "defaults" else None,
-                                          current_version=str(current) if current is not None else ""))
+                                          current_version=str(current) if current is not None else "",
+                                          pad={"name": _PAD_LOGGED.get("name", ""),
+                                               "rules": _PAD_LOGGED.get("rules", "")}))
             return
 
         if parts.path == "/report":
@@ -303,6 +305,10 @@ class PlanHandler(BaseHTTPRequestHandler):
 
         if parts.path == "/report/controller":
             self._send(200, controller_test_page(_PAD_LOGGED.get("name", "")))
+            return
+
+        if parts.path == "/padcheck.js":
+            self._send_asset("padcheck.js", "text/javascript; charset=utf-8")
             return
 
         if parts.path == "/padtest.js":
@@ -984,6 +990,7 @@ class PlanHandler(BaseHTTPRequestHandler):
             line = pad_line(fields)
             if line:
                 _PAD_LOGGED["name"] = _one_line((fields.get("name") or [""])[0])
+                _PAD_LOGGED["rules"] = _one_line((fields.get("rules") or [""])[0], 160) or "no layout rules"
             if line and line != _PAD_LOGGED.get("last"):
                 _PAD_LOGGED["last"] = line
                 log.warning("%s", line)

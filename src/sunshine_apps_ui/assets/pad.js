@@ -263,7 +263,14 @@
       rup: r.y < -DEAD, rdown: r.y > DEAD, rleft: r.x < -DEAD, rright: r.x > DEAD
     };
   }
-  var PAD = window.PAD = { logical: logical, pressed: pressed, paused: false };
+  // How far each trigger is pulled (0 to 1) and where each stick is (-1 to
+  // 1), for the controller check in Settings (padcheck.js).
+  function analog(pad) {
+    var r = rightStick(pad);
+    return { lt: trigger(pad, "lt"), rt: trigger(pad, "rt"),
+             lx: pad.axes[0] || 0, ly: pad.axes[1] || 0, rx: r.x, ry: r.y };
+  }
+  var PAD = window.PAD = { logical: logical, analog: analog, pressed: pressed, paused: false };
 
   // What this pad is, for the log (phase 7): once per page, a second after it
   // is first seen so that its axes have settled. The server writes a line
@@ -279,7 +286,7 @@
       }
       var rules = [];
       if (faceX(now) === 3) rules.push("X and Y swapped");
-      if (guessedLayout(now)) rules.push("triggers read from axis 2 and button 6; right stick off");
+      if (guessedLayout(now)) rules.push("triggers read from axis 2 and button 6; right stick left and right only");
       var body = new URLSearchParams({ name: now.id, buttons: now.buttons.length, axes: now.axes.length,
                                        mapping: now.mapping || "none", resting: resting.join(" "),
                                        rules: rules.join("; ") });

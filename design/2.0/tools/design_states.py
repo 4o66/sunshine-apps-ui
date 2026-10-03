@@ -23,7 +23,7 @@ import os
 import sys
 import tempfile
 from unittest import mock
-from urllib.parse import parse_qs, urlsplit
+from urllib.parse import parse_qs, quote, urlsplit
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.abspath(os.path.join(HERE, "..", "..", ".."))
@@ -573,6 +573,29 @@ def reporting(engine):
     srv._PAD_LOGGED["name"] = "Sunshine (libvirtualhid) X-Box Series Controller"
 
 
+PAD_NAME = "Sunshine (libvirtualhid) X-Box Series Controller"
+PAD_RULES = "X and Y swapped; triggers read from axis 2 and button 6; right stick left and right only"
+
+
+@scenario("settings-controller", [("/settings?section=controller", "settings-controller.html")])
+def _settings_controller(engine):
+    streamed(engine)
+    srv._PAD_LOGGED.update(name=PAD_NAME, rules=PAD_RULES)
+
+
+# RB held, LT pulled to 0.62 (axis 2 on this pad: 0.62 * 2 - 1), the left
+# stick up and to the left, as the board draws it.
+_LIVE = json.dumps({"id": PAD_NAME, "axes": [-0.42, -0.71, 0.24, 0],
+                    "buttons": [0, 0, 0, 0, 0, 1] + [0] * 11})
+
+
+@scenario("settings-controller-live", [("/settings?section=controller&padcheck=" + quote(_LIVE, safe=""),
+                                         "settings-controller-live.html")])
+def _settings_controller_live(engine):
+    streamed(engine)
+    srv._PAD_LOGGED.update(name=PAD_NAME, rules=PAD_RULES)
+
+
 @scenario("report", [("/report", "report.html")])
 def _report(engine):
     reporting(engine)
@@ -657,6 +680,8 @@ function padtest(){if(!pt||!window.PADTEST)return;var bits=pt.split(";"),at=+bit
   if(k==="left"){left=+v;return;}var j=v.indexOf(":");res[k]=j<0?{kind:v}:{kind:v.slice(0,j),value:v.slice(j+1)};});
  window.PADTEST.show(at,res,left);}
 addEventListener("DOMContentLoaded",padtest);
+var pc=q.get("padcheck");
+addEventListener("DOMContentLoaded",function(){if(pc&&window.PADCHECK)window.PADCHECK.show(JSON.parse(pc));});
 if(document.readyState==="complete")put();else addEventListener("DOMContentLoaded",put);
 setInterval(function(){fetch('/_target',{cache:'no-store'}).then(function(r){return r.text()}).then(function(t){
 t=t.trim();if(t&&t!==me){location.replace(t)}}).catch(function(){})},300)})();"""

@@ -986,7 +986,8 @@ def config_setting(config: Optional[Dict[str, Any]], token: str) -> str:
 
 
 SETTINGS_SECTIONS = [("appearance", "Appearance"), ("language", "Language"), ("art", "Community artwork"),
-                     ("sunshine", "Which Sunshine"), ("defaults", "Default tiles"), ("updates", "Updates")]
+                     ("sunshine", "Which Sunshine"), ("defaults", "Default tiles"), ("controller", "Controller"),
+                     ("updates", "Updates")]
 
 
 def _choice(name: str, value: str, label: str, chosen: bool) -> str:
@@ -1005,7 +1006,8 @@ def settings_page(token: str, *, prefs: Dict[str, Any],
                   device: str = "",
                   text_size: str = "standard",
                   defaults: Optional[Dict[str, Any]] = None,
-                  current_version: str = "") -> str:
+                  current_version: str = "",
+                  pad: Optional[Dict[str, str]] = None) -> str:
     """Everything that is a preference rather than a change to the app list (#66).
 
     Kept off the grid deliberately -- the maintainer's instruction, 2026-09-19, "set apart
@@ -1095,17 +1097,24 @@ def settings_page(token: str, *, prefs: Dict[str, Any],
         pane = "<h2>Which Sunshine</h2>\n" + _which_sunshine(config or {})
     elif section == "defaults":
         pane = _default_tiles_pane(defaults or {})
+    elif section == "controller":
+        pane = _controller_pane(pad or {})
     else:
         pane = _updates_pane(prefs, answer, current_version)
 
     main = (f'<main class="main">\n<div class="head"><h1>Settings</h1><span class="sub">None of this touches your '
             f'app list.</span></div>\n<div class="panes">\n<nav class="nav" aria-label="Settings">\n{nav}\n</nav>\n'
             f'<div class="pane">\n{said}{pane}\n</div>\n</div>\n</main>')
-    bar = ['<a class="btn sec" href="/" data-back><span class="glyph b">B</span>Back to the apps</a>',
+    bar = ['<a class="btn sec" href="/" data-back data-when="start"><span class="glyph b">B</span>Back to the apps</a>',
            '<span class="grow"></span>']
     if section in ("art",):
         bar.append(keyboard_button())
+    if section == "controller":
+        bar.append('<button class="btn sec" type="button" data-padcheck-end data-when="running" hidden>'
+                   '<span class="glyph y wide">hold Y</span>End</button>')
     page_html = frame.page("Settings", main, "\n".join(bar), settings_here=True)
+    if section == "controller":
+        return page_html.replace("</body>", '<script src="/padcheck.js"></script>\n</body>', 1)
     return page_html.replace("</body>", '<script src="/app.js"></script>\n</body>', 1) if section == "art" else page_html
 
 
@@ -1116,6 +1125,55 @@ def _day(stamp: str) -> str:
         return time.strftime("%-d %b %Y", time.strptime(stamp[:10], "%Y-%m-%d"))
     except ValueError:
         return stamp
+
+
+def _pad_map_live() -> str:
+    """The controller for the check in Settings: every part off, a dot in
+    each stick where the letter was, and an empty fill in each trigger,
+    for padcheck.js to move."""
+    svg = pad_map({})
+    for cx, cy, letter, side in ((220, 210, "L", "l"), (490, 300, "R", "r")):
+        svg = svg.replace(f'<text x="{cx}" y="{cy + 8}">{letter}</text></g>',
+                          f'</g><circle class="knob" data-knob="{side}" cx="{cx}" cy="{cy}" r="11"/>', 1)
+    for part, x in (("lt", 160), ("rt", 530)):
+        head = f'data-part="{part}"><rect x="{x}" y="4" width="110" height="40" rx="14"/>'
+        svg = svg.replace(head, head + f'<rect class="pull" data-pull="{part}" x="{x}" y="4" width="0" '
+                                       f'height="40" rx="14"/>', 1)
+    return svg
+
+
+def _controller_pane(pad: Dict[str, str]) -> str:
+    """Settings, Controller: what is pressed, as it arrives (approved 2026-10-02).
+
+    Nothing is asked for and nothing is recorded; Report a bug has the test
+    that goes into the log. The check itself is padcheck.js: A on the button
+    starts it, holding Y ends it.
+    """
+    name = pad.get("name", "")
+    rules = pad.get("rules", "")
+    read_as = rules if rules and rules != "no layout rules" else "as a standard controller"
+    facts = (f'<dl class="facts">\n<dt>Controller</dt><dd data-pad-name>{_e(name) or "none seen yet: press a button"}</dd>\n'
+             f'<dt>Read as</dt><dd>{_e(read_as)}</dd>\n</dl>')
+    meter = lambda key, label: (f'<dt>{label}</dt><dd><span class="meter"><span data-meter="{key}" style="width:0%"></span>'
+                                f'</span><span class="num" data-value="{key}">0.00</span></dd>')
+    return f'''<h2>Controller</h2>
+<div data-when="start">
+<p>Press anything and see what arrives: buttons light up, and the triggers and sticks show how far they move. Nothing is recorded. For a bug report, Report a bug has a test that goes into the log.</p>
+{facts}
+<div><button class="btn" type="button" data-padcheck-start autofocus><span class="glyph a">A</span>Check the controller</button></div>
+<p class="muted small">While it runs every button is shown rather than used, so hold Y for 2 seconds to end.</p>
+</div>
+<div data-when="running" data-padcheck hidden>
+<div class="padcheck">{_pad_map_live()}
+<dl class="facts readout">
+<dt>Pressed now</dt><dd><span class="num" data-pressed>&nbsp;</span> <span class="muted" data-raw></span></dd>
+{meter("lt", "LT")}
+{meter("rt", "RT")}
+<dt>Left stick</dt><dd><span class="num" data-stick="l">x 0.00&nbsp;&nbsp;y 0.00</span></dd>
+<dt>Right stick</dt><dd><span class="num" data-stick="r">x 0.00&nbsp;&nbsp;y 0.00</span></dd>
+</dl></div>
+<p class="muted small"><span data-pad-name>{_e(name)}</span>. Every button is shown rather than used: hold Y for 2 seconds to end.</p>
+</div>'''
 
 
 def _which_sunshine(config: Dict[str, Any]) -> str:
@@ -1386,7 +1444,7 @@ def shared_page(address: str) -> str:
 <div style="display:flex;flex-direction:column;gap:1rem;max-width:46rem">
 <h2>Scan this with your phone</h2>
 <p>It opens the shared log. Copy its address into the bug report.</p>
-<p class="mono">{_e(address)}</p>
+<p class="url">{_e(address)}</p>
 <p class="muted small">Deleted after 7 days.</p>
 </div>
 </div>
