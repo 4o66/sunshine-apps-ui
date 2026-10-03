@@ -40,6 +40,22 @@ document.addEventListener("DOMContentLoaded", function () {
     return [part === "lt" || part === "rt" ? "Pull" : "Press", NAMES[part]];
   }
   var WAIT = 8000, HOLD = 2000, SETTLE = 150;
+  // How far each trigger and stick direction travels while the test runs,
+  // for the log: the furthest it went, and how many values it gave between
+  // rest and full. None in between means it is on/off only, as libvirtualhid's
+  // RT is in WebKitGTK (asked for after the Legion test, 2026-10-03).
+  var TRAVEL = ["lt", "rt", "lup", "ldown", "lleft", "lright", "rup", "rdown", "rleft", "rright"];
+  var furthest = {}, between = {};
+  function travel(p) {
+    var a = window.PAD.analog(p);
+    var at = { lt: a.lt, rt: a.rt, lup: -a.ly, ldown: a.ly, lleft: -a.lx, lright: a.lx,
+               rup: -a.ry, rdown: a.ry, rleft: -a.rx, rright: a.rx };
+    TRAVEL.forEach(function (k) {
+      var v = Math.min(1, Math.max(0, at[k] || 0));
+      if (v > (furthest[k] || 0)) furthest[k] = v;
+      if (v > 0.05 && v < 0.95) between[k][v.toFixed(2)] = true;
+    });
+  }
 
   // This page reads the pad itself, from the start: A here starts the test
   // rather than pressing the focused button.
@@ -125,6 +141,8 @@ document.addEventListener("DOMContentLoaded", function () {
     results = {};
     step = 0;
     base = pad.axes.slice();
+    furthest = {};
+    TRAVEL.forEach(function (k) { between[k] = {}; });
     record({ kind: "ok" });           // A started it, and A is the first one
   }
 
@@ -141,6 +159,13 @@ document.addEventListener("DOMContentLoaded", function () {
       input.type = "hidden";
       input.name = "r_" + p;
       input.value = r.kind === "ok" || r.kind === "missed" ? r.kind : r.kind + ":" + r.value;
+      form.appendChild(input);
+    });
+    TRAVEL.forEach(function (k) {
+      var input = document.createElement("input");
+      input.type = "hidden";
+      input.name = "t_" + k;
+      input.value = (furthest[k] || 0).toFixed(2) + ":" + Object.keys(between[k] || {}).length;
       form.appendChild(input);
     });
     form.submit();
@@ -170,6 +195,7 @@ document.addEventListener("DOMContentLoaded", function () {
       else if (L.b && !prevL.b) { var back = document.querySelector("[data-back]"); if (back) back.click(); }
       else if (!L.menu && prevL.menu) { var gear = document.querySelector("a.gear"); if (gear) gear.click(); }
     } else if (step < ORDER.length) {
+      travel(p);
       // Held: A starts over, B stops. A press is still a press first.
       holdA = L.a ? (holdA === null ? now : holdA) : null;
       holdB = L.b ? (holdB === null ? now : holdB) : null;

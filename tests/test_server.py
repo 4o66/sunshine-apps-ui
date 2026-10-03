@@ -559,6 +559,28 @@ class CredentialsEndpointTest(ServerTest):
         self.assertIn("22 of 24 as expected", body)
         self.assertIn("<b>Right stick up</b> arrived as a button (7), not the stick.", body)
 
+    def test_controller_travel_is_logged(self):
+        fields = {f"r_{p}": "ok" for p in render.PAD_TEST_ORDER}
+        fields.update({f"t_{p}": "1.00:12" for p in render.PAD_TRAVEL})
+        fields.update(t_rt="1.00:0", t_rup="0.00:0", t_rdown="nonsense", name="Test Pad")
+        with self.assertLogs("sunshine-apps-ui", "WARNING") as seen:
+            req = urllib.request.Request(f"http://127.0.0.1:{self.port}/report/controller?token={self.token}",
+                                         data=urllib.parse.urlencode(fields).encode(), method="POST")
+            urllib.request.urlopen(req, timeout=10).read()
+        lines = [r.getMessage() for r in seen.records if r.getMessage().startswith("padtest: travel:")]
+        self.assertEqual(len(lines), 1)
+        self.assertIn("LT analog (12 steps, to 1.00); RT on/off only (to 1.00);", lines[0])
+        self.assertIn("Right stick up did not move; Right stick left analog", lines[0])
+        self.assertNotIn("Right stick down", lines[0])
+
+    def test_no_travel_no_line(self):
+        fields = {f"r_{p}": "ok" for p in render.PAD_TEST_ORDER}
+        with self.assertLogs("sunshine-apps-ui", "WARNING") as seen:
+            req = urllib.request.Request(f"http://127.0.0.1:{self.port}/report/controller?token={self.token}",
+                                         data=urllib.parse.urlencode(fields).encode(), method="POST")
+            urllib.request.urlopen(req, timeout=10).read()
+        self.assertFalse([r for r in seen.records if "travel" in r.getMessage()])
+
     def test_the_controller_test_page_and_its_script(self):
         status, body = self.get(f"/report/controller?token={self.token}")
         self.assertEqual(status, 200)

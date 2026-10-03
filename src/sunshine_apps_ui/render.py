@@ -1485,6 +1485,33 @@ def pad_result_words(part: str, result: str) -> str:
     return "did not arrive at all"
 
 
+PAD_TRAVEL = ("lt", "rt", "lup", "ldown", "lleft", "lright", "rup", "rdown", "rleft", "rright")
+
+
+def pad_travel_words(fields: Dict[str, str]) -> str:
+    """How far each trigger and stick direction went in the controller test,
+    for the log: analog, on/off only, or did not move.
+
+    ``fields`` maps a part to ``<furthest>:<values in between>`` as padtest.js
+    posts it, e.g. ``1.00:41``. Parts missing or malformed are left out; with
+    none, it is empty.
+    """
+    out = []
+    for part in PAD_TRAVEL:
+        m = re.fullmatch(r"([01]\.\d\d):(\d{1,5})", fields.get(part, ""))
+        if not m:
+            continue
+        furthest, steps = float(m.group(1)), int(m.group(2))
+        name = PAD_TEST_NAMES[part]
+        if furthest < 0.05:
+            out.append(f"{name} did not move")
+        elif steps:
+            out.append(f"{name} analog ({steps} steps, to {m.group(1)})")
+        else:
+            out.append(f"{name} on/off only (to {m.group(1)})")
+    return "; ".join(out)
+
+
 def pad_map(states: Dict[str, str]) -> str:
     """The controller drawn for the test, each part marked want, ok or bad."""
     def c(k):

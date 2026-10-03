@@ -33,8 +33,8 @@ from .render import (LOCK_NOTE, app_page, applied_page, artwork_page,
                      exit_timeout_value, explain_page, grid_page, hidden_page, is_protected, page,
                      picker_page, render_browsable, render_fields, render_flags,
                      report_page, scanning_page, settings_page, sgdb_artwork_page, SGDB_PER,
-                     controller_test_page, pad_result_words, share_page, shared_page,
-                     PAD_TEST_NAMES, PAD_TEST_ORDER)
+                     controller_test_page, pad_result_words, pad_travel_words, share_page, shared_page,
+                     PAD_TEST_NAMES, PAD_TEST_ORDER, PAD_TRAVEL)
 from . import logshare
 
 log = logging.getLogger("sunshine-apps-ui")
@@ -1026,6 +1026,9 @@ class PlanHandler(BaseHTTPRequestHandler):
                 if results[p] != "ok":
                     log.warning("padtest: %s %s (%s)", PAD_TEST_NAMES[p],
                                 pad_result_words(p, results[p]), results[p])
+            travel = pad_travel_words({p: (fields.get(f"t_{p}") or [""])[0] for p in PAD_TRAVEL})
+            if travel:
+                log.warning("padtest: travel: %s", travel)
             self._send(200, controller_test_page(name, results))
             return
 
