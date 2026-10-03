@@ -91,6 +91,17 @@ class AlwaysRemoved(unittest.TestCase):
         f = e.found("addresses")
         self.assertEqual((f.count, f.controller), (2, 1))
 
+    def test_a_usb_devices_serial_number(self):
+        e = run("09:16:50 WARNING host: pad 3346:1009 v0101 bus 0003: sipeed NanoKVMPro, at 0123456789ABCDEF\n")
+        self.assertEqual(e.text, "09:16:50 WARNING host: pad 3346:1009 v0101 bus 0003: sipeed NanoKVMPro, at [serial]\n")
+        self.assertEqual(e.found("serials").count, 1)
+        self.assertIsNone(e.found("addresses"))
+
+    def test_a_bluetooth_address_there_is_an_address_not_a_serial(self):
+        e = run()
+        self.assertIsNone(e.found("serials"))
+        self.assertIn("Controller, at [address]", e.text)
+
     def test_anything_like_a_secret(self):
         e = run("key: 0123456789abcdef0123456789ABCDEF\n"
                 "Authorization: Bearer abc.def\nCookie: s=1\n"

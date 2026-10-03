@@ -513,6 +513,15 @@ class CredentialsEndpointTest(ServerTest):
         self.assertIn('name="remove" value="folders"', body)
         send.assert_not_called()
 
+    def test_share_lists_a_serial_number_as_removed(self):
+        log = "20:00:00 WARNING host: pad 3346:1009 v0101 bus 0003: A KVM, at 0123456789ABCDEF\n"
+        with mock.patch.object(server_module, "_read_log", lambda: log):
+            _, body = self.get(f"/report/share?token={self.token}")
+        self.assertIn("Serial numbers", body)
+        self.assertIn("1 device's serial number.", body)
+        self.assertIn("A KVM, at <i>[serial]</i>", body)
+        self.assertNotIn("0123456789ABCDEF", body)
+
     def test_a_switch_removes_and_keeps_its_focus(self):
         log = "20:00:01 WARNING scan: steam: 2 found in /mnt/games/Lib\n"
         with mock.patch.object(server_module, "_read_log", lambda: log):

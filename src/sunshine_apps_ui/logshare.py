@@ -54,6 +54,11 @@ HEX32 = re.compile(r"\b[0-9a-fA-F]{32}\b")
 MAC = re.compile(r"\b(?:[0-9A-Fa-f]{2}[:-]){5}[0-9A-Fa-f]{2}\b")
 IPV4 = re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}\b")
 IPV6 = re.compile(r"(?<![\w:])(?:[0-9A-Fa-f]{0,4}:){2,7}[0-9A-Fa-f]{0,4}(?![\w:])")
+# What the host's list of pads gives after "at": the device's Uniq, which is a
+# Bluetooth address for a Bluetooth pad and a serial number for a USB one
+# (#86). The name before it has had its commas taken out (see pad_line).
+PAD_UNIQ = re.compile(r"(\bhost: pad [0-9a-f]{4}:[0-9a-f]{4} v[0-9a-f]{4} bus [0-9a-f]{4}: "
+                      r"[^,\n]*, at )([^\n]+)$", re.I | re.M)
 # A line about a controller: the Bluetooth address on it is the pad's.
 PAD_LINE = re.compile(r"\b(pad|controller|gamepad|joystick|uniq)\b", re.I)
 # The pad summary pad.js sends, and the host's list of pads.
@@ -214,7 +219,7 @@ def examine(text: str, facts: Facts, remove: Iterable[str] = ()) -> Examined:
     """Take out what is never sent, and what the switches say to, from ``text``."""
     remove = set(remove)
     F = {k: Finding(k) for k in ("token", "secrets", "home", "machine", "device",
-                                  "sunshine_user", "addresses", "controllers",
+                                  "sunshine_user", "addresses", "serials", "controllers",
                                   "games", "folders")}
     ed = _Editor(text)
 
@@ -222,6 +227,10 @@ def examine(text: str, facts: Facts, remove: Iterable[str] = ()) -> Examined:
     ed.sub(TOKEN, lambda m, p: (F["token"].add(), (m.group(1), "[removed]"))[1])
     ed.sub(SECRET_FIELD, lambda m, p: (F["secrets"].add(), (m.group(1), "[removed]"))[1])
     ed.sub(HEX32, lambda m, p: (F["secrets"].add(), "[removed]")[1])
+    # A device's serial number, before any later rule splits its line. An
+    # address there is left for the address rule, which counts it as the pad's.
+    ed.sub(PAD_UNIQ, lambda m, p: None if MAC.fullmatch(m.group(2).strip())
+           else (F["serials"].add(), (m.group(1), "[serial]"))[1])
     # The Sunshine password as itself, in its own case, wherever it stands
     # alone. Not inside words: a password that is an ordinary word (it can be
     # "sunshine") would otherwise take that word out of every line (#71).

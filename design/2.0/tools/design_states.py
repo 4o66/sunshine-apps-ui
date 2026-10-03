@@ -550,6 +550,7 @@ SHARE_LOG = """\
 20:31:07 WARNING http://127.0.0.1:47999/?token=Zq81XbVn0pLr
 20:31:09 WARNING pad: Sunshine (libvirtualhid) X-Box Series Controller, 17 buttons, 4 axes, X and Y swapped
 20:31:09 WARNING host: pad 045e:0b13 v0513 bus 0005: Sunshine (libvirtualhid) X-Box Series Controller, at 7e:a1:02:33:44:55
+20:31:09 WARNING host: pad 1209:0003 v0001 bus 0003: USB KVM Mouse, at 4B1D0C2A9F3E
 20:32:14 WARNING scan: steam: 7 found in /mnt/games/SteamLibrary
 20:32:14 WARNING scan: steam: Satisfactory has no cover in the library cache
 20:32:15 WARNING scan: heroic: library not found at /home/deck/.config/heroic

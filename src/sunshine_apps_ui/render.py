@@ -1376,6 +1376,10 @@ def _share_rows(ex, remove) -> str:
             parts.append(f"{pads} controller's Bluetooth address" if pads == 1
                          else f"{pads} controllers' Bluetooth addresses")
         fixed("Addresses", ", and ".join(parts) + ".")
+    f = ex.found("serials")
+    if f:
+        fixed("Serial numbers", "1 device's serial number." if f.count == 1
+              else f"{f.count} devices' serial numbers.")
     f = ex.found("controllers")
     if f:
         switch("controllers", "Controller names", f"{_codes(f.values)}. Often what a controller bug is about.")
